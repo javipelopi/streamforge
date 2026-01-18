@@ -9,6 +9,10 @@
 !package.json
 !package-lock.json
 !tsconfig.json
+!tsconfig.node.json
+!tauri.conf.json
+!vite.config.ts
+!playwright.config.ts
 
 # Dependencies
 node_modules/

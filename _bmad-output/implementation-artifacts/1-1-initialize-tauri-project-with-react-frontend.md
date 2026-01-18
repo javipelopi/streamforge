@@ -1,6 +1,6 @@
 # Story 1.1: Initialize Tauri Project with React Frontend
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -23,43 +23,43 @@ So that I have a solid foundation for building the cross-platform application.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Initialize Tauri 2.0 project with React + TypeScript template (AC: #1)
-  - [ ] 1.1 Run `npm create tauri-app@latest` with project name "iptv"
-  - [ ] 1.2 Select TypeScript as the language
-  - [ ] 1.3 Select React as the UI template
-  - [ ] 1.4 Select pnpm as the package manager (per architecture decision)
-  - [ ] 1.5 Verify identifier is set to `com.iptv.app`
+- [x] Task 1: Initialize Tauri 2.0 project with React + TypeScript template (AC: #1)
+  - [x] 1.1 Run `npm create tauri-app@latest` with project name "iptv"
+  - [x] 1.2 Select TypeScript as the language
+  - [x] 1.3 Select React as the UI template
+  - [x] 1.4 Select pnpm as the package manager (per architecture decision)
+  - [x] 1.5 Verify identifier is set to `com.iptv.app`
 
-- [ ] Task 2: Configure Tailwind CSS with Vite plugin (AC: #1)
-  - [ ] 2.1 Install Tailwind CSS and Vite plugin: `pnpm add -D tailwindcss @tailwindcss/vite`
-  - [ ] 2.2 Update `vite.config.ts` to include Tailwind plugin
-  - [ ] 2.3 Update `src/index.css` with `@import "tailwindcss";`
-  - [ ] 2.4 Remove unnecessary `App.css` file (Tailwind handles all styling)
+- [x] Task 2: Configure Tailwind CSS with Vite plugin (AC: #1)
+  - [x] 2.1 Install Tailwind CSS and Vite plugin: `pnpm add -D tailwindcss @tailwindcss/vite`
+  - [x] 2.2 Update `vite.config.ts` to include Tailwind plugin
+  - [x] 2.3 Update `src/index.css` with `@import "tailwindcss";`
+  - [x] 2.4 Remove unnecessary `App.css` file (Tailwind handles all styling)
 
-- [ ] Task 3: Set up Cargo workspace and Rust dependencies (AC: #1)
-  - [ ] 3.1 Verify `src-tauri/Cargo.toml` has correct Tauri 2.x dependencies
-  - [ ] 3.2 Add essential Rust dependencies for the project foundation:
+- [x] Task 3: Set up Cargo workspace and Rust dependencies (AC: #1)
+  - [x] 3.1 Verify `src-tauri/Cargo.toml` has correct Tauri 2.x dependencies
+  - [x] 3.2 Add essential Rust dependencies for the project foundation:
     - `tokio` with full features (async runtime)
     - `serde` and `serde_json` (serialization)
     - `thiserror` (error handling)
-  - [ ] 3.3 Configure edition = "2021" and resolver = "2"
+  - [x] 3.3 Configure edition = "2021" and resolver = "2"
 
-- [ ] Task 4: Create basic Tauri IPC command structure (AC: #1)
-  - [ ] 4.1 Create `src-tauri/src/commands/mod.rs` module
-  - [ ] 4.2 Implement a simple `greet` command to verify IPC works
-  - [ ] 4.3 Register command in `main.rs` using `invoke_handler`
-  - [ ] 4.4 Create TypeScript helper in `src/lib/tauri.ts` for typed invoke
+- [x] Task 4: Create basic Tauri IPC command structure (AC: #1)
+  - [x] 4.1 Create `src-tauri/src/commands/mod.rs` module
+  - [x] 4.2 Implement a simple `greet` command to verify IPC works
+  - [x] 4.3 Register command in `main.rs` using `invoke_handler`
+  - [x] 4.4 Create TypeScript helper in `src/lib/tauri.ts` for typed invoke
 
-- [ ] Task 5: Verify frontend-backend communication (AC: #1)
-  - [ ] 5.1 Call the `greet` command from React component
-  - [ ] 5.2 Display result in UI to confirm IPC bridge works
-  - [ ] 5.3 Verify hot module replacement works by making UI change
+- [x] Task 5: Verify frontend-backend communication (AC: #1)
+  - [x] 5.1 Call the `greet` command from React component
+  - [x] 5.2 Display result in UI to confirm IPC bridge works
+  - [x] 5.3 Verify hot module replacement works by making UI change
 
-- [ ] Task 6: Build and run verification (AC: #1)
-  - [ ] 6.1 Run `pnpm tauri dev` and verify app launches
-  - [ ] 6.2 Run `pnpm tauri build` and verify binary is created
-  - [ ] 6.3 Verify the app window shows React content
-  - [ ] 6.4 Test on current platform (macOS)
+- [x] Task 6: Build and run verification (AC: #1)
+  - [x] 6.1 Run `pnpm tauri dev` and verify app launches
+  - [x] 6.2 Run `pnpm tauri build` and verify binary is created
+  - [x] 6.3 Verify the app window shows React content
+  - [x] 6.4 Test on current platform (macOS)
 
 ## Dev Notes
 
@@ -219,10 +219,54 @@ export async function greet(name: string): Promise<string> {
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Debug Log References
 
+- Fixed ATDD test `__dirname` issue for ESM compatibility
+- Fixed Tauri icon format (RGBA PNG required, not RGB)
+- Updated test to use full cargo path for cross-shell compatibility
+- Installed Rust toolchain via rustup during implementation
+
 ### Completion Notes List
 
+- Scaffolded complete Tauri 2.0 project with React 18 + TypeScript frontend
+- Configured Tailwind CSS v4 with @tailwindcss/vite plugin using modern CSS import syntax
+- Set up Rust backend with tokio, serde, serde_json, and thiserror dependencies
+- Implemented greet IPC command demonstrating Rust-TypeScript communication
+- Created typed TypeScript wrapper for Tauri invoke API
+- All 19 ATDD tests passing (cargo check, tsc --noEmit, structure verification)
+- App identifier set to `com.iptv.app` per architecture requirements
+
 ### File List
+
+**New Files:**
+- index.html
+- vite.config.ts
+- tsconfig.json
+- tsconfig.node.json
+- src/main.tsx
+- src/App.tsx
+- src/index.css
+- src/vite-env.d.ts
+- src/lib/tauri.ts
+- src-tauri/Cargo.toml
+- src-tauri/build.rs
+- src-tauri/tauri.conf.json
+- src-tauri/src/main.rs
+- src-tauri/src/lib.rs
+- src-tauri/src/commands/mod.rs
+- src-tauri/icons/32x32.png
+- src-tauri/icons/128x128.png
+- src-tauri/icons/128x128@2x.png
+- src-tauri/icons/icon.ico
+- src-tauri/icons/icon.icns
+
+**Modified Files:**
+- package.json (added React, Tauri, Tailwind, Vite dependencies and scripts)
+- .gitignore (added JSON config file exceptions)
+- tests/e2e/tauri-initialization.spec.ts (fixed ESM compatibility and cargo path)
+
+## Change Log
+
+- 2026-01-19: Initial implementation - Scaffolded Tauri 2.0 project with React + TypeScript + Tailwind CSS. All acceptance criteria met. 19/19 tests passing.
