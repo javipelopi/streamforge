@@ -1,0 +1,42 @@
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# Generated data files (contain credentials in URLs)
+*.m3u
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+target/
+
+# IDE and editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Tauri build artifacts (future)
+src-tauri/target/
+
+# Database files (future)
+*.db
+*.sqlite
+*.sqlite3

@@ -1,0 +1,96 @@
+# generated: 2026-01-19
+# project: iptv
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-01-19
+project: iptv
+tracking_system: file-system
+story_location: "_bmad-output/implementation-artifacts"
+
+development_status:
+  # Epic 1: Application Foundation
+  epic-1: backlog
+  1-1-initialize-tauri-project-with-react-frontend: backlog
+  1-2-set-up-sqlite-database-with-diesel-orm: backlog
+  1-3-create-react-gui-shell-with-routing: backlog
+  1-4-implement-system-tray-integration: backlog
+  1-5-create-axum-http-server-foundation: backlog
+  1-6-add-auto-start-on-boot-capability: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2: Account & Source Configuration
+  epic-2: backlog
+  2-1-add-xtream-account-with-secure-credential-storage: backlog
+  2-2-test-xtream-connection-and-display-account-status: backlog
+  2-3-retrieve-and-store-channel-list-from-xtream: backlog
+  2-4-add-xmltv-source-management: backlog
+  2-5-parse-and-store-xmltv-epg-data: backlog
+  2-6-implement-scheduled-epg-refresh: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: Channel Discovery & Matching
+  epic-3: backlog
+  3-1-implement-fuzzy-channel-matching-algorithm: backlog
+  3-2-display-channel-list-with-match-status-and-confidence: backlog
+  3-3-manual-match-override-via-search-dropdown: backlog
+  3-4-auto-rematch-on-provider-changes: backlog
+  3-5-channel-enable-disable-functionality: backlog
+  3-6-drag-and-drop-channel-reordering: backlog
+  3-7-bulk-channel-operations: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: Plex Integration & Streaming
+  epic-4: backlog
+  4-1-serve-m3u-playlist-endpoint: backlog
+  4-2-serve-xmltv-epg-endpoint: backlog
+  4-3-implement-hdhomerun-emulation: backlog
+  4-4-stream-proxy-with-quality-selection: backlog
+  4-5-automatic-stream-failover: backlog
+  4-6-display-plex-configuration-urls: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: EPG Viewer & Discovery
+  epic-5: backlog
+  5-1-epg-grid-browser-with-time-navigation: backlog
+  5-2-epg-search-functionality: backlog
+  5-3-program-details-view: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: Settings, Logging & Updates
+  epic-6: backlog
+  6-1-settings-gui-for-server-and-startup-options: backlog
+  6-2-configuration-export-import: backlog
+  6-3-event-logging-system: backlog
+  6-4-event-log-viewer-with-notification-badge: backlog
+  6-5-auto-update-mechanism: backlog
+  epic-6-retrospective: optional
