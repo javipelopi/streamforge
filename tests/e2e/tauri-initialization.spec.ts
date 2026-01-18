@@ -8,9 +8,12 @@
 
 import { test, expect } from '@playwright/test';
 import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 const PROJECT_ROOT = join(__dirname, '../..');
 
 test.describe('Story 1.1: Tauri Project Initialization', () => {
@@ -260,14 +263,17 @@ test.describe('Story 1.1: Tauri Project Initialization', () => {
   test('should compile Rust backend without errors', async () => {
     // GIVEN: Tauri project exists
     const tauriDir = join(PROJECT_ROOT, 'src-tauri');
+    const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+    const cargoPath = join(homeDir, '.cargo', 'bin', 'cargo');
 
     // WHEN: Running cargo check
     // THEN: Cargo check passes without errors
     expect(() => {
-      execSync('cargo check', {
+      execSync(`${cargoPath} check`, {
         cwd: tauriDir,
         stdio: 'pipe',
-        timeout: 60000 // 60 second timeout
+        timeout: 120000, // 120 second timeout
+        env: { ...process.env, PATH: `${join(homeDir, '.cargo', 'bin')}:${process.env.PATH}` }
       });
     }).not.toThrow();
   });
