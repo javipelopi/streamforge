@@ -222,13 +222,6 @@ export function EpgSourcesList({
                 </div>
               </div>
 
-              {/* Refresh Spinner (when refreshing) */}
-              {isRefreshing && (
-                <div data-testid={`epg-source-refreshing-${source.id}`}>
-                  <ReloadIcon className="w-5 h-5 text-blue-600 animate-spin" />
-                </div>
-              )}
-
               {/* Action Buttons */}
               <div className="flex items-center gap-2">
                 {/* Refresh Button */}
@@ -236,8 +229,9 @@ export function EpgSourcesList({
                   data-testid={`refresh-epg-source-${source.id}`}
                   onClick={() => handleRefreshSource(source)}
                   disabled={isLoading || isRefreshing || refreshingAll}
-                  className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`p-2 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isRefreshing ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-green-600 hover:bg-green-50'}`}
                   title="Refresh EPG"
+                  data-refreshing={isRefreshing}
                 >
                   <ReloadIcon className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
                 </button>
@@ -288,9 +282,24 @@ function formatDisplay(format: string): string {
 
 /**
  * Format a timestamp as "X ago" (e.g., "5 minutes ago", "2 hours ago")
+ * Handles UTC timestamps from the backend (format: "YYYY-MM-DD HH:MM:SS")
  */
 function formatTimeAgo(timestamp: string): string {
-  const date = new Date(timestamp);
+  // Backend stores timestamps in UTC without timezone indicator
+  // Normalize to ISO format with Z suffix so JavaScript parses as UTC
+  let normalizedTimestamp = timestamp;
+  if (!timestamp.includes('T') && !timestamp.endsWith('Z')) {
+    // Convert "YYYY-MM-DD HH:MM:SS" to "YYYY-MM-DDTHH:MM:SSZ"
+    normalizedTimestamp = timestamp.replace(' ', 'T') + 'Z';
+  }
+
+  const date = new Date(normalizedTimestamp);
+
+  // Handle invalid dates
+  if (isNaN(date.getTime())) {
+    return 'unknown';
+  }
+
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffSec = Math.floor(diffMs / 1000);

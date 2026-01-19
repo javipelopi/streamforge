@@ -3,7 +3,92 @@
 //! Defines the data structures for parsing Xtream Codes API responses.
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use std::fmt::Display;
+use std::str::FromStr;
+use tracing::warn;
+
+/// Deserialize a number that may come as a string or int
+fn deserialize_number_from_string<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromStr + Deserialize<'de>,
+    T::Err: Display,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrNumber<T> {
+        String(String),
+        Number(T),
+    }
+
+    match StringOrNumber::<T>::deserialize(deserializer)? {
+        StringOrNumber::String(s) => s.parse::<T>().map_err(serde::de::Error::custom),
+        StringOrNumber::Number(n) => Ok(n),
+    }
+}
+
+/// Deserialize an optional number that may come as a string or int
+fn deserialize_optional_number_from_string<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromStr + Deserialize<'de>,
+    T::Err: Display,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrNumber<T> {
+        String(String),
+        Number(T),
+        Null,
+    }
+
+    match Option::<StringOrNumber<T>>::deserialize(deserializer)? {
+        Some(StringOrNumber::String(s)) if s.is_empty() => Ok(None),
+        Some(StringOrNumber::String(s)) => s.parse::<T>().map(Some).map_err(serde::de::Error::custom),
+        Some(StringOrNumber::Number(n)) => Ok(Some(n)),
+        Some(StringOrNumber::Null) | None => Ok(None),
+    }
+}
+
+/// Deserialize category_ids which can be array of strings or ints
+fn deserialize_category_ids<'de, D>(deserializer: D) -> Result<Option<Vec<i32>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrInt {
+        String(String),
+        Int(i32),
+    }
+
+    let opt: Option<Vec<StringOrInt>> = Option::deserialize(deserializer)?;
+
+    match opt {
+        Some(vec) => {
+            let mut result = Vec::with_capacity(vec.len());
+            for item in vec {
+                match item {
+                    StringOrInt::String(s) => {
+                        match s.parse::<i32>() {
+                            Ok(n) => result.push(n),
+                            Err(_) => {
+                                warn!(
+                                    category_id = %s,
+                                    "Failed to parse category_id string as i32, skipping"
+                                );
+                            }
+                        }
+                    }
+                    StringOrInt::Int(n) => result.push(n),
+                }
+            }
+            Ok(Some(result))
+        }
+        None => Ok(None),
+    }
+}
 
 /// Raw authentication response from Xtream Codes API
 #[derive(Debug, Deserialize)]
@@ -56,21 +141,28 @@ pub struct AccountInfo {
 }
 
 /// Live stream from Xtream get_live_streams API
+/// Note: Xtream APIs are inconsistent - some fields may be strings or ints
 #[derive(Debug, Deserialize, Clone)]
 pub struct XtreamLiveStream {
+    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub num: i32,
     pub name: String,
     pub stream_type: String,
+    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub stream_id: i32,
     pub stream_icon: Option<String>,
     pub epg_channel_id: Option<String>,
     pub added: Option<String>,
-    /// Can be string or int in API, we handle both
+    /// Can be string or int in API
     pub category_id: Option<String>,
+    /// Can be array of strings or ints
+    #[serde(default, deserialize_with = "deserialize_category_ids")]
     pub category_ids: Option<Vec<i32>>,
     pub custom_sid: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_number_from_string")]
     pub tv_archive: Option<i32>,
     pub direct_source: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_number_from_string")]
     pub tv_archive_duration: Option<i32>,
 }
 
@@ -299,5 +391,147 @@ mod tests {
         // Negative values should parse but we accept them (server's data)
         assert_eq!(info.max_connections, -1);
         assert_eq!(info.active_connections, -5);
+    }
+
+    #[test]
+    fn test_live_stream_with_string_numbers() {
+        // Tests deserialize_number_from_string with string values
+        let json = r#"{
+            "num": "42",
+            "name": "Test Channel",
+            "stream_type": "live",
+            "stream_id": "123"
+        }"#;
+
+        let stream: XtreamLiveStream = serde_json::from_str(json).unwrap();
+        assert_eq!(stream.num, 42);
+        assert_eq!(stream.stream_id, 123);
+    }
+
+    #[test]
+    fn test_live_stream_with_int_numbers() {
+        // Tests deserialize_number_from_string with int values
+        let json = r#"{
+            "num": 42,
+            "name": "Test Channel",
+            "stream_type": "live",
+            "stream_id": 123
+        }"#;
+
+        let stream: XtreamLiveStream = serde_json::from_str(json).unwrap();
+        assert_eq!(stream.num, 42);
+        assert_eq!(stream.stream_id, 123);
+    }
+
+    #[test]
+    fn test_live_stream_optional_number_as_string() {
+        // Tests deserialize_optional_number_from_string
+        let json = r#"{
+            "num": 1,
+            "name": "Test Channel",
+            "stream_type": "live",
+            "stream_id": 100,
+            "tv_archive": "1",
+            "tv_archive_duration": "7"
+        }"#;
+
+        let stream: XtreamLiveStream = serde_json::from_str(json).unwrap();
+        assert_eq!(stream.tv_archive, Some(1));
+        assert_eq!(stream.tv_archive_duration, Some(7));
+    }
+
+    #[test]
+    fn test_live_stream_optional_number_as_int() {
+        // Tests deserialize_optional_number_from_string with int values
+        let json = r#"{
+            "num": 1,
+            "name": "Test Channel",
+            "stream_type": "live",
+            "stream_id": 100,
+            "tv_archive": 1,
+            "tv_archive_duration": 7
+        }"#;
+
+        let stream: XtreamLiveStream = serde_json::from_str(json).unwrap();
+        assert_eq!(stream.tv_archive, Some(1));
+        assert_eq!(stream.tv_archive_duration, Some(7));
+    }
+
+    #[test]
+    fn test_live_stream_optional_number_empty_string() {
+        // Tests deserialize_optional_number_from_string with empty string (should be None)
+        let json = r#"{
+            "num": 1,
+            "name": "Test Channel",
+            "stream_type": "live",
+            "stream_id": 100,
+            "tv_archive": "",
+            "tv_archive_duration": ""
+        }"#;
+
+        let stream: XtreamLiveStream = serde_json::from_str(json).unwrap();
+        assert_eq!(stream.tv_archive, None);
+        assert_eq!(stream.tv_archive_duration, None);
+    }
+
+    #[test]
+    fn test_live_stream_category_ids_as_strings() {
+        // Tests deserialize_category_ids with string array
+        let json = r#"{
+            "num": 1,
+            "name": "Test Channel",
+            "stream_type": "live",
+            "stream_id": 100,
+            "category_ids": ["1", "2", "3"]
+        }"#;
+
+        let stream: XtreamLiveStream = serde_json::from_str(json).unwrap();
+        assert_eq!(stream.category_ids, Some(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn test_live_stream_category_ids_as_ints() {
+        // Tests deserialize_category_ids with int array
+        let json = r#"{
+            "num": 1,
+            "name": "Test Channel",
+            "stream_type": "live",
+            "stream_id": 100,
+            "category_ids": [1, 2, 3]
+        }"#;
+
+        let stream: XtreamLiveStream = serde_json::from_str(json).unwrap();
+        assert_eq!(stream.category_ids, Some(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn test_live_stream_category_ids_mixed() {
+        // Tests deserialize_category_ids with mixed string/int array
+        let json = r#"{
+            "num": 1,
+            "name": "Test Channel",
+            "stream_type": "live",
+            "stream_id": 100,
+            "category_ids": ["1", 2, "3"]
+        }"#;
+
+        let stream: XtreamLiveStream = serde_json::from_str(json).unwrap();
+        assert_eq!(stream.category_ids, Some(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn test_live_stream_category_ids_with_unparseable_skipped() {
+        // Tests that unparseable category_ids are skipped (with warning logged)
+        let json = r#"{
+            "num": 1,
+            "name": "Test Channel",
+            "stream_type": "live",
+            "stream_id": 100,
+            "category_ids": ["1", "invalid", "3"]
+        }"#;
+
+        let stream: XtreamLiveStream = serde_json::from_str(json).unwrap();
+        // "invalid" should be skipped, only 1 and 3 remain
+        assert_eq!(stream.category_ids, Some(vec![1, 3]));
     }
 }

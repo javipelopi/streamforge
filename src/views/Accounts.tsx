@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { PlusIcon } from '@radix-ui/react-icons';
 import { AccountForm, AccountsList } from '../components/accounts';
 import { EpgSourcesList, EpgSourceDialog } from '../components/epg';
-import type { AccountFormData } from '../components/accounts';
+import type { AccountFormData, AccountEditData } from '../components/accounts';
 import type { Account, XmltvSource, NewXmltvSource } from '../lib/tauri';
 import {
   addAccount,
   getAccounts,
   deleteAccount,
+  updateAccount,
   getXmltvSources,
   addXmltvSource,
   updateXmltvSource,
@@ -24,6 +25,7 @@ export function Accounts() {
   // Account state
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<AccountEditData | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,28 +65,56 @@ export function Accounts() {
     loadEpgSources();
   }, [loadAccounts, loadEpgSources]);
 
-  // Handle form submission
+  // Handle form submission (add or edit)
   const handleSubmit = async (data: AccountFormData) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const newAccount = await addAccount({
-        name: data.name,
-        serverUrl: data.serverUrl,
-        username: data.username,
-        password: data.password,
-      });
+      if (editingAccount) {
+        // Update existing account
+        const updatedAccount = await updateAccount(editingAccount.id, {
+          name: data.name,
+          serverUrl: data.serverUrl,
+          username: data.username,
+          password: data.password || undefined, // Only send password if provided
+        });
 
-      setAccounts((prev) => [...prev, newAccount]);
+        setAccounts((prev) =>
+          prev.map((acc) => (acc.id === updatedAccount.id ? updatedAccount : acc))
+        );
+        setEditingAccount(undefined);
+      } else {
+        // Add new account
+        const newAccount = await addAccount({
+          name: data.name,
+          serverUrl: data.serverUrl,
+          username: data.username,
+          password: data.password,
+        });
+
+        setAccounts((prev) => [...prev, newAccount]);
+      }
       setShowForm(false);
     } catch (err) {
-      console.error('Failed to add account:', err);
-      const errorMessage = err instanceof Error ? err.message : typeof err === 'string' ? err : 'Failed to add account. Please try again.';
+      console.error('Failed to save account:', err);
+      const errorMessage = err instanceof Error ? err.message : typeof err === 'string' ? err : 'Failed to save account. Please try again.';
       setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Handle edit account
+  const handleEditAccount = (account: Account) => {
+    setEditingAccount({
+      id: account.id,
+      name: account.name,
+      serverUrl: account.serverUrl,
+      username: account.username,
+    });
+    setShowForm(true);
+    setError(null);
   };
 
   // Handle account deletion
@@ -110,6 +140,7 @@ export function Accounts() {
   // Handle cancel
   const handleCancel = () => {
     setShowForm(false);
+    setEditingAccount(undefined);
     setError(null);
   };
 
@@ -216,10 +247,12 @@ export function Accounts() {
           onSubmit={handleSubmit}
           onCancel={handleCancel}
           isLoading={isLoading}
+          editAccount={editingAccount}
         />
       ) : (
         <AccountsList
           accounts={accounts}
+          onEdit={handleEditAccount}
           onDelete={handleDelete}
           isLoading={isLoading}
         />

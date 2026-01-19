@@ -64,6 +64,11 @@ pub struct AccountResponse {
     pub is_active: bool,
     pub created_at: String,
     pub updated_at: String,
+    // Connection status fields
+    pub connection_status: Option<String>,
+    pub expiry_date: Option<String>,
+    pub max_connections_actual: Option<i32>,
+    pub active_connections: Option<i32>,
 }
 
 impl From<Account> for AccountResponse {
@@ -77,6 +82,11 @@ impl From<Account> for AccountResponse {
             is_active: account.is_active != 0,
             created_at: account.created_at,
             updated_at: account.updated_at,
+            // Connection status fields
+            connection_status: account.connection_status,
+            expiry_date: account.expiry_date,
+            max_connections_actual: account.max_connections_actual,
+            active_connections: account.active_connections,
         }
     }
 }

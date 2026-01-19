@@ -2,6 +2,8 @@
 //!
 //! Implements a memory-efficient streaming parser for XMLTV format files.
 
+use std::collections::HashMap;
+
 use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
@@ -12,11 +14,13 @@ use super::types::{ParsedChannel, ParsedProgram, XmltvError};
 ///
 /// Returns a tuple of (channels, programs) parsed from the XMLTV data.
 /// Uses streaming parser for memory efficiency with large files.
+/// Deduplicates channels by channel_id (keeps first occurrence).
 pub fn parse_xmltv_data(data: &[u8]) -> Result<(Vec<ParsedChannel>, Vec<ParsedProgram>), XmltvError> {
     let mut reader = Reader::from_reader(data);
     reader.config_mut().trim_text(true);
 
-    let mut channels = Vec::new();
+    // Use HashMap to deduplicate channels by channel_id
+    let mut channels_map: HashMap<String, ParsedChannel> = HashMap::new();
     let mut programs = Vec::new();
     let mut buf = Vec::new();
 
@@ -25,7 +29,8 @@ pub fn parse_xmltv_data(data: &[u8]) -> Result<(Vec<ParsedChannel>, Vec<ParsedPr
             Ok(Event::Start(e)) => match e.name().as_ref() {
                 b"channel" => {
                     let channel = parse_channel(&mut reader, &e)?;
-                    channels.push(channel);
+                    // Only insert if channel_id not already present (keep first)
+                    channels_map.entry(channel.channel_id.clone()).or_insert(channel);
                 }
                 b"programme" => {
                     let program = parse_program(&mut reader, &e)?;
@@ -45,6 +50,10 @@ pub fn parse_xmltv_data(data: &[u8]) -> Result<(Vec<ParsedChannel>, Vec<ParsedPr
         }
         buf.clear();
     }
+
+    // Convert HashMap to Vec and sort by channel_id for deterministic ordering
+    let mut channels: Vec<ParsedChannel> = channels_map.into_values().collect();
+    channels.sort_by(|a, b| a.channel_id.cmp(&b.channel_id));
 
     Ok((channels, programs))
 }
@@ -386,6 +395,48 @@ mod tests {
 
         let plain_data = b"<?xml version";
         assert!(!detect_gzip(plain_data));
+    }
+
+    #[test]
+    fn test_duplicate_channels_deduplicated() {
+        // XMLTV file with duplicate channel IDs - should keep only first occurrence
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="duplicate.1">
+    <display-name>First Channel</display-name>
+  </channel>
+  <channel id="duplicate.1">
+    <display-name>Duplicate Channel</display-name>
+  </channel>
+  <channel id="unique.2">
+    <display-name>Unique Channel</display-name>
+  </channel>
+  <programme start="20260119120000 +0000" stop="20260119130000 +0000" channel="duplicate.1">
+    <title>Test Program</title>
+  </programme>
+</tv>"#;
+
+        let (channels, programs) = parse_xmltv_data(xml.as_bytes()).unwrap();
+
+        // Should only have 2 unique channels, not 3
+        assert_eq!(channels.len(), 2);
+
+        // Channels are sorted by channel_id for deterministic ordering
+        // So "duplicate.1" comes before "unique.2"
+        assert_eq!(channels[0].channel_id, "duplicate.1");
+        assert_eq!(channels[1].channel_id, "unique.2");
+
+        // Verify the FIRST occurrence was kept (not the duplicate)
+        assert_eq!(
+            channels[0].display_name,
+            "First Channel",
+            "Should keep first channel occurrence, not duplicate"
+        );
+        assert_eq!(channels[1].display_name, "Unique Channel");
+
+        // Verify programs still parse correctly
+        assert_eq!(programs.len(), 1);
+        assert_eq!(programs[0].channel_id, "duplicate.1");
     }
 }
 

@@ -1,4 +1,4 @@
-import { TrashIcon } from '@radix-ui/react-icons';
+import { TrashIcon, Pencil1Icon } from '@radix-ui/react-icons';
 import { AccountStatus } from './AccountStatus';
 
 export interface Account {
@@ -19,6 +19,7 @@ export interface Account {
 
 interface AccountsListProps {
   accounts: Account[];
+  onEdit?: (account: Account) => void;
   onDelete?: (id: number) => void;
   isLoading?: boolean;
 }
@@ -27,7 +28,7 @@ interface AccountsListProps {
  * AccountsList component displays a list of added Xtream Codes accounts
  * Shows account name, server URL, username, and connection status (never shows password)
  */
-export function AccountsList({ accounts, onDelete, isLoading = false }: AccountsListProps) {
+export function AccountsList({ accounts, onEdit, onDelete, isLoading = false }: AccountsListProps) {
   if (accounts.length === 0) {
     return (
       <div data-testid="accounts-empty-state" className="text-center py-8 text-gray-500">
@@ -68,6 +69,17 @@ export function AccountsList({ accounts, onDelete, isLoading = false }: Accounts
             </div>
 
             <div className="flex items-center space-x-2 ml-4">
+              {onEdit && (
+                <button
+                  data-testid="edit-account-button"
+                  onClick={() => onEdit(account)}
+                  disabled={isLoading}
+                  className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Edit account"
+                >
+                  <Pencil1Icon className="w-5 h-5" />
+                </button>
+              )}
               {onDelete && (
                 <button
                   data-testid="delete-account-button"
