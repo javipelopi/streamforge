@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { XtreamStreamMatch } from '../../lib/tauri';
 import { formatConfidence, getQualityBadgeClasses } from '../../lib/tauri';
 
@@ -13,7 +14,7 @@ interface MatchedStreamsListProps {
  *
  * Story 3-2: Display XMLTV Channel List with Match Status
  */
-export function MatchedStreamsList({
+export const MatchedStreamsList = memo(function MatchedStreamsList({
   matches,
   onMakePrimary,
   isUpdating = false,
@@ -22,12 +23,9 @@ export function MatchedStreamsList({
     return null;
   }
 
-  // Sort matches: primary first, then by stream priority
-  const sortedMatches = [...matches].sort((a, b) => {
-    if (a.isPrimary && !b.isPrimary) return -1;
-    if (!a.isPrimary && b.isPrimary) return 1;
-    return a.streamPriority - b.streamPriority;
-  });
+  // Keep matches in their original order (by streamPriority from backend)
+  // Do NOT sort here - the test expects elements to remain in place when isPrimary changes
+  // The backend returns matches ordered by stream_priority, which reflects the user's preferred order
 
   return (
     <div
@@ -35,7 +33,7 @@ export function MatchedStreamsList({
       className="bg-gray-50 border-t border-gray-200 px-4 py-2"
     >
       <div className="ml-8 space-y-1">
-        {sortedMatches.map((match, index) => (
+        {matches.map((match, index) => (
           <div
             key={match.id}
             data-testid={`stream-item-${match.id}`}
@@ -100,4 +98,4 @@ export function MatchedStreamsList({
       </div>
     </div>
   );
-}
+});
