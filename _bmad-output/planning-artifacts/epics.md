@@ -1,9 +1,11 @@
 ---
 stepsCompleted: [step-01-validate-prerequisites, step-02-design-epics, step-03-create-stories, step-04-final-validation]
-completedDate: 2026-01-18
 inputDocuments:
-  - prd.md
-  - architecture.md
+  - prd.md (v1.1 - updated with XMLTV-first channel hierarchy)
+  - architecture.md (v1.1 - updated with corrected schema)
+workflowType: 'create-epics-and-stories'
+completedDate: '2026-01-19'
+courseCorrection: 'XMLTV-first channel hierarchy (Sprint Change Proposal 2026-01-19)'
 ---
 
 # iptv - Epic Breakdown
@@ -11,6 +13,8 @@ inputDocuments:
 ## Overview
 
 This document provides the complete epic and story breakdown for iptv, decomposing the requirements from the PRD and Architecture requirements into implementable stories.
+
+**CRITICAL DESIGN PRINCIPLE:** XMLTV channels are the PRIMARY channel list for Plex. Xtream streams are matched TO XMLTV channels as video sources. This affects Epic 3 (Channel Matching) and Epic 4/5 (Plex Integration, EPG Viewer).
 
 ## Requirements Inventory
 
@@ -33,8 +37,8 @@ This document provides the complete epic and story breakdown for iptv, decomposi
 - FR12: System can refresh EPG data automatically at scheduled time
 - FR13: System can merge EPG data from multiple XMLTV sources
 
-**Channel Matching**
-- FR14: System can perform fuzzy matching between Xtream channels and XMLTV channels
+**Channel Matching (XMLTV-First)**
+- FR14: System can perform fuzzy matching to associate Xtream streams with XMLTV channels. XMLTV channels are the primary channel list that defines what appears in Plex (channel names, numbers, icons, and EPG data)
 - FR15: System can display match confidence scores for each channel pairing
 - FR16: System can auto-match channels above confidence threshold
 - FR17: User can manually override channel matches via search dropdown
@@ -42,13 +46,14 @@ This document provides the complete epic and story breakdown for iptv, decomposi
 - FR19: System can automatically re-match channels when provider updates list
 - FR20: User can trigger manual re-scan of channels
 
-**Channel Management**
-- FR21: User can view all channels with their match status
+**Channel Management (XMLTV-First)**
+- FR21: User can view all XMLTV channels with their matched Xtream stream status. The Channels view shows XMLTV channels as the primary list, with indicators showing which Xtream streams are matched to each
 - FR22: User can enable or disable individual channels
 - FR23: User can reorder channels via drag-and-drop
 - FR24: User can bulk-enable or bulk-disable channels
 - FR25: System can remember channel order and enabled state across restarts
 - FR26: Unmatched channels default to disabled
+- FR26a: User can view all channels from all sources (XMLTV and Xtream) in the Channels tab, with icons indicating source type and match relationships. The XMLTV channel list defines the Plex lineup; Xtream streams are the video sources matched to those channels
 
 **Stream Handling**
 - FR27: System can proxy stream requests from Plex to Xtream provider
@@ -141,12 +146,13 @@ This document provides the complete epic and story breakdown for iptv, decomposi
 
 **From Architecture - Database Setup:**
 - SQLite schema with tables: accounts, xmltv_sources, xtream_channels, xmltv_channels, channel_mappings, programs, settings, event_log
+- channel_mappings uses xmltv_channel_id as PRIMARY KEY (XMLTV-first design)
 - Diesel migrations for schema management
 
 **From Architecture - Core Module Structure:**
 - Xtream Client module (client, types, auth, streams)
 - XMLTV Parser module (parser, types, fetcher)
-- Channel Matcher module (fuzzy, scorer, auto_rematch)
+- Channel Matcher module (fuzzy, scorer, auto_rematch) - matches Xtream streams TO XMLTV channels
 - Stream Proxy module (handler, failover, metrics)
 - HTTP Server module (m3u, epg, stream, hdhr endpoints)
 - Tauri Commands module (accounts, channels, epg, settings, logs)
@@ -181,11 +187,11 @@ This document provides the complete epic and story breakdown for iptv, decomposi
 |----|------|-------------|
 | FR1-FR7 | Epic 2 | Xtream Codes account management |
 | FR8-FR13 | Epic 2 | XMLTV/EPG source management |
-| FR14-FR20 | Epic 3 | Channel matching and auto-rematch |
-| FR21-FR26 | Epic 3 | Channel management UI |
+| FR14-FR20 | Epic 3 | Channel matching (Xtream→XMLTV) and auto-rematch |
+| FR21-FR26a | Epic 3 | XMLTV channel management UI |
 | FR27-FR33 | Epic 4 | Stream proxy and failover |
 | FR34-FR38 | Epic 4 | Plex integration and HDHomeRun |
-| FR39-FR42 | Epic 5 | EPG viewer and search |
+| FR39-FR42 | Epic 5 | EPG viewer (enabled XMLTV channels) |
 | FR43-FR47 | Epic 6 | Settings and configuration |
 | FR48-FR52 | Epic 6 | Logging and diagnostics |
 | FR53-FR55 | Epic 6 | Auto-update mechanism |
@@ -227,25 +233,25 @@ User can connect their Xtream Codes account and add XMLTV EPG sources.
 
 ---
 
-### Epic 3: Channel Discovery & Matching
-User can see all channels matched to EPG data and organize their lineup.
+### Epic 3: Channel Discovery & Matching (XMLTV-First)
+User can see all XMLTV channels with matched Xtream streams and organize their Plex lineup.
 
 **Scope:**
-- Fuzzy matching algorithm (Jaro-Winkler + normalization)
+- Fuzzy matching algorithm to match Xtream streams TO XMLTV channels
 - Match confidence score display
 - Auto-match above threshold (default 0.85)
-- Manual match override via search dropdown
-- Provider change detection
-- Automatic re-matching on provider updates
+- Manual match override via search dropdown (search Xtream streams for selected XMLTV channel)
+- Provider change detection and automatic re-matching
 - Manual re-scan trigger
-- Channel list view with match status
-- Enable/disable individual channels
-- Drag-and-drop channel reordering
-- Bulk enable/disable
+- **XMLTV channel list view** with match status (primary view)
+- Source type icons distinguishing XMLTV vs Xtream origins
+- Enable/disable individual XMLTV channels for Plex
+- Drag-and-drop XMLTV channel reordering
+- Bulk enable/disable operations
 - Persistent channel order and enabled state
-- Unmatched channels default to disabled
+- Unmatched XMLTV channels default to disabled
 
-**FRs covered:** FR14, FR15, FR16, FR17, FR18, FR19, FR20, FR21, FR22, FR23, FR24, FR25, FR26
+**FRs covered:** FR14, FR15, FR16, FR17, FR18, FR19, FR20, FR21, FR22, FR23, FR24, FR25, FR26, FR26a
 **NFRs addressed:** NFR3 (scan speed), NFR5 (GUI responsiveness), NFR16 (setup time), NFR17 (usability)
 
 ---
@@ -261,8 +267,8 @@ User can add tuner to Plex and watch live TV with automatic quality failover.
 - Quality upgrade retry after recovery period (60s)
 - Concurrent stream handling up to tuner limit
 - Transparent failover (Plex unaware)
-- M3U playlist endpoint (/playlist.m3u)
-- XMLTV EPG endpoint (/epg.xml)
+- **M3U playlist endpoint using XMLTV channel info** (names, IDs, icons)
+- **XMLTV EPG endpoint for enabled XMLTV channels only**
 - HDHomeRun emulation (/discover.json, /lineup.json, /lineup_status.json)
 - Display M3U/EPG URLs in GUI for Plex configuration
 - Report correct tuner count to Plex
@@ -273,10 +279,10 @@ User can add tuner to Plex and watch live TV with automatic quality failover.
 ---
 
 ### Epic 5: EPG Viewer & Discovery
-User can browse and search the program guide within the application.
+User can browse and search the program guide for enabled channels (Plex preview).
 
 **Scope:**
-- EPG grid/list browser
+- EPG grid/list browser showing **enabled XMLTV channels only** (Plex preview mode)
 - Time navigation (now, tonight, tomorrow, week view)
 - Search by program title
 - Search by channel name
@@ -624,66 +630,83 @@ So that my program guide stays up to date without manual intervention.
 
 ---
 
-## Epic 3: Channel Discovery & Matching
+## Epic 3: Channel Discovery & Matching (XMLTV-First)
 
-User can see all channels matched to EPG data and organize their lineup.
+User can see all XMLTV channels with matched Xtream streams and organize their Plex lineup.
 
 ### Story 3.1: Implement Fuzzy Channel Matching Algorithm
 
 As a user,
-I want channels automatically matched to EPG data,
+I want Xtream streams automatically matched to my XMLTV channels,
 So that I don't have to manually match hundreds of channels.
 
 **Acceptance Criteria:**
 
-**Given** Xtream channels and XMLTV channels exist
+**Given** XMLTV channels and Xtream channels exist in the database
 **When** matching is triggered (after scan or manually)
 **Then** the fuzzy matching algorithm runs:
-1. Normalize channel names (lowercase, remove HD/SD/FHD suffixes, strip punctuation)
-2. Calculate Jaro-Winkler similarity score
-3. Boost score for exact EPG ID matches
-4. Apply confidence threshold (default: 0.85)
+1. For each XMLTV channel, find ALL candidate Xtream streams above threshold
+2. Normalize channel names (lowercase, remove HD/SD/FHD suffixes, strip punctuation)
+3. Calculate Jaro-Winkler similarity score
+4. Boost score for exact EPG ID matches
+5. Apply confidence threshold (default: 0.85)
+**And** `channel_mappings` records are created:
+- **One XMLTV channel → Multiple Xtream streams** (one-to-many)
+- Each mapping includes: `xmltv_channel_id`, `xtream_channel_id`, `match_confidence`, `is_primary`
+- The highest-confidence match is marked `is_primary = true`
+- Additional matches stored for failover purposes
 
-**Given** a match is found above threshold
+**Given** multiple Xtream streams match a single XMLTV channel (e.g., "ESPN HD", "ESPN SD", "ESPN 4K" all match "ESPN")
 **When** matching completes
-**Then** a `channel_mappings` record is created with:
-- xtream_channel_id → xmltv_channel_id
-- match_confidence score
-- is_manual = false
-- is_enabled = true (if matched) or false (if unmatched, FR26)
+**Then** all matching streams are stored in `channel_mappings`
+**And** the best match (highest confidence) is marked as primary
+**And** other matches are available as failover sources
 
-**Given** no match is found above threshold
-**When** matching completes
-**Then** the channel is marked as unmatched
-**And** is_enabled defaults to false
+**Given** no Xtream stream matches above threshold
+**When** matching completes for an XMLTV channel
+**Then** the XMLTV channel exists with no mapped streams
+**And** `is_enabled` = false in `xmltv_channel_settings`
+**And** the channel shows as "No stream matched"
+
+**Given** the matching algorithm runs
+**When** processing 1000+ channels
+**Then** matching completes within 60 seconds (NFR3)
 
 ---
 
-### Story 3.2: Display Channel List with Match Status and Confidence
+### Story 3.2: Display XMLTV Channel List with Match Status
 
 As a user,
-I want to see all my channels with their match status,
-So that I know which channels are properly configured.
+I want to see all my XMLTV channels with their matched Xtream streams,
+So that I know which channels are properly configured for Plex.
 
 **Acceptance Criteria:**
 
 **Given** the Channels view
 **When** it loads
-**Then** I see a virtualized list of all channels (TanStack Virtual for performance)
+**Then** I see a virtualized list of all XMLTV channels (TanStack Virtual for performance)
 **And** each row shows:
-- Channel name and logo
-- Matched EPG channel name (or "Unmatched")
-- Match confidence percentage (FR15)
-- Enabled/disabled status
-- Category
+- XMLTV channel name and logo (primary display)
+- Source icon indicating this is an XMLTV channel
+- Matched Xtream stream(s) with count badge (e.g., "3 streams")
+- Primary stream name and confidence percentage
+- Enabled/disabled status toggle
+**And** I can expand a row to see all matched Xtream streams for that XMLTV channel
 
-**Given** the channel list
-**When** I look at the status indicators
-**Then** matched channels show green indicator
-**And** unmatched channels show yellow/warning indicator
-**And** confidence below 90% shows amber indicator
+**Given** an XMLTV channel has multiple matched Xtream streams
+**When** I expand the channel row
+**Then** I see all matched streams with:
+- Stream name and quality tier (HD/SD/4K)
+- Match confidence percentage
+- Primary/backup indicator
+- Option to change which stream is primary
 
-**Given** a large channel list (1000+ channels)
+**Given** an XMLTV channel has no matched streams
+**When** viewing the channel list
+**Then** the channel shows "No stream matched" with warning indicator
+**And** is disabled by default
+
+**Given** a large channel list (1000+ XMLTV channels)
 **When** scrolling through the list
 **Then** the UI remains responsive (<100ms, NFR5)
 
@@ -692,32 +715,32 @@ So that I know which channels are properly configured.
 ### Story 3.3: Manual Match Override via Search Dropdown
 
 As a user,
-I want to manually match or correct channel matches,
-So that I can fix incorrect automatic matches.
+I want to manually match Xtream streams to an XMLTV channel,
+So that I can fix incorrect automatic matches or add additional streams.
 
 **Acceptance Criteria:**
 
-**Given** a channel row in the Channels view
-**When** I click on the matched EPG channel field
-**Then** a searchable dropdown appears with all XMLTV channels
+**Given** an XMLTV channel row in the Channels view
+**When** I click "Add/Edit Streams" button
+**Then** a searchable dropdown appears with all Xtream streams
 
 **Given** the search dropdown is open
 **When** I type in the search field
-**Then** XMLTV channels are filtered by name in real-time
-**And** results show channel name and ID
+**Then** Xtream streams are filtered by name in real-time
+**And** results show stream name, quality tier, and category
+**And** already-matched streams show a checkmark
 
-**Given** I select an XMLTV channel from dropdown
+**Given** I select an Xtream stream from dropdown
 **When** the selection is confirmed
-**Then** the channel_mapping is updated with:
-- New xmltv_channel_id
-- is_manual = true
-- match_confidence = 1.0 (manual match)
-**And** the channel row updates immediately
+**Then** a channel_mapping is created/updated with:
+- `is_manual` = true
+- `match_confidence` = 1.0 (manual match)
+**And** I can set it as primary or backup
 
-**Given** I want to unmatch a channel
-**When** I select "No match" option
-**Then** xmltv_channel_id is set to null
-**And** the channel shows as unmatched
+**Given** I want to remove a matched stream
+**When** I click the remove button on a stream
+**Then** the channel_mapping is deleted
+**And** if it was primary, the next highest confidence match becomes primary
 
 ---
 
@@ -729,19 +752,27 @@ So that I don't lose my channel mappings when my provider updates their list.
 
 **Acceptance Criteria:**
 
-**Given** a new channel scan is performed
+**Given** a new Xtream channel scan is performed
 **When** comparing to existing channels
 **Then** the system detects:
-- New channels (not previously seen)
-- Removed channels (no longer in provider list)
-- Changed channels (same stream_id, different name)
+- New Xtream streams (not previously seen)
+- Removed Xtream streams (no longer in provider list)
+- Changed Xtream streams (same stream_id, different name)
 
-**Given** provider changes are detected
+**Given** new Xtream streams are detected
 **When** auto-rematch runs
-**Then** new channels are matched using fuzzy algorithm
-**And** removed channels have their mappings preserved (for potential return)
-**And** changed channels are re-matched if confidence drops below threshold
-**And** manual matches are preserved (never auto-changed)
+**Then** new streams are matched to XMLTV channels using fuzzy algorithm
+**And** they are added as additional stream options (not replacing existing)
+
+**Given** an Xtream stream is removed by provider
+**When** auto-rematch runs
+**Then** the mapping is marked as unavailable
+**And** if it was primary, the next backup stream becomes primary
+**And** an event is logged
+
+**Given** manual matches exist
+**When** auto-rematch runs
+**Then** manual matches are NEVER auto-changed or removed
 
 **Given** a re-match event occurs
 **When** the process completes
@@ -750,22 +781,27 @@ So that I don't lose my channel mappings when my provider updates their list.
 
 ---
 
-### Story 3.5: Channel Enable/Disable Functionality
+### Story 3.5: Channel Enable/Disable for Plex
 
 As a user,
-I want to enable or disable individual channels,
+I want to enable or disable XMLTV channels for my Plex lineup,
 So that only the channels I want appear in Plex.
 
 **Acceptance Criteria:**
 
-**Given** a channel row in the Channels view
+**Given** an XMLTV channel row in the Channels view
 **When** I click the enable/disable toggle
-**Then** the channel's is_enabled status is updated immediately
+**Then** the `xmltv_channel_settings.is_enabled` status is updated immediately
 **And** the change is persisted to database
 
-**Given** a channel is disabled
-**When** the M3U playlist is generated
+**Given** an XMLTV channel is disabled
+**When** the M3U playlist is generated for Plex
 **Then** the disabled channel is excluded
+
+**Given** an XMLTV channel has no matched Xtream streams
+**When** I try to enable it
+**Then** I see a warning: "No stream source available"
+**And** the channel cannot be enabled until a stream is matched
 
 **Given** I restart the app
 **When** the Channels view loads
@@ -776,20 +812,19 @@ So that only the channels I want appear in Plex.
 ### Story 3.6: Drag-and-Drop Channel Reordering
 
 As a user,
-I want to reorder my channels by dragging them,
-So that I can organize my channel list to my preference.
+I want to reorder my XMLTV channels by dragging them,
+So that I can organize my Plex channel lineup to my preference.
 
 **Acceptance Criteria:**
 
 **Given** the Channels view
-**When** I drag a channel row
+**When** I drag an XMLTV channel row
 **Then** visual feedback shows the dragging state
 **And** drop zones are highlighted
 
 **Given** I drop a channel in a new position
 **When** the drop completes
-**Then** the channel order is updated
-**And** display_order values are recalculated
+**Then** the `xmltv_channel_settings.plex_display_order` values are recalculated
 **And** the M3U playlist reflects the new order
 
 **Given** I reorder channels
@@ -803,31 +838,70 @@ So that I can organize my channel list to my preference.
 ### Story 3.7: Bulk Channel Operations
 
 As a user,
-I want to enable/disable multiple channels at once,
+I want to enable/disable multiple XMLTV channels at once,
 So that I can quickly configure categories of channels.
 
 **Acceptance Criteria:**
 
 **Given** the Channels view
-**When** I select multiple channels using checkboxes
+**When** I select multiple XMLTV channels using checkboxes
 **Then** a bulk action toolbar appears
 
 **Given** multiple channels are selected
 **When** I click "Enable Selected"
-**Then** all selected channels are enabled
-**And** changes are persisted
+**Then** all selected channels with matched streams are enabled
+**And** channels without streams show a warning count
 
 **Given** multiple channels are selected
 **When** I click "Disable Selected"
 **Then** all selected channels are disabled
 
 **Given** the Channels view
-**When** I click "Select All" / "Select None"
-**Then** all channels are selected/deselected accordingly
+**When** I click "Select All Matched"
+**Then** only XMLTV channels with at least one Xtream stream are selected
 
 **Given** the Channels view has category filters
-**When** I filter by category and select all
+**When** I filter by XMLTV category and select all
 **Then** only filtered channels are selected for bulk operations
+
+---
+
+### Story 3.8: Manage Orphan Xtream Channels
+
+As a user,
+I want to see Xtream channels that don't match any XMLTV channel,
+So that I can decide whether to add them to my Plex lineup with placeholder EPG.
+
+**Acceptance Criteria:**
+
+**Given** the Channels view
+**When** I scroll to the "Unmatched Xtream Streams" section
+**Then** I see all Xtream channels not matched to any XMLTV channel
+**And** each shows: stream name, quality tier, category
+
+**Given** an orphan Xtream channel
+**When** I click "Promote to Plex"
+**Then** a dialog appears with fields:
+- Display name (pre-filled from Xtream name)
+- Channel icon URL (pre-filled from Xtream if available)
+**And** I can confirm to create a synthetic channel entry
+
+**Given** I promote an orphan Xtream channel
+**When** the promotion completes
+**Then** a synthetic `xmltv_channels` entry is created with `is_synthetic = true`
+**And** a `channel_mappings` entry links it to the Xtream stream
+**And** placeholder EPG is generated (2-hour looping blocks)
+**And** the channel moves to the main XMLTV channel list
+
+**Given** a synthetic channel exists
+**When** EPG refresh runs
+**Then** placeholder EPG is regenerated for the next 7 days
+**And** each block shows: "{Channel Name} - Live Programming"
+
+**Given** a synthetic channel
+**When** I view it in the Channels list
+**Then** it shows a "Synthetic" badge to distinguish from real XMLTV channels
+**And** I can edit its display name and icon
 
 ---
 
@@ -837,238 +911,258 @@ User can add tuner to Plex and watch live TV with automatic quality failover.
 
 ### Story 4.1: Serve M3U Playlist Endpoint
 
-As a Plex server,
-I want an M3U playlist endpoint,
-So that I can discover available channels.
+As a user,
+I want an M3U playlist URL I can add to Plex,
+So that Plex can see my channel lineup.
 
 **Acceptance Criteria:**
 
 **Given** the HTTP server is running
-**When** a GET request is made to `/playlist.m3u`
-**Then** a valid M3U playlist is returned with Content-Type `audio/x-mpegurl`
+**When** Plex (or any client) requests `GET /playlist.m3u`
+**Then** an M3U playlist is generated containing:
+- Only **enabled** XMLTV channels (from `xmltv_channel_settings.is_enabled = true`)
+- Channel names from XMLTV (not Xtream)
+- Channel logos from XMLTV (with Xtream fallback)
+- Channel numbers from `plex_display_order`
+- Stream URLs pointing to `/stream/{xmltv_channel_id}`
 
-**Given** enabled channels exist
-**When** the playlist is generated
-**Then** each enabled channel entry includes:
-- `#EXTINF` with channel number, name, and tvg attributes (tvg-id, tvg-name, tvg-logo)
-- Stream URL pointing to the proxy endpoint: `http://localhost:{port}/stream/{channel_id}`
-**And** channels are ordered by display_order
+**Given** the M3U is generated
+**When** a channel has multiple matched Xtream streams
+**Then** the stream URL uses the primary stream
+**And** failover streams are used transparently by the proxy
 
-**Given** no enabled channels exist
-**When** the playlist is requested
-**Then** an empty but valid M3U file is returned
+**Given** a synthetic channel (promoted orphan)
+**When** included in M3U
+**Then** it uses the synthetic channel's display name and icon
 
 ---
 
 ### Story 4.2: Serve XMLTV EPG Endpoint
 
-As a Plex server,
-I want an XMLTV EPG endpoint,
-So that I can display program guide information.
+As a user,
+I want an EPG/XMLTV URL I can add to Plex,
+So that Plex shows program guide data.
 
 **Acceptance Criteria:**
 
 **Given** the HTTP server is running
-**When** a GET request is made to `/epg.xml`
-**Then** a valid XMLTV file is returned with Content-Type `application/xml`
+**When** Plex requests `GET /epg.xml`
+**Then** XMLTV-format EPG is generated containing:
+- Only **enabled** XMLTV channels
+- Channel IDs matching those in M3U playlist
+- Program data for enabled channels only
+- 7-day program guide data
 
-**Given** EPG data exists for matched channels
-**When** the EPG is generated
-**Then** only enabled channels are included
-**And** channel IDs match those used in the M3U playlist
-**And** program data includes title, description, start/stop times, categories
+**Given** a synthetic channel exists
+**When** EPG is generated
+**Then** synthetic channels include placeholder programs:
+- 2-hour blocks: "{Channel Name} - Live Programming"
+- Regenerated for next 7 days
 
-**Given** the EPG file is large
-**When** serving the response
-**Then** the response is streamed (not buffered entirely in memory)
+**Given** EPG is requested frequently
+**When** generating the response
+**Then** the EPG is cached and only regenerated when:
+- Channel settings change (enable/disable)
+- EPG data is refreshed
+- Synthetic channels are added/modified
 
 ---
 
 ### Story 4.3: Implement HDHomeRun Emulation
 
-As a Plex server,
-I want HDHomeRun discovery endpoints,
-So that Plex can automatically detect and add this tuner.
+As a user,
+I want Plex to auto-discover my tuner,
+So that I don't have to manually enter URLs.
 
 **Acceptance Criteria:**
 
 **Given** the HTTP server is running
-**When** a GET request is made to `/discover.json`
-**Then** HDHomeRun device info is returned:
-```json
-{
-  "FriendlyName": "iptv",
-  "ModelNumber": "HDHR5-4K",
-  "FirmwareName": "hdhomerun5_atsc",
-  "FirmwareVersion": "20200101",
-  "DeviceID": "{generated_id}",
-  "BaseURL": "http://{local_ip}:{port}",
-  "LineupURL": "http://{local_ip}:{port}/lineup.json",
-  "TunerCount": {tuner_count_from_xtream}
-}
-```
+**When** Plex requests `GET /discover.json`
+**Then** a valid HDHomeRun discovery response is returned with:
+- FriendlyName: "StreamForge"
+- ModelNumber: "HDHR5-4K"
+- TunerCount from Xtream account
+- BaseURL and LineupURL with local IP and port
 
 **Given** the HTTP server is running
-**When** a GET request is made to `/lineup.json`
-**Then** the channel lineup is returned with GuideNumber, GuideName, and URL for each enabled channel
+**When** Plex requests `GET /lineup.json`
+**Then** a channel lineup is returned with enabled XMLTV channels
+**And** GuideName uses XMLTV channel display_name
+**And** GuideNumber uses plex_display_order
+**And** URL points to stream endpoint
 
 **Given** the HTTP server is running
-**When** a GET request is made to `/lineup_status.json`
-**Then** lineup status is returned indicating scan is not in progress
-
-**Given** the tuner count from Xtream account
-**When** TunerCount is reported
-**Then** it matches the subscription's max_connections (FR38)
+**When** Plex requests `GET /lineup_status.json`
+**Then** a valid status response is returned indicating no scan in progress
 
 ---
 
 ### Story 4.4: Stream Proxy with Quality Selection
 
-As a user watching through Plex,
-I want streams proxied through the app with best quality selected,
+As a user,
+I want streams to automatically use the best available quality,
 So that I get the best viewing experience.
 
 **Acceptance Criteria:**
 
-**Given** Plex requests a stream via `/stream/{channel_id}`
-**When** the proxy handles the request
-**Then** it connects to the Xtream provider for that channel
+**Given** Plex requests `GET /stream/{xmltv_channel_id}`
+**When** the stream proxy handles the request
+**Then** it looks up the primary Xtream stream for the XMLTV channel
 **And** selects the highest available quality tier (4K > HD > SD)
-**And** streams data back to Plex with minimal latency
+**And** proxies the stream from Xtream to Plex
 
-**Given** a stream is requested
-**When** the connection is established
-**Then** stream starts within 3 seconds (NFR1)
-**And** the stream is tracked in active_streams
+**Given** an active stream
+**When** the proxy is running
+**Then** stream data is passed through with minimal buffering
+**And** stream start time is < 3 seconds (NFR1)
+**And** CPU usage during streaming is < 15% (NFR7)
 
-**Given** multiple concurrent stream requests
-**When** streams are within tuner limit
-**Then** all streams are served successfully
-**And** streams beyond tuner limit return appropriate error
+**Given** the tuner limit is reached
+**When** a new stream is requested
+**Then** an appropriate error is returned to Plex
+**And** an event is logged
 
 ---
 
 ### Story 4.5: Automatic Stream Failover
 
-As a user watching through Plex,
-I want automatic failover if a stream fails,
+As a user,
+I want streams to automatically recover from failures,
 So that my viewing isn't interrupted by provider issues.
 
 **Acceptance Criteria:**
 
-**Given** an active stream
+**Given** an active stream from primary Xtream source
 **When** a failure is detected (timeout 5s, connection error, HTTP error)
-**Then** the proxy automatically switches to the next quality tier
-**And** failover completes within 2 seconds (NFR2)
+**Then** the proxy immediately fails over to the next backup stream
+**And** failover completes in < 2 seconds (NFR2)
 **And** Plex is unaware of the switch (FR33)
 
-**Given** failover to a lower quality succeeds
-**When** 60 seconds pass without errors
-**Then** the proxy attempts to upgrade back to original quality
-**And** if upgrade fails, it stays on current quality
+**Given** multiple backup streams exist for an XMLTV channel
+**When** failover occurs
+**Then** streams are tried in priority order (by `stream_priority`)
+**And** each failure is logged
 
-**Given** all quality tiers fail
-**When** no working stream is available
-**Then** an error is returned to Plex
-**And** the failure is logged with details
+**Given** a stream has failed over to a lower quality
+**When** 60 seconds have passed (recovery period)
+**Then** the proxy attempts to upgrade back to higher quality
+**And** if successful, continues on higher quality
+**And** if failed, stays on current quality
 
-**Given** stream failovers occur
-**When** reviewing the logs
-**Then** all failover events are recorded with:
-- Channel, timestamp
-- Original quality, failover quality
-- Failure reason
+**Given** all streams for a channel fail
+**When** no more backups available
+**Then** the stream ends with error
+**And** an event is logged with details
 
-**And** >99% of recoverable failures are handled transparently (NFR11)
+**Given** stream failover events occur
+**When** the event is logged
+**Then** the log includes: channel, from_stream, to_stream, reason, timestamp
 
 ---
 
 ### Story 4.6: Display Plex Configuration URLs
 
 As a user,
-I want to see the URLs needed to add this tuner to Plex,
-So that I can complete setup without guessing.
+I want to see the URLs I need to configure Plex,
+So that I can easily set up my tuner.
 
 **Acceptance Criteria:**
 
 **Given** the Dashboard or Settings view
-**When** I look at the "Plex Setup" section
+**When** I look at the Plex Integration section
 **Then** I see:
-- Device URL: `http://{local_ip}:{port}`
-- M3U URL: `http://{local_ip}:{port}/playlist.m3u`
-- EPG URL: `http://{local_ip}:{port}/epg.xml`
+- M3U Playlist URL: `http://{local_ip}:{port}/playlist.m3u`
+- EPG/XMLTV URL: `http://{local_ip}:{port}/epg.xml`
+- HDHomeRun URL: `http://{local_ip}:{port}` (for manual tuner setup)
+- Tuner count: {count} (from Xtream account)
 
-**Given** the URLs are displayed
-**When** I click a "Copy" button next to each URL
+**Given** any URL is displayed
+**When** I click a "Copy" button next to it
 **Then** the URL is copied to clipboard
-**And** a confirmation toast is shown
+**And** a toast notification confirms the copy
 
-**Given** the port is changed in settings
-**When** I view the URLs
-**Then** they reflect the current configured port
+**Given** the HTTP server is not running
+**When** I view the Plex Integration section
+**Then** I see a warning that the server needs to be started
+**And** URLs show as unavailable
 
 ---
 
 ## Epic 5: EPG Viewer & Discovery
 
-User can browse and search the program guide within the application.
+User can browse and search the program guide for enabled channels (Plex preview).
 
 ### Story 5.1: EPG Grid Browser with Time Navigation
 
 As a user,
-I want to browse the program guide,
-So that I can see what's on now and plan my viewing.
+I want to browse the EPG in a grid view,
+So that I can see what's on across all my enabled channels.
 
 **Acceptance Criteria:**
 
 **Given** the EPG view
 **When** it loads
 **Then** I see a grid showing:
-- Channels as rows
-- Time slots as columns
-- Program blocks with title and duration
+- Rows: Enabled XMLTV channels only (Plex preview mode)
+- Columns: Time slots (30-minute increments)
+- Cells: Program titles with duration bars
 
 **Given** the EPG grid
 **When** I use time navigation controls
 **Then** I can jump to:
-- Now (current time)
-- Tonight (prime time)
+- Now (current time centered)
+- Tonight (prime time 7-10 PM)
 - Tomorrow
-- Specific date within available EPG range
+- +/- 1 day navigation
+- Date picker for up to 7 days ahead
 
-**Given** many channels exist
-**When** scrolling the EPG grid
-**Then** the channel column remains sticky/visible
-**And** virtual rendering keeps performance smooth (NFR5)
+**Given** the EPG grid with many channels
+**When** scrolling vertically and horizontally
+**Then** the UI remains responsive (<100ms, NFR5)
+**And** TanStack Virtual is used for efficient rendering
+
+**Given** a program cell in the grid
+**When** I click on it
+**Then** the program details panel opens (Story 5.3)
 
 ---
 
 ### Story 5.2: EPG Search Functionality
 
 As a user,
-I want to search the program guide,
-So that I can find specific shows or content.
+I want to search the EPG by various criteria,
+So that I can find specific programs I'm interested in.
 
 **Acceptance Criteria:**
 
 **Given** the EPG view
-**When** I enter text in the search field
-**Then** programs are filtered in real-time by:
-- Program title (FR40)
-- Channel name (FR40)
-- Description text (FR40)
+**When** I click on the search field
+**Then** I can enter search text
 
-**Given** search results exist
+**Given** I enter search text
+**When** the search executes
+**Then** results are filtered by:
+- Program title (partial match)
+- Program description (partial match)
+- Channel name (partial match)
+**And** only enabled XMLTV channels are searched
+
+**Given** search results are displayed
 **When** I view the results
 **Then** each result shows:
 - Program title
 - Channel name
-- Air time
-- Brief description snippet
+- Start time and duration
+- Relevance indicator
 
 **Given** I click a search result
 **When** the selection is made
-**Then** the EPG grid scrolls to that program's time and channel
+**Then** the EPG grid scrolls to that program's time slot
+**And** the program details panel opens
+
+**Given** the search field
+**When** I clear the search
+**Then** the EPG returns to normal grid view
 
 ---
 
@@ -1076,24 +1170,29 @@ So that I can find specific shows or content.
 
 As a user,
 I want to see detailed information about a program,
-So that I can decide whether to watch it.
+So that I can decide if I want to watch it.
 
 **Acceptance Criteria:**
 
-**Given** the EPG grid or search results
-**When** I click on a program
-**Then** a details panel/modal appears showing:
-- Full title
-- Complete description
-- Channel name and logo
+**Given** a program is selected (from grid or search)
+**When** the details panel opens
+**Then** I see:
+- Program title
+- Channel name and logo (XMLTV info)
 - Start time and end time
 - Duration
-- Category/genre
-- Episode info (if available)
+- Description (if available)
+- Category/genre (if available)
+- Episode info (if available, e.g., "S02E05")
 
 **Given** the program details panel
-**When** I click outside or press close
-**Then** the panel closes and I return to the EPG view
+**When** I click outside or press Escape
+**Then** the panel closes
+
+**Given** a program on a channel with multiple streams
+**When** viewing details
+**Then** I see which Xtream stream is currently primary
+**And** stream quality tier is displayed
 
 ---
 
@@ -1104,28 +1203,31 @@ User can configure the app, view event logs, and keep the app updated.
 ### Story 6.1: Settings GUI for Server and Startup Options
 
 As a user,
-I want to configure application settings through the GUI,
-So that I don't need to edit config files.
+I want to configure server and startup settings via GUI,
+So that I can customize how the app runs without editing config files.
 
 **Acceptance Criteria:**
 
 **Given** the Settings view
 **When** it loads
-**Then** I see configuration options for:
-- Local server port (FR44)
-- Auto-start on boot toggle (FR45)
-- EPG refresh schedule time (FR46)
-- Log verbosity level (FR52)
+**Then** I see configuration sections:
+- **Server Settings:** Port number (default 5004)
+- **Startup Settings:** Auto-start on boot toggle
+- **EPG Settings:** Refresh schedule time picker
 
-**Given** I change a setting
-**When** I click "Save" or changes auto-save
-**Then** the setting is persisted to the database
-**And** changes take effect (some may require restart notification)
+**Given** I change the server port
+**When** I save the setting
+**Then** the HTTP server restarts on the new port
+**And** Plex configuration URLs update to show new port
 
-**Given** I enter an invalid value (e.g., invalid port)
-**When** validation runs
-**Then** an error message explains the issue
-**And** the invalid value is not saved
+**Given** I toggle auto-start on boot
+**When** the setting is saved
+**Then** the OS autostart entry is created/removed (Windows registry, macOS launchd, Linux desktop file)
+
+**Given** I change EPG refresh time
+**When** the setting is saved
+**Then** the scheduler is updated with the new time
+**And** next refresh time is displayed
 
 ---
 
@@ -1133,63 +1235,71 @@ So that I don't need to edit config files.
 
 As a user,
 I want to export and import my configuration,
-So that I can backup settings or transfer to another machine.
+So that I can backup my settings or migrate to a new machine.
 
 **Acceptance Criteria:**
 
 **Given** the Settings view
 **When** I click "Export Configuration"
-**Then** a save dialog opens
-**And** I can save a JSON file containing:
+**Then** a file save dialog opens
+**And** a JSON file is saved containing:
 - All settings
 - Account info (excluding passwords)
-- XMLTV sources
-- Channel mappings and order
+- XMLTV source URLs
+- Channel mappings and settings
+- Display order preferences
 
-**Given** I have an exported config file
-**When** I click "Import Configuration"
-**Then** a file picker opens
-**And** selecting a valid file imports the settings
-**And** I'm prompted to re-enter passwords for security
+**Given** I have a configuration export file
+**When** I click "Import Configuration" and select the file
+**Then** a preview dialog shows what will be imported
+**And** I can confirm or cancel
 
-**Given** an invalid or corrupted config file
+**Given** I confirm the import
+**When** the import completes
+**Then** all settings are applied
+**And** I'm prompted to re-enter account passwords (not exported for security)
+**And** a success message is shown
+
+**Given** the import file is invalid or corrupted
 **When** import is attempted
-**Then** a clear error message is shown
-**And** existing settings are not modified
+**Then** an error message explains the problem
+**And** existing configuration is not modified
 
 ---
 
 ### Story 6.3: Event Logging System
 
 As a developer/user,
-I want comprehensive event logging,
-So that I can troubleshoot issues.
+I want the app to log important events,
+So that I can troubleshoot issues and understand system behavior.
 
 **Acceptance Criteria:**
 
-**Given** the application is running
+**Given** the app is running
 **When** significant events occur
 **Then** they are logged to the `event_log` table with:
 - Timestamp
 - Level (info, warn, error)
-- Category (connection, failover, match, etc.)
+- Category (connection, stream, match, epg, system)
 - Message
 - Details (JSON for additional context)
 
-**Given** configurable log verbosity
-**When** set to "error" level
-**Then** only errors are logged
-
-**Given** configurable log verbosity
-**When** set to "info" level
-**Then** info, warnings, and errors are logged
-
-**Given** events include:
-- Xtream connection attempts and results
-- Stream starts, failures, and failovers
-- Channel matching operations
-- EPG refresh operations
+**Events to log:**
+- Xtream connection success/failure
+- Stream start/stop/failover
+- EPG refresh start/complete/error
+- Channel matching results
+- Provider changes detected
 - Configuration changes
+- Auto-start events
+
+**Given** log verbosity is set to "minimal"
+**When** events occur
+**Then** only warn and error level events are logged
+
+**Given** log verbosity is set to "verbose"
+**When** events occur
+**Then** all events including info level are logged
 
 ---
 
@@ -1197,36 +1307,36 @@ So that I can troubleshoot issues.
 
 As a user,
 I want to view event logs in the app,
-So that I can understand what's happening and troubleshoot.
+So that I can see what's happening without checking external files.
 
 **Acceptance Criteria:**
 
 **Given** the Logs view
 **When** it loads
-**Then** I see a chronological list of events with:
-- Timestamp
-- Level indicator (color-coded)
-- Category
-- Message
+**Then** I see a list of recent events (most recent first)
+**And** each entry shows: timestamp, level icon, category, message
+**And** I can expand an entry to see full details
 
-**Given** unread events exist
-**When** I look at the navigation
-**Then** a badge shows the count of unread events (FR50)
+**Given** events have occurred since last viewed
+**When** I look at the navigation sidebar
+**Then** a notification badge shows the count of unread events
 
-**Given** I view the Logs
-**When** events are displayed
-**Then** they are marked as read
-**And** the badge count updates
+**Given** I open the Logs view
+**When** viewing events
+**Then** events are automatically marked as read
+**And** the notification badge clears
 
 **Given** the Logs view
 **When** I click "Clear Log"
-**Then** all events are deleted after confirmation
-**And** the log view is empty
+**Then** a confirmation dialog appears
+**And** on confirm, all events are deleted from database
 
-**Given** many log entries exist
-**When** viewing the log
-**Then** filtering by level and category is available
-**And** the list is virtualized for performance
+**Given** the Logs view
+**When** I use filter controls
+**Then** I can filter by:
+- Level (info, warn, error)
+- Category
+- Date range
 
 ---
 
@@ -1238,27 +1348,37 @@ So that I always have the latest features and fixes.
 
 **Acceptance Criteria:**
 
-**Given** the app starts or Settings view
-**When** I click "Check for Updates" or auto-check runs
-**Then** the app queries the update server
-**And** shows current version and available version (if any)
+**Given** the app starts
+**When** it checks for updates (on launch, configurable)
+**Then** it queries the update server for new versions
+**And** if an update is available, a notification appears
 
 **Given** an update is available
-**When** I click "Download & Install"
-**Then** the update is downloaded with progress indicator
-**And** the update signature is verified (Ed25519, NFR22)
-**And** after download completes, I'm prompted to restart
+**When** I see the notification
+**Then** I can click to see release notes
+**And** I can choose to "Download & Install" or "Remind Later"
+
+**Given** I click "Download & Install"
+**When** the download completes
+**Then** the update package signature is verified (Ed25519, NFR22)
+**And** on verification success, the update is installed
+**And** the app restarts with the new version
+
+**Given** signature verification fails
+**When** the update is rejected
+**Then** an error is shown explaining the security issue
+**And** the update is not applied
+**And** the event is logged
+
+**Given** the Settings view
+**When** I look at the Updates section
+**Then** I see:
+- Current version
+- "Check for Updates" button
+- Auto-check toggle (on/off)
+- Last check timestamp
 
 **Given** an update is installed
 **When** the app restarts
-**Then** all settings and data are preserved (FR55)
-**And** the new version is running
-
-**Given** the update check or download fails
-**When** an error occurs
-**Then** a clear error message is shown
-**And** the app continues running normally
-
-**Given** no update is available
-**When** the check completes
-**Then** a message confirms I'm on the latest version
+**Then** all settings are preserved (FR55)
+**And** database migrations run if needed

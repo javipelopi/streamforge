@@ -265,7 +265,7 @@ He finds a fight on a channel he'd disabled. He enables it. While he's there, he
 
 ### Channel Matching
 
-- FR14: System can perform fuzzy matching between Xtream channels and XMLTV channels
+- FR14: System can perform fuzzy matching to associate Xtream streams with XMLTV channels. XMLTV channels are the primary channel list that defines what appears in Plex (channel names, numbers, icons, and EPG data)
 - FR15: System can display match confidence scores for each channel pairing
 - FR16: System can auto-match channels above confidence threshold
 - FR17: User can manually override channel matches via search dropdown
@@ -275,12 +275,13 @@ He finds a fight on a channel he'd disabled. He enables it. While he's there, he
 
 ### Channel Management
 
-- FR21: User can view all channels with their match status
+- FR21: User can view all XMLTV channels with their matched Xtream stream status. The Channels view shows XMLTV channels as the primary list, with indicators showing which Xtream streams are matched to each
 - FR22: User can enable or disable individual channels
 - FR23: User can reorder channels via drag-and-drop
 - FR24: User can bulk-enable or bulk-disable channels
 - FR25: System can remember channel order and enabled state across restarts
 - FR26: Unmatched channels default to disabled
+- FR26a: User can view all channels from all sources (XMLTV and Xtream) in the Channels tab, with icons indicating source type and match relationships. The XMLTV channel list defines the Plex lineup; Xtream streams are the video sources matched to those channels
 
 ### Stream Handling
 
@@ -426,3 +427,4 @@ He finds a fight on a channel he'd disabled. He enables it. While he's there, he
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-18 | Javier | Initial PRD creation |
+| 1.1 | 2026-01-19 | Bob (SM) | Course correction: Updated FR14, FR21, added FR26a to clarify XMLTV channels as primary for Plex lineup |
