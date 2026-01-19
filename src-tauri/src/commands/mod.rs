@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod channels;
 pub mod epg;
+pub mod matcher;
 
 use diesel::prelude::*;
 use serde::Serialize;

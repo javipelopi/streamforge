@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod credentials;
 pub mod db;
+pub mod matcher;
 pub mod scheduler;
 pub mod server;
 pub mod xmltv;
@@ -269,7 +270,15 @@ pub fn run() {
             commands::epg::get_xmltv_channels,
             commands::epg::get_programs,
             commands::epg::get_epg_schedule,
-            commands::epg::set_epg_schedule
+            commands::epg::set_epg_schedule,
+            commands::matcher::run_channel_matching,
+            commands::matcher::get_match_stats,
+            commands::matcher::get_channel_mappings_for_xmltv,
+            commands::matcher::get_xmltv_channel_settings,
+            commands::matcher::get_match_threshold,
+            commands::matcher::set_match_threshold,
+            commands::matcher::normalize_channel_name,
+            commands::matcher::calculate_match_score
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

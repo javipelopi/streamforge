@@ -1,7 +1,10 @@
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::db::schema::{accounts, programs, settings, xmltv_channels, xmltv_sources, xtream_channels};
+use crate::db::schema::{
+    accounts, channel_mappings, programs, settings, xmltv_channel_settings, xmltv_channels,
+    xmltv_sources, xtream_channels,
+};
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone)]
 #[diesel(table_name = settings)]
@@ -319,4 +322,123 @@ impl NewProgram {
         self.episode_info = Some(episode_info.into());
         self
     }
+}
+
+// ============================================================================
+// Channel Mapping Models (Story 3-1)
+// ============================================================================
+
+/// Channel mapping model for querying (XMLTV → Xtream associations)
+/// One XMLTV channel can have multiple Xtream streams mapped to it
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize)]
+#[diesel(table_name = channel_mappings)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelMapping {
+    pub id: Option<i32>,
+    pub xmltv_channel_id: i32,
+    pub xtream_channel_id: i32,
+    pub match_confidence: Option<f32>,
+    pub is_manual: Option<i32>,
+    pub is_primary: Option<i32>,
+    pub stream_priority: Option<i32>,
+    pub created_at: String,
+}
+
+/// New channel mapping for insertion
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = channel_mappings)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewChannelMapping {
+    pub xmltv_channel_id: i32,
+    pub xtream_channel_id: i32,
+    pub match_confidence: Option<f32>,
+    pub is_manual: i32,
+    pub is_primary: i32,
+    pub stream_priority: i32,
+}
+
+impl NewChannelMapping {
+    pub fn new(
+        xmltv_channel_id: i32,
+        xtream_channel_id: i32,
+        match_confidence: Option<f32>,
+        is_primary: bool,
+        stream_priority: i32,
+    ) -> Self {
+        Self {
+            xmltv_channel_id,
+            xtream_channel_id,
+            match_confidence,
+            is_manual: 0,
+            is_primary: if is_primary { 1 } else { 0 },
+            stream_priority,
+        }
+    }
+
+    pub fn manual(xmltv_channel_id: i32, xtream_channel_id: i32) -> Self {
+        Self {
+            xmltv_channel_id,
+            xtream_channel_id,
+            match_confidence: None,
+            is_manual: 1,
+            is_primary: 1,
+            stream_priority: 0,
+        }
+    }
+}
+
+// ============================================================================
+// XMLTV Channel Settings Models (Story 3-1)
+// ============================================================================
+
+/// XMLTV channel settings for Plex lineup (one per XMLTV channel)
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize)]
+#[diesel(table_name = xmltv_channel_settings)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[serde(rename_all = "camelCase")]
+pub struct XmltvChannelSettings {
+    pub id: Option<i32>,
+    pub xmltv_channel_id: i32,
+    pub is_enabled: Option<i32>,
+    pub plex_display_order: Option<i32>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// New XMLTV channel settings for insertion
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = xmltv_channel_settings)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewXmltvChannelSettings {
+    pub xmltv_channel_id: i32,
+    pub is_enabled: i32,
+    pub plex_display_order: Option<i32>,
+}
+
+impl NewXmltvChannelSettings {
+    pub fn new(xmltv_channel_id: i32, is_enabled: bool) -> Self {
+        Self {
+            xmltv_channel_id,
+            is_enabled: if is_enabled { 1 } else { 0 },
+            plex_display_order: None,
+        }
+    }
+
+    pub fn disabled(xmltv_channel_id: i32) -> Self {
+        Self::new(xmltv_channel_id, false)
+    }
+
+    pub fn enabled(xmltv_channel_id: i32) -> Self {
+        Self::new(xmltv_channel_id, true)
+    }
+}
+
+/// Changeset for updating XMLTV channel settings
+#[derive(AsChangeset, Debug, Clone)]
+#[diesel(table_name = xmltv_channel_settings)]
+pub struct XmltvChannelSettingsUpdate {
+    pub is_enabled: Option<i32>,
+    pub plex_display_order: Option<i32>,
+    pub updated_at: Option<String>,
 }
