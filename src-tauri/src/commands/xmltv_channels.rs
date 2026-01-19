@@ -100,15 +100,15 @@ pub fn get_xmltv_channels_with_mappings(
         .filter_map(|channel| {
             let channel_id = channel.id?;
 
-            // Get settings (default to disabled if no matches)
+            // Get settings (default to disabled if no matches per AC #3)
             let settings = settings_map.get(&channel_id);
             let channel_mappings = mappings_map.get(&channel_id);
-            let has_matches = channel_mappings.map(|m| !m.is_empty()).unwrap_or(false);
 
-            // Default is_enabled based on whether channel has matches
+            // Default is_enabled: if settings exist, use them; otherwise default to false (disabled)
+            // AC #3: Unmatched channels should be disabled by default
             let is_enabled = settings
                 .map(|s| s.is_enabled.unwrap_or(0) != 0)
-                .unwrap_or(has_matches);
+                .unwrap_or(false);
 
             let plex_display_order = settings.and_then(|s| s.plex_display_order);
 
@@ -139,7 +139,8 @@ pub fn get_xmltv_channels_with_mappings(
                 channel_id: channel.channel_id,
                 display_name: channel.display_name,
                 icon: channel.icon,
-                is_synthetic: false, // XMLTV channels from sources are not synthetic
+                // TODO: is_synthetic field not in DB schema yet - defaults to false
+                is_synthetic: false,
                 is_enabled,
                 plex_display_order,
                 match_count: matches.len() as i32,
@@ -195,28 +196,45 @@ pub fn set_primary_stream(
 
     // Run in transaction
     conn.transaction(|conn| {
-        // First, set all mappings for this XMLTV channel to non-primary
-        diesel::update(
-            channel_mappings::table
-                .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id)),
-        )
-        .set((
-            channel_mappings::is_primary.eq(0),
-            channel_mappings::stream_priority.eq(channel_mappings::stream_priority + 1),
-        ))
-        .execute(conn)?;
+        // Load all current mappings to preserve original priority order
+        let mut all_mappings: Vec<ChannelMapping> = channel_mappings::table
+            .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
+            .order_by(channel_mappings::stream_priority.asc())
+            .load::<ChannelMapping>(conn)?;
 
-        // Then, set the specified stream as primary
-        diesel::update(
-            channel_mappings::table
-                .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
-                .filter(channel_mappings::xtream_channel_id.eq(xtream_channel_id)),
-        )
-        .set((
-            channel_mappings::is_primary.eq(1),
-            channel_mappings::stream_priority.eq(0),
-        ))
-        .execute(conn)?;
+        // Find the mapping that should become primary
+        let new_primary_idx = all_mappings
+            .iter()
+            .position(|m| m.xtream_channel_id == xtream_channel_id)
+            .ok_or_else(|| diesel::result::Error::NotFound)?;
+
+        // Update priorities: new primary gets 0, others shift by 1
+        for (idx, mapping) in all_mappings.iter_mut().enumerate() {
+            let mapping_id = mapping.id.ok_or(diesel::result::Error::NotFound)?;
+
+            if idx == new_primary_idx {
+                // Set as primary with priority 0
+                diesel::update(
+                    channel_mappings::table.filter(channel_mappings::id.eq(Some(mapping_id)))
+                )
+                .set((
+                    channel_mappings::is_primary.eq(1),
+                    channel_mappings::stream_priority.eq(0),
+                ))
+                .execute(conn)?;
+            } else {
+                // Set as backup with priority based on original order
+                let new_priority = if idx < new_primary_idx { idx + 1 } else { idx };
+                diesel::update(
+                    channel_mappings::table.filter(channel_mappings::id.eq(Some(mapping_id)))
+                )
+                .set((
+                    channel_mappings::is_primary.eq(0),
+                    channel_mappings::stream_priority.eq(new_priority as i32),
+                ))
+                .execute(conn)?;
+            }
+        }
 
         // Load and return updated mappings
         let mappings: Vec<(ChannelMapping, XtreamChannel)> = channel_mappings::table
@@ -261,6 +279,11 @@ pub fn toggle_xmltv_channel(
     channel_id: i32,
 ) -> Result<XmltvChannelWithMappings, String> {
     use crate::db::models::NewXmltvChannelSettings;
+
+    // Validate input
+    if channel_id <= 0 {
+        return Err("Invalid channel ID".to_string());
+    }
 
     let mut conn = db
         .get_connection()
@@ -339,6 +362,7 @@ pub fn toggle_xmltv_channel(
             channel_id: channel.channel_id,
             display_name: channel.display_name,
             icon: channel.icon,
+            // TODO: is_synthetic field not in DB schema yet - defaults to false
             is_synthetic: false,
             is_enabled: new_enabled,
             plex_display_order: settings.and_then(|s| s.plex_display_order),

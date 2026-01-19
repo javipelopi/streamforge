@@ -62,7 +62,7 @@ development_status:
   # Epic 3: Channel Discovery & Matching (XMLTV-First) - REWRITTEN
   epic-3: in-progress
   3-1-implement-fuzzy-channel-matching-algorithm: done
-  3-2-display-xmltv-channel-list-with-match-status: review
+  3-2-display-xmltv-channel-list-with-match-status: done
   3-3-manual-match-override-via-search-dropdown: backlog
   3-4-auto-rematch-on-provider-changes: backlog
   3-5-channel-enable-disable-for-plex: backlog

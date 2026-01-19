@@ -31,6 +31,7 @@ export function XmltvChannelsList({
   const parentRef = useRef<HTMLDivElement>(null);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   const [updatingChannels, setUpdatingChannels] = useState<Set<number>>(new Set());
+  const [togglingChannels, setTogglingChannels] = useState<Set<number>>(new Set());
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
 
   // Calculate row height based on expanded state
@@ -76,6 +77,23 @@ export function XmltvChannelsList({
       return next;
     });
   }, []);
+
+  // Handle toggle channel
+  const handleToggleChannel = useCallback(
+    async (channelId: number) => {
+      setTogglingChannels((prev) => new Set(prev).add(channelId));
+      try {
+        await onToggleChannel(channelId);
+      } finally {
+        setTogglingChannels((prev) => {
+          const next = new Set(prev);
+          next.delete(channelId);
+          return next;
+        });
+      }
+    },
+    [onToggleChannel]
+  );
 
   // Handle make primary
   const handleMakePrimary = useCallback(
@@ -187,6 +205,7 @@ export function XmltvChannelsList({
           const channel = channels[virtualItem.index];
           const isExpanded = expandedRows.has(channel.id);
           const isUpdating = updatingChannels.has(channel.id);
+          const isToggling = togglingChannels.has(channel.id);
           const isFocused = focusedIndex === virtualItem.index;
 
           const hasMatches = channel.matchCount > 0;
@@ -210,7 +229,8 @@ export function XmltvChannelsList({
                 channel={channel}
                 isExpanded={isExpanded}
                 onToggleExpand={() => handleToggleExpand(channel.id)}
-                onToggleEnabled={() => onToggleChannel(channel.id)}
+                onToggleEnabled={() => handleToggleChannel(channel.id)}
+                isTogglingEnabled={isToggling}
               />
 
               {/* Expanded matched streams */}

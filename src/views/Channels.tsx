@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { XmltvChannelsList } from '../components/channels';
 import {
@@ -19,6 +19,14 @@ import {
  */
 export function Channels() {
   const queryClient = useQueryClient();
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'error' | 'success'>('error');
+
+  const showToast = useCallback((message: string, type: 'error' | 'success' = 'error') => {
+    setToastMessage(message);
+    setToastType(type);
+    setTimeout(() => setToastMessage(null), 5000);
+  }, []);
 
   // Fetch XMLTV channels with mappings using TanStack Query
   const {
@@ -47,6 +55,7 @@ export function Channels() {
     },
     onError: (err) => {
       console.error('Failed to toggle channel:', err);
+      showToast(`Failed to toggle channel: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
       // Refetch to get actual state on error
       refetch();
     },
@@ -75,6 +84,7 @@ export function Channels() {
     },
     onError: (err) => {
       console.error('Failed to set primary stream:', err);
+      showToast(`Failed to change primary stream: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
       // Refetch to get actual state on error
       refetch();
     },
@@ -174,6 +184,29 @@ export function Channels() {
           onSetPrimaryStream={handleSetPrimaryStream}
         />
       </div>
+
+      {/* Toast notification */}
+      {toastMessage && (
+        <div
+          className={`fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg max-w-md z-50 ${
+            toastType === 'error'
+              ? 'bg-red-600 text-white'
+              : 'bg-green-600 text-white'
+          }`}
+          role="alert"
+        >
+          <div className="flex items-center gap-2">
+            <span>{toastMessage}</span>
+            <button
+              onClick={() => setToastMessage(null)}
+              className="ml-auto text-white hover:text-gray-200 text-xl font-bold"
+              aria-label="Close notification"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
