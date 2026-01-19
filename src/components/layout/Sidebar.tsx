@@ -3,9 +3,11 @@
  * Story 1.3: Create React GUI Shell with Routing
  *
  * Dark-themed sidebar with navigation menu items
+ * Supports keyboard shortcuts: Alt+1-6 for navigation, Ctrl+B to toggle
  */
 import type { ComponentType } from 'react';
-import { NavLink } from 'react-router-dom';
+import { useEffect } from 'react';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   HomeIcon,
   VideoIcon,
@@ -29,11 +31,34 @@ const iconMap: Record<string, ComponentType<{ className?: string }>> = {
 
 export function Sidebar() {
   const { sidebarOpen, toggleSidebar } = useAppStore();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleKeyDown = (e: any) => {
+      // Alt+1-6 for navigation
+      if (e.altKey && e.key >= '1' && e.key <= '6') {
+        e.preventDefault();
+        const index = parseInt(e.key) - 1;
+        if (NAV_ITEMS[index]) {
+          navigate(NAV_ITEMS[index].path);
+        }
+      }
+      // Ctrl+B (or Cmd+B on Mac) to toggle sidebar
+      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigate, toggleSidebar]);
 
   return (
     <aside
       data-testid="sidebar"
-      className={`bg-gray-900 text-white h-screen fixed left-0 top-0 transition-all duration-300 ${
+      className={`bg-gray-900 text-white h-screen fixed left-0 top-0 transition-all duration-300 overflow-hidden ${
         sidebarOpen ? 'w-64' : 'w-16 collapsed'
       }`}
     >

@@ -209,6 +209,14 @@ test.describe('Story 1.3: React GUI Shell with Routing', () => {
    * AC1 (continued): TanStack Query configuration
    */
   test('should have TanStack Query configured', async ({ page }) => {
+    // Collect console errors
+    const consoleErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') {
+        consoleErrors.push(msg.text());
+      }
+    });
+
     // GIVEN: The application is launched
     await page.goto('/');
 
@@ -218,17 +226,8 @@ test.describe('Story 1.3: React GUI Shell with Routing', () => {
     await expect(appRoot).toBeVisible();
 
     // THEN: QueryClient is configured (will verify via React DevTools or exposed provider)
-    // Note: This is a structural test - actual implementation will provide verification
-    // For now, just verify app renders without query-related errors
-    const consoleErrors: string[] = [];
-    page.on('console', (msg) => {
-      if (msg.type() === 'error') {
-        consoleErrors.push(msg.text());
-      }
-    });
-
-    // Wait a moment to catch any initialization errors
-    await page.waitForTimeout(100); // Minimal wait for console errors
+    // Wait for app to be fully loaded using network idle state
+    await page.waitForLoadState('networkidle');
 
     // Filter out query-related errors
     const queryErrors = consoleErrors.filter(

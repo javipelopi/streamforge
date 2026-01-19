@@ -4,7 +4,7 @@
  */
 export function Dashboard() {
   return (
-    <div className="p-6" data-testid="dashboard-view">
+    <div data-testid="dashboard-view">
       <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
       <p className="text-gray-600">
         Status overview and quick actions will appear here.

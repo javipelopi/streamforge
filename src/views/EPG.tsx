@@ -4,7 +4,7 @@
  */
 export function EPG() {
   return (
-    <div className="p-6" data-testid="epg-view">
+    <div data-testid="epg-view">
       <h1 className="text-2xl font-bold mb-4">EPG</h1>
       <p className="text-gray-600">
         Electronic Program Guide browser will appear here.
