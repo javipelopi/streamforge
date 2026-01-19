@@ -20,8 +20,10 @@ fn main() {
             db::run_migrations(&mut conn)
                 .map_err(|e| format!("Failed to run migrations: {}", e))?;
 
-            // Store connection for later use by commands
-            app.manage(db::DbConnection::new(database_url));
+            // Create connection pool and store for later use by commands
+            let db_connection = db::DbConnection::new(database_url)
+                .map_err(|e| format!("Failed to create connection pool: {}", e))?;
+            app.manage(db_connection);
 
             Ok(())
         })

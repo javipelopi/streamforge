@@ -1,7 +1,7 @@
 use diesel::prelude::*;
 use tauri::State;
 
-use crate::db::{schema::settings, DbConnection, Setting};
+use crate::db::{settings, DbConnection, Setting};
 
 #[tauri::command]
 pub fn greet(name: &str) -> String {
