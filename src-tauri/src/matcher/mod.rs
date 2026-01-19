@@ -15,11 +15,14 @@
 //! - `fuzzy`: Core fuzzy matching algorithm
 //! - `scorer`: Match confidence scoring with boosts
 //! - `persistence`: Database operations for saving/loading mappings
+//! - `auto_rematch`: Change detection and automatic rematch
 
+mod auto_rematch;
 mod fuzzy;
 mod persistence;
 mod scorer;
 
+pub use auto_rematch::*;
 pub use fuzzy::*;
 pub use persistence::*;
 pub use scorer::*;

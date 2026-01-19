@@ -33,6 +33,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    event_log (id) {
+        id -> Nullable<Integer>,
+        timestamp -> Text,
+        level -> Text,
+        category -> Text,
+        message -> Text,
+        details -> Nullable<Text>,
+        is_read -> Integer,
+    }
+}
+
+diesel::table! {
     programs (id) {
         id -> Nullable<Integer>,
         xmltv_channel_id -> Integer,
@@ -118,6 +130,7 @@ diesel::joinable!(xtream_channels -> accounts (account_id));
 diesel::allow_tables_to_appear_in_same_query!(
     accounts,
     channel_mappings,
+    event_log,
     programs,
     settings,
     xmltv_channel_settings,

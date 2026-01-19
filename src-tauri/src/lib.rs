@@ -257,6 +257,7 @@ pub fn run() {
             commands::accounts::update_account,
             commands::accounts::test_connection,
             commands::channels::scan_channels,
+            commands::channels::scan_and_rematch,
             commands::channels::get_channels,
             commands::channels::get_channel_count,
             commands::epg::add_xmltv_source,
@@ -279,12 +280,22 @@ pub fn run() {
             commands::matcher::set_match_threshold,
             commands::matcher::normalize_channel_name,
             commands::matcher::calculate_match_score,
+            commands::matcher::detect_provider_changes,
+            commands::matcher::auto_rematch_new_streams,
+            commands::matcher::handle_removed_streams,
+            commands::matcher::handle_changed_streams,
             commands::xmltv_channels::get_xmltv_channels_with_mappings,
             commands::xmltv_channels::set_primary_stream,
             commands::xmltv_channels::toggle_xmltv_channel,
             commands::xmltv_channels::get_all_xtream_streams,
             commands::xmltv_channels::add_manual_stream_mapping,
-            commands::xmltv_channels::remove_stream_mapping
+            commands::xmltv_channels::remove_stream_mapping,
+            commands::logs::log_event,
+            commands::logs::get_events,
+            commands::logs::get_unread_event_count,
+            commands::logs::mark_event_read,
+            commands::logs::mark_all_events_read,
+            commands::logs::clear_old_events
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
