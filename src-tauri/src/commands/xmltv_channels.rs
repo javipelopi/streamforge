@@ -393,15 +393,8 @@ pub fn add_manual_stream_mapping(
             ));
         }
 
-        // Get current max stream_priority for this XMLTV channel
-        let max_priority: Option<i32> = channel_mappings::table
-            .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
-            .select(diesel::dsl::max(channel_mappings::stream_priority))
-            .first::<Option<i32>>(conn)?;
-
-        let new_priority = max_priority.unwrap_or(-1) + 1;
-
-        // If setting as primary, update all existing mappings to non-primary
+        // If setting as primary, update all existing mappings to non-primary and shift priorities
+        // This must be done BEFORE calculating new_priority to avoid race conditions
         if set_as_primary {
             diesel::update(
                 channel_mappings::table
@@ -414,6 +407,19 @@ pub fn add_manual_stream_mapping(
             .execute(conn)?;
         }
 
+        // Get current max stream_priority AFTER shifting (prevents race condition)
+        // This ensures we calculate the correct priority even if priorities were just shifted
+        let max_priority: Option<i32> = channel_mappings::table
+            .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
+            .select(diesel::dsl::max(channel_mappings::stream_priority))
+            .first::<Option<i32>>(conn)?;
+
+        let new_priority = if set_as_primary {
+            0  // Primary always gets priority 0
+        } else {
+            max_priority.unwrap_or(-1) + 1  // Backups get next available priority
+        };
+
         // Insert the new mapping
         let new_mapping = crate::db::models::NewChannelMapping {
             xmltv_channel_id,
@@ -421,7 +427,7 @@ pub fn add_manual_stream_mapping(
             match_confidence: Some(1.0), // Manual match = 100% confidence
             is_manual: 1,
             is_primary: if set_as_primary { 1 } else { 0 },
-            stream_priority: if set_as_primary { 0 } else { new_priority },
+            stream_priority: new_priority,  // Use calculated priority (already accounts for primary/backup)
         };
 
         diesel::insert_into(channel_mappings::table)
@@ -528,14 +534,23 @@ pub fn remove_stream_mapping(
         }
 
         // Recalculate priorities for remaining mappings
+        // Primary gets 0, backups get sequential priorities 1, 2, 3...
         let remaining_mappings: Vec<ChannelMapping> = channel_mappings::table
             .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
             .order_by(channel_mappings::match_confidence.desc())
             .load::<ChannelMapping>(conn)?;
 
-        for (idx, mapping) in remaining_mappings.iter().enumerate() {
+        let mut backup_priority = 1;  // Start backups at priority 1
+        for mapping in remaining_mappings.iter() {
             if let Some(mid) = mapping.id {
-                let priority = if mapping.is_primary.unwrap_or(0) != 0 { 0 } else { idx as i32 };
+                let is_primary = mapping.is_primary.unwrap_or(0) != 0;
+                let priority = if is_primary {
+                    0  // Primary always gets priority 0
+                } else {
+                    let p = backup_priority;
+                    backup_priority += 1;  // Increment for next backup
+                    p
+                };
                 diesel::update(
                     channel_mappings::table.filter(channel_mappings::id.eq(Some(mid))),
                 )

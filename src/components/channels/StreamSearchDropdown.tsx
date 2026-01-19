@@ -103,6 +103,10 @@ export const StreamSearchDropdown = memo(function StreamSearchDropdown({
           break;
         case 'Enter':
           e.preventDefault();
+          // Check for zero-length array before accessing
+          if (filteredStreams.length === 0) {
+            break;
+          }
           if (highlightedIndex >= 0 && highlightedIndex < filteredStreams.length) {
             const stream = filteredStreams[highlightedIndex];
             // Don't select if already matched to this channel
@@ -192,7 +196,11 @@ export const StreamSearchDropdown = memo(function StreamSearchDropdown({
       {!isLoading && filteredStreams.length > 0 && (
         <>
           {/* Results count */}
-          <div className="px-3 py-1 text-xs text-gray-500 bg-gray-50 border-b border-gray-200">
+          <div
+            className="px-3 py-1 text-xs text-gray-500 bg-gray-50 border-b border-gray-200"
+            aria-live="polite"
+            aria-atomic="true"
+          >
             {filteredStreams.length} stream{filteredStreams.length !== 1 ? 's' : ''} found
           </div>
 

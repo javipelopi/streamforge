@@ -70,8 +70,8 @@ export function Channels() {
     },
     onError: (err) => {
       console.error('Failed to toggle channel:', err);
+      // Standardized error handling: show toast then refetch
       showToast(`Failed to toggle channel: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
-      // Refetch to get actual state on error
       refetch();
     },
   });
@@ -99,8 +99,8 @@ export function Channels() {
     },
     onError: (err) => {
       console.error('Failed to set primary stream:', err);
+      // Standardized error handling: show toast then refetch
       showToast(`Failed to change primary stream: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
-      // Refetch to get actual state on error
       refetch();
     },
   });
@@ -133,8 +133,8 @@ export function Channels() {
     },
     onError: (err) => {
       console.error('Failed to add manual mapping:', err);
+      // Standardized error handling: show toast then refetch
       showToast(`Failed to add stream: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
-      // Refetch to get actual state on error
       refetch();
     },
   });
@@ -179,8 +179,8 @@ export function Channels() {
     },
     onError: (err) => {
       console.error('Failed to remove mapping:', err);
+      // Standardized error handling: show toast then refetch
       showToast(`Failed to remove stream: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
-      // Refetch to get actual state on error
       refetch();
     },
   });
