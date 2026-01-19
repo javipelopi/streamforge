@@ -49,8 +49,8 @@ development_status:
   epic-1-retrospective: optional
 
   # Epic 2: Account & Source Configuration
-  epic-2: backlog
-  2-1-add-xtream-account-with-secure-credential-storage: backlog
+  epic-2: in-progress
+  2-1-add-xtream-account-with-secure-credential-storage: ready-for-dev
   2-2-test-xtream-connection-and-display-account-status: backlog
   2-3-retrieve-and-store-channel-list-from-xtream: backlog
   2-4-add-xmltv-source-management: backlog
