@@ -70,9 +70,14 @@ pub fn run() {
 
                 // Start the scheduler
                 if let Err(e) = scheduler_clone.start().await {
-                    eprintln!("Failed to start EPG scheduler: {}", e);
+                    tracing::error!(
+                        "CRITICAL: Failed to start EPG scheduler: {}. Automatic EPG refresh will not work!",
+                        e
+                    );
+                    eprintln!("Failed to start EPG scheduler: {}. Automatic EPG refresh will not work!", e);
                     return;
                 }
+                tracing::info!("EPG scheduler started successfully");
 
                 // Get a temporary connection to read schedule settings
                 if let Some(mut conn) = scheduler_clone.get_db_connection().await {
@@ -80,23 +85,44 @@ pub fn run() {
 
                     // Set enabled state
                     if let Err(e) = scheduler_clone.set_enabled(schedule.enabled).await {
+                        tracing::error!("Failed to set scheduler enabled state: {}. Using default enabled state.", e);
                         eprintln!("Failed to set scheduler enabled state: {}", e);
                     }
 
                     // Update schedule if enabled
                     if schedule.enabled {
                         if let Err(e) = scheduler_clone.update_schedule(schedule.hour, schedule.minute).await {
+                            tracing::error!(
+                                "Failed to configure EPG schedule ({:02}:{:02}): {}. Automatic refresh will not work!",
+                                schedule.hour,
+                                schedule.minute,
+                                e
+                            );
                             eprintln!("Failed to update EPG schedule: {}", e);
+                        } else {
+                            tracing::info!(
+                                "EPG scheduler configured: refresh at {:02}:{:02} daily",
+                                schedule.hour,
+                                schedule.minute
+                            );
                         }
+                    } else {
+                        tracing::info!("EPG automatic refresh is disabled in settings");
                     }
+
+                    // Wait 7 seconds after scheduler initialization before checking for missed refresh
+                    // This ensures the schedule is fully configured before checking for missed refreshes
+                    tokio::time::sleep(tokio::time::Duration::from_secs(7)).await;
+
+                    // Check for missed refresh and trigger if needed
+                    // This must happen AFTER schedule is configured to detect missed refreshes correctly
+                    scheduler::check_and_trigger_missed_refresh(&scheduler_clone).await;
+                } else {
+                    tracing::error!(
+                        "CRITICAL: Failed to get database connection for scheduler initialization. Automatic EPG refresh will not work!"
+                    );
+                    eprintln!("Failed to get database connection for scheduler initialization");
                 }
-
-                // Wait 5-10 seconds after startup before checking for missed refresh
-                // This allows other initialization to complete
-                tokio::time::sleep(tokio::time::Duration::from_secs(7)).await;
-
-                // Check for missed refresh and trigger if needed
-                scheduler::check_and_trigger_missed_refresh(&scheduler_clone).await;
             });
 
             // Store scheduler in managed state for commands to access

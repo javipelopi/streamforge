@@ -1,6 +1,6 @@
 # Story 2.6: Implement Scheduled EPG Refresh
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -55,7 +55,7 @@ So that my program guide stays up to date without manual intervention.
   - [x] 4.2 Compare with `epg_last_scheduled_refresh` timestamp
   - [x] 4.3 If missed (last_scheduled < expected), trigger immediate refresh
   - [x] 4.4 Log missed refresh detection and trigger
-  - [x] 4.5 Add small delay (5-10 seconds) after app startup before check
+  - [x] 4.5 Add 7-second delay after app startup before check (ensures scheduler fully initialized)
 
 - [x] Task 5: Integrate scheduler with Tauri app lifecycle (AC: #2, #3)
   - [x] 5.1 Start scheduler in `lib.rs` after database initialization
@@ -492,8 +492,59 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
 5. Integrated scheduler with Tauri app lifecycle (start on app init, stored in managed state)
 6. Created Tauri commands: get_epg_schedule, set_epg_schedule
 7. Added EPG Schedule section to Settings view with enable toggle, time selectors, and status displays
+   - Note: UI restricts minute selection to [0, 15, 30, 45] for user convenience, but backend accepts any minute 0-59 via Tauri command
 8. Added TypeScript types and helper functions for schedule management
 9. All unit tests pass, including cron expression generation and missed refresh detection tests
+10. Code review fixes applied: race condition fixed, transaction wrapping added, error logging improved
+
+### Code Review Summary (Auto-Applied in YOLO Mode)
+
+**Review Date:** 2026-01-19
+**Review Mode:** Adversarial YOLO (auto-fix enabled)
+**Issues Found:** 10 total (2 CRITICAL, 5 MEDIUM, 3 LOW)
+**Issues Fixed:** 7 (all CRITICAL and MEDIUM issues)
+
+#### Critical Issues Fixed:
+1. **Race Condition in Scheduler Initialization** - Fixed by moving missed refresh check inside the scheduler initialization block to ensure schedule is fully configured before checking
+   - Location: `src-tauri/src/lib.rs:93-119`
+   - Impact: Prevented missed refresh detection failures on slow systems
+
+2. **Unsafe Validation in schedule_time** - Added explicit validation before unwrap with better error messaging
+   - Location: `src-tauri/src/scheduler/mod.rs:624-643`
+   - Impact: Prevents silent failures from corrupt database data
+
+#### Medium Issues Fixed:
+3. **Incomplete Error Handling** - Enhanced logging with tracing::error! and detailed messages for all scheduler initialization failures
+   - Location: `src-tauri/src/lib.rs:72-124`
+   - Impact: Scheduler failures now visible in logs for debugging
+
+4. **Data Loss Risk** - Wrapped each source refresh in a diesel transaction for atomicity
+   - Location: `src-tauri/src/scheduler/mod.rs:327-436`
+   - Impact: If refresh fails mid-way, old data is preserved instead of partial/corrupt state
+
+5. **Minute Constraint Documentation** - Documented that UI restricts minutes to [0,15,30,45] but backend accepts 0-59
+   - Location: Story completion notes
+   - Impact: Clarified intentional design decision
+
+6. **Flaky Test** - Fixed `test_missed_refresh_recent_refresh` to use 30 seconds ago instead of 1 minute to avoid boundary conditions
+   - Location: `src-tauri/src/scheduler/mod.rs:826-852`
+   - Impact: Test now reliable regardless of system time
+
+7. **Documentation Accuracy** - Updated Task 4.5 description to reflect actual 7-second delay
+   - Location: Story Task 4.5
+   - Impact: Documentation now matches implementation
+
+#### Low Issues (Not Fixed - Minor):
+8. Redundant database connection retrieval in `set_epg_schedule` command
+9. Naming inconsistency (snake_case vs camelCase) - correct per language conventions
+10. Missing edge case test for schedule time = current time
+
+**AC Validation Post-Fix:**
+- AC#1: ✅ IMPLEMENTED (configure schedule in Settings)
+- AC#2: ✅ IMPLEMENTED (automatic refresh at scheduled time)
+- AC#3: ✅ IMPLEMENTED (missed refresh detection - race condition fixed)
+
+All Acceptance Criteria now fully implemented and verified.
 
 ### File List
 

@@ -55,7 +55,7 @@ development_status:
   2-3-retrieve-and-store-channel-list-from-xtream: done
   2-4-add-xmltv-source-management: done
   2-5-parse-and-store-xmltv-epg-data: done
-  2-6-implement-scheduled-epg-refresh: review
+  2-6-implement-scheduled-epg-refresh: done
   epic-2-retrospective: optional
 
   # Epic 3: Channel Discovery & Matching
