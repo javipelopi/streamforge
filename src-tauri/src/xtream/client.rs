@@ -5,6 +5,7 @@
 
 use reqwest::Client;
 use std::time::Duration;
+use tracing::warn;
 
 use super::types::{AccountInfo, XtreamAuthResponse, XtreamCategory, XtreamLiveStream};
 use super::XtreamError;
@@ -39,9 +40,10 @@ impl XtreamClient {
             return Err(XtreamError::InvalidUrl);
         }
 
-        // Create HTTP client
+        // Create HTTP client with User-Agent (some servers reject requests without it)
         let http = Client::builder()
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             .build()
             .map_err(XtreamError::Network)?;
 
@@ -120,12 +122,19 @@ impl XtreamClient {
             return Err(XtreamError::HttpError(response.status().as_u16()));
         }
 
-        let streams: Vec<XtreamLiveStream> = response.json().await.map_err(|e| {
-            if e.is_decode() {
-                XtreamError::InvalidResponse
-            } else {
-                XtreamError::Network(e)
-            }
+        // Get response text first to debug parsing issues
+        let text = response.text().await.map_err(XtreamError::Network)?;
+
+        // Try to parse as JSON array
+        let streams: Vec<XtreamLiveStream> = serde_json::from_str(&text).map_err(|e| {
+            // Log parsing error with truncated preview (avoid logging sensitive data)
+            warn!(
+                error = %e,
+                response_length = text.len(),
+                response_preview = %&text[..text.len().min(200)],
+                "Failed to parse live streams response"
+            );
+            XtreamError::InvalidResponse
         })?;
 
         Ok(streams)

@@ -37,6 +37,11 @@ export interface Account {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  // Connection status fields (populated after connection test)
+  connectionStatus?: string;
+  expiryDate?: string;
+  maxConnectionsActual?: number;
+  activeConnections?: number;
 }
 
 /** Request type for adding a new account */
@@ -70,6 +75,24 @@ export async function getAccounts(): Promise<Account[]> {
  */
 export async function deleteAccount(id: number): Promise<void> {
   return invoke('delete_account', { id });
+}
+
+/** Request type for updating an account */
+export interface UpdateAccountRequest {
+  name: string;
+  serverUrl: string;
+  username: string;
+  password?: string; // Optional - only update if provided
+}
+
+/**
+ * Update an existing account
+ * @param id - Account ID to update
+ * @param request - Updated account details (password optional)
+ * @returns The updated account (without password)
+ */
+export async function updateAccount(id: number, request: UpdateAccountRequest): Promise<Account> {
+  return invoke<Account>('update_account', { id, request });
 }
 
 /** Response type for test_connection command */

@@ -1,4 +1,5 @@
-import { useState, FormEvent, ChangeEvent } from 'react';
+import { useState, useEffect, FormEvent, ChangeEvent } from 'react';
+import { EyeOpenIcon, EyeClosedIcon } from '@radix-ui/react-icons';
 
 export interface AccountFormData {
   name: string;
@@ -14,26 +15,60 @@ export interface AccountFormErrors {
   password?: string;
 }
 
+/** Initial values for editing an existing account */
+export interface AccountEditData {
+  id: number;
+  name: string;
+  serverUrl: string;
+  username: string;
+}
+
 interface AccountFormProps {
   onSubmit: (data: AccountFormData) => Promise<void>;
   onCancel?: () => void;
   isLoading?: boolean;
+  /** If provided, form is in edit mode with these initial values */
+  editAccount?: AccountEditData;
 }
 
 /**
- * AccountForm component for adding Xtream Codes accounts
+ * AccountForm component for adding/editing Xtream Codes accounts
  * Provides form fields for account name, server URL, username, and password
  * with client-side validation.
  */
-export function AccountForm({ onSubmit, onCancel, isLoading = false }: AccountFormProps) {
+export function AccountForm({ onSubmit, onCancel, isLoading = false, editAccount }: AccountFormProps) {
+  const isEditMode = !!editAccount;
+
   const [formData, setFormData] = useState<AccountFormData>({
-    name: '',
-    serverUrl: '',
-    username: '',
+    name: editAccount?.name ?? '',
+    serverUrl: editAccount?.serverUrl ?? '',
+    username: editAccount?.username ?? '',
     password: '',
   });
 
   const [errors, setErrors] = useState<AccountFormErrors>({});
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Reset form when editAccount changes
+  useEffect(() => {
+    if (editAccount) {
+      setFormData({
+        name: editAccount.name,
+        serverUrl: editAccount.serverUrl,
+        username: editAccount.username,
+        password: '',
+      });
+    } else {
+      setFormData({
+        name: '',
+        serverUrl: '',
+        username: '',
+        password: '',
+      });
+    }
+    setErrors({});
+    setShowPassword(false);
+  }, [editAccount]);
 
   const validateForm = (): boolean => {
     const newErrors: AccountFormErrors = {};
@@ -59,8 +94,8 @@ export function AccountForm({ onSubmit, onCancel, isLoading = false }: AccountFo
       newErrors.username = 'Username must be 100 characters or less';
     }
 
-    // Validate password
-    if (!formData.password.trim()) {
+    // Validate password (required for new accounts, optional for edits)
+    if (!isEditMode && !formData.password.trim()) {
       newErrors.password = 'Password is required';
     } else if (formData.password.length > 500) {
       newErrors.password = 'Password must be 500 characters or less';
@@ -79,14 +114,17 @@ export function AccountForm({ onSubmit, onCancel, isLoading = false }: AccountFo
 
     await onSubmit(formData);
 
-    // Clear form after successful submission (Story Task 6.6)
-    setFormData({
-      name: '',
-      serverUrl: '',
-      username: '',
-      password: '',
-    });
-    setErrors({});
+    // Clear form after successful submission (only for add mode)
+    if (!isEditMode) {
+      setFormData({
+        name: '',
+        serverUrl: '',
+        username: '',
+        password: '',
+      });
+      setErrors({});
+      setShowPassword(false);
+    }
   };
 
   const handleChange = (field: keyof AccountFormData) => (
@@ -182,21 +220,36 @@ export function AccountForm({ onSubmit, onCancel, isLoading = false }: AccountFo
       {/* Password Field */}
       <div>
         <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-          Password
+          Password {isEditMode && <span className="text-gray-400 font-normal">(leave blank to keep current)</span>}
         </label>
-        <input
-          id="password"
-          type="password"
-          data-testid="password-input"
-          value={formData.password}
-          onChange={handleChange('password')}
-          placeholder="your_password"
-          maxLength={500}
-          className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-            errors.password ? 'border-red-500' : 'border-gray-300'
-          }`}
-          disabled={isLoading}
-        />
+        <div className="relative">
+          <input
+            id="password"
+            type={showPassword ? 'text' : 'password'}
+            data-testid="password-input"
+            value={formData.password}
+            onChange={handleChange('password')}
+            placeholder={isEditMode ? '••••••••' : 'your_password'}
+            maxLength={500}
+            className={`w-full px-3 py-2 pr-10 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              errors.password ? 'border-red-500' : 'border-gray-300'
+            }`}
+            disabled={isLoading}
+          />
+          <button
+            type="button"
+            data-testid="toggle-password-visibility"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600"
+            tabIndex={-1}
+          >
+            {showPassword ? (
+              <EyeClosedIcon className="w-5 h-5" />
+            ) : (
+              <EyeOpenIcon className="w-5 h-5" />
+            )}
+          </button>
+        </div>
         {errors.password && (
           <p data-testid="password-error" className="mt-1 text-sm text-red-600">
             {errors.password}
@@ -222,7 +275,7 @@ export function AccountForm({ onSubmit, onCancel, isLoading = false }: AccountFo
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           disabled={isLoading}
         >
-          {isLoading ? 'Adding...' : 'Add Account'}
+          {isLoading ? (isEditMode ? 'Saving...' : 'Adding...') : (isEditMode ? 'Save Changes' : 'Add Account')}
         </button>
       </div>
     </form>
