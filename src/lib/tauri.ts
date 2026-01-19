@@ -644,6 +644,8 @@ export interface XtreamStreamMatch {
   isPrimary: boolean;
   isManual: boolean;
   streamPriority: number;
+  /** True if this is a manual match pointing to a stream that no longer exists */
+  isOrphaned: boolean;
 }
 
 /** XMLTV channel with all mapping info for display */
@@ -742,6 +744,8 @@ export interface XtreamStreamSearchResult {
   categoryName: string | null;
   /** List of XMLTV channel IDs this stream is already matched to */
   matchedToXmltvIds: number[];
+  /** Fuzzy match score against search query (0.0-1.0), null if no search query */
+  fuzzyScore: number | null;
 }
 
 /**
@@ -750,6 +754,15 @@ export interface XtreamStreamSearchResult {
  */
 export async function getAllXtreamStreams(): Promise<XtreamStreamSearchResult[]> {
   return invoke<XtreamStreamSearchResult[]>('get_all_xtream_streams');
+}
+
+/**
+ * Search Xtream streams by fuzzy matching against a query string
+ * @param query - Search query (e.g., XMLTV channel name)
+ * @returns List of Xtream streams with fuzzy scores, ordered by score descending
+ */
+export async function searchXtreamStreams(query: string): Promise<XtreamStreamSearchResult[]> {
+  return invoke<XtreamStreamSearchResult[]>('search_xtream_streams', { query });
 }
 
 /**

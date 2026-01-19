@@ -6,8 +6,8 @@ import { StreamSearchDropdown } from './StreamSearchDropdown';
 
 interface AddStreamButtonProps {
   xmltvChannelId: number;
-  streams: XtreamStreamSearchResult[];
-  isLoadingStreams: boolean;
+  /** XMLTV channel name for fuzzy search */
+  xmltvChannelName: string;
   onAddStream: (
     xmltvChannelId: number,
     xtreamChannelId: number,
@@ -29,8 +29,7 @@ type SelectionState = {
  */
 export const AddStreamButton = memo(function AddStreamButton({
   xmltvChannelId,
-  streams,
-  isLoadingStreams,
+  xmltvChannelName,
   onAddStream,
   disabled = false,
 }: AddStreamButtonProps) {
@@ -119,8 +118,7 @@ export const AddStreamButton = memo(function AddStreamButton({
         >
           {selectionState.state === 'search' && (
             <StreamSearchDropdown
-              streams={streams}
-              isLoading={isLoadingStreams}
+              xmltvChannelName={xmltvChannelName}
               xmltvChannelId={xmltvChannelId}
               onSelect={handleStreamSelect}
               onClose={handleCancel}

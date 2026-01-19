@@ -5,12 +5,10 @@ import {
   getXmltvChannelsWithMappings,
   toggleXmltvChannel,
   setPrimaryStream,
-  getAllXtreamStreams,
   addManualStreamMapping,
   removeStreamMapping,
   type XmltvChannelWithMappings,
   type XtreamStreamMatch,
-  type XtreamStreamSearchResult,
 } from '../lib/tauri';
 
 /**
@@ -43,16 +41,6 @@ export function Channels() {
     queryKey: ['xmltv-channels-with-mappings'],
     queryFn: getXmltvChannelsWithMappings,
     staleTime: 30000, // 30 seconds
-  });
-
-  // Fetch all Xtream streams for manual matching (Story 3-3)
-  const {
-    data: xtreamStreams = [],
-    isLoading: isLoadingStreams,
-  } = useQuery<XtreamStreamSearchResult[], Error>({
-    queryKey: ['xtream-streams-for-matching'],
-    queryFn: getAllXtreamStreams,
-    staleTime: 60000, // 1 minute - streams don't change often
   });
 
   // Toggle channel mutation
@@ -303,8 +291,6 @@ export function Channels() {
           isLoading={isLoading}
           onToggleChannel={handleToggleChannel}
           onSetPrimaryStream={handleSetPrimaryStream}
-          xtreamStreams={xtreamStreams}
-          isLoadingStreams={isLoadingStreams}
           onAddManualMapping={handleAddManualMapping}
           onRemoveMapping={handleRemoveMapping}
         />
