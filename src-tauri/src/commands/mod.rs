@@ -1,11 +1,7 @@
 use diesel::prelude::*;
 use tauri::State;
 
-use crate::db::{settings, DbConnection, Setting};
-
-/// Default server port constant
-const DEFAULT_SERVER_PORT: u16 = 5004;
-const SERVER_PORT_KEY: &str = "server_port";
+use crate::db::{schema::settings, DbConnection, Setting};
 
 #[tauri::command]
 pub fn greet(name: &str) -> String {
@@ -47,8 +43,12 @@ pub fn set_setting(db: State<DbConnection>, key: String, value: String) -> Resul
 /// Get the current server port from settings
 ///
 /// Returns the configured server port, or the default (5004) if not set.
+#[allow(dead_code)] // Used by lib crate via tauri invoke_handler
 #[tauri::command]
 pub fn get_server_port(db: State<DbConnection>) -> Result<u16, String> {
+    const DEFAULT_SERVER_PORT: u16 = 5004;
+    const SERVER_PORT_KEY: &str = "server_port";
+
     let mut conn = db
         .get_connection()
         .map_err(|e| format!("Database connection error: {}", e))?;
@@ -71,8 +71,11 @@ pub fn get_server_port(db: State<DbConnection>) -> Result<u16, String> {
 /// Set the server port in settings
 ///
 /// Note: Changing the port requires an application restart to take effect.
+#[allow(dead_code)] // Used by lib crate via tauri invoke_handler
 #[tauri::command]
 pub fn set_server_port(db: State<DbConnection>, port: u16) -> Result<(), String> {
+    const SERVER_PORT_KEY: &str = "server_port";
+
     // Validate port range (only check lower bound - u16 max is 65535)
     if port < 1024 {
         return Err("Port must be 1024 or higher (non-privileged ports)".to_string());
