@@ -1,8 +1,13 @@
+pub mod accounts;
+
 use diesel::prelude::*;
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use crate::db::{schema::settings, DbConnection, Setting};
+
+// Re-export account commands for convenient access
+pub use accounts::{add_account, delete_account, get_accounts, update_account};
 
 /// Response type for autostart status queries
 #[derive(Serialize)]

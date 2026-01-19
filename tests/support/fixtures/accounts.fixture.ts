@@ -68,7 +68,7 @@ export const test = base.extend<AccountFixtures>({
     await page.goto('/');
     const input = createAccountInput();
 
-    const account = await invokeTauriCommand<Account>(page, 'add_account', input);
+    const account = await invokeTauriCommand<Account>(page, 'add_account', { request: input });
 
     // Provide to test
     await use(account);
@@ -87,7 +87,7 @@ export const test = base.extend<AccountFixtures>({
     const factory = async (input: Partial<AccountInput> = {}) => {
       await page.goto('/');
       const accountInput = createAccountInput(input);
-      const account = await invokeTauriCommand<Account>(page, 'add_account', accountInput);
+      const account = await invokeTauriCommand<Account>(page, 'add_account', { request: accountInput });
 
       // Track for cleanup
       createdAccounts.push(account.id);

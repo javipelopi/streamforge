@@ -24,7 +24,7 @@ test.describe('Account Tauri Commands', () => {
     await page.goto('/');
     const result = await page.evaluate(async (data) => {
       // @ts-ignore - Tauri API available in actual app
-      return await window.__TAURI__.invoke('add_account', data);
+      return await window.__TAURI__.invoke('add_account', { request: data });
     }, accountData);
 
     // THEN: Account is created and returned without password
@@ -50,7 +50,7 @@ test.describe('Account Tauri Commands', () => {
     const error = await page.evaluate(async (data) => {
       try {
         // @ts-ignore
-        await window.__TAURI__.invoke('add_account', data);
+        await window.__TAURI__.invoke('add_account', { request: data });
         return null;
       } catch (err) {
         return err;
@@ -76,7 +76,7 @@ test.describe('Account Tauri Commands', () => {
     const error = await page.evaluate(async (data) => {
       try {
         // @ts-ignore
-        await window.__TAURI__.invoke('add_account', data);
+        await window.__TAURI__.invoke('add_account', { request: data });
         return null;
       } catch (err) {
         return err;
@@ -102,7 +102,7 @@ test.describe('Account Tauri Commands', () => {
     const error = await page.evaluate(async (data) => {
       try {
         // @ts-ignore
-        await window.__TAURI__.invoke('add_account', data);
+        await window.__TAURI__.invoke('add_account', { request: data });
         return null;
       } catch (err) {
         return err;
@@ -128,7 +128,7 @@ test.describe('Account Tauri Commands', () => {
     const error = await page.evaluate(async (data) => {
       try {
         // @ts-ignore
-        await window.__TAURI__.invoke('add_account', data);
+        await window.__TAURI__.invoke('add_account', { request: data });
         return null;
       } catch (err) {
         return err;
@@ -154,7 +154,7 @@ test.describe('Account Tauri Commands', () => {
     const error = await page.evaluate(async (data) => {
       try {
         // @ts-ignore
-        await window.__TAURI__.invoke('add_account', data);
+        await window.__TAURI__.invoke('add_account', { request: data });
         return null;
       } catch (err) {
         return err;
@@ -177,7 +177,7 @@ test.describe('Account Tauri Commands', () => {
         password: 'securePassword123',
       };
       // @ts-ignore
-      await window.__TAURI__.invoke('add_account', accountData);
+      await window.__TAURI__.invoke('add_account', { request: accountData });
     });
 
     // WHEN: Calling get_accounts command
@@ -225,7 +225,7 @@ test.describe('Account Tauri Commands', () => {
         password: 'securePassword123',
       };
       // @ts-ignore
-      return await window.__TAURI__.invoke('add_account', accountData);
+      return await window.__TAURI__.invoke('add_account', { request: accountData });
     });
 
     // WHEN: Calling delete_account command
@@ -255,7 +255,7 @@ test.describe('Account Tauri Commands', () => {
         password: 'securePassword123',
       };
       // @ts-ignore
-      return await window.__TAURI__.invoke('add_account', accountData);
+      return await window.__TAURI__.invoke('add_account', { request: accountData });
     });
 
     // WHEN: Account is deleted
@@ -288,7 +288,7 @@ test.describe('Credential Storage Security', () => {
         password: 'ThisPasswordShouldNeverAppearInLogs123',
       };
       // @ts-ignore
-      await window.__TAURI__.invoke('add_account', accountData);
+      await window.__TAURI__.invoke('add_account', { request: accountData });
     });
 
     // THEN: Password does not appear in any console messages
@@ -309,7 +309,7 @@ test.describe('Credential Storage Security', () => {
         password: 'PlaintextPassword123',
       };
       // @ts-ignore
-      return await window.__TAURI__.invoke('add_account', accountData);
+      return await window.__TAURI__.invoke('add_account', { request: accountData });
     });
 
     // WHEN: Retrieving accounts
