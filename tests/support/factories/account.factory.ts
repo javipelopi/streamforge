@@ -26,6 +26,12 @@ export interface Account {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  // New fields for Story 2.2 - connection status
+  expiryDate?: string;
+  maxConnectionsActual?: number;
+  activeConnections?: number;
+  lastCheck?: string;
+  connectionStatus?: string;
 }
 
 /**
@@ -95,4 +101,74 @@ export const createInvalidAccountInput = (invalidField: 'name' | 'serverUrl' | '
  */
 export const createAccountInputWithInvalidUrl = (): AccountInput => {
   return createAccountInput({ serverUrl: 'not-a-valid-url' });
+};
+
+/**
+ * Create account with connection status fields populated (Story 2.2)
+ */
+export const createAccountWithStatus = (overrides: Partial<Account> = {}): Account => {
+  const expiryDate = faker.date.future();
+  const lastCheck = faker.date.recent();
+
+  return {
+    ...createAccount(),
+    expiryDate: expiryDate.toISOString(),
+    maxConnectionsActual: faker.number.int({ min: 1, max: 5 }),
+    activeConnections: faker.number.int({ min: 0, max: 3 }),
+    lastCheck: lastCheck.toISOString(),
+    connectionStatus: 'connected',
+    ...overrides,
+  };
+};
+
+/**
+ * Create expired account for testing expiry display
+ */
+export const createExpiredAccount = (): Account => {
+  const pastDate = faker.date.past({ years: 1 });
+
+  return createAccountWithStatus({
+    expiryDate: pastDate.toISOString(),
+    connectionStatus: 'expired',
+    activeConnections: 0,
+  });
+};
+
+/**
+ * Create active account with future expiry
+ */
+export const createActiveAccount = (): Account => {
+  const futureDate = faker.date.future({ years: 1 });
+
+  return createAccountWithStatus({
+    expiryDate: futureDate.toISOString(),
+    connectionStatus: 'connected',
+    activeConnections: faker.number.int({ min: 0, max: 2 }),
+  });
+};
+
+/**
+ * Create account with connection never tested
+ */
+export const createUntestedAccount = (): Account => {
+  return {
+    ...createAccount(),
+    expiryDate: undefined,
+    maxConnectionsActual: undefined,
+    activeConnections: undefined,
+    lastCheck: undefined,
+    connectionStatus: 'unknown',
+  };
+};
+
+/**
+ * Create account with all tuners in use
+ */
+export const createFullyUsedAccount = (): Account => {
+  const maxConn = 2;
+
+  return createAccountWithStatus({
+    maxConnectionsActual: maxConn,
+    activeConnections: maxConn, // All tuners in use
+  });
 };
