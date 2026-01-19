@@ -4,7 +4,7 @@
  */
 export function Logs() {
   return (
-    <div className="p-6" data-testid="logs-view">
+    <div data-testid="logs-view">
       <h1 className="text-2xl font-bold mb-4">Logs</h1>
       <p className="text-gray-600">
         Application event logs will appear here.

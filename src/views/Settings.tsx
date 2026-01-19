@@ -4,7 +4,7 @@
  */
 export function Settings() {
   return (
-    <div className="p-6" data-testid="settings-view">
+    <div data-testid="settings-view">
       <h1 className="text-2xl font-bold mb-4">Settings</h1>
       <p className="text-gray-600">
         Application settings and preferences will appear here.

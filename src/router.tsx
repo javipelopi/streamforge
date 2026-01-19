@@ -4,7 +4,7 @@
  *
  * Uses MemoryRouter for Tauri since there's no browser history
  */
-import { createBrowserRouter, createMemoryRouter, RouteObject } from 'react-router-dom';
+import { createBrowserRouter, createMemoryRouter, RouteObject, Navigate } from 'react-router-dom';
 import { MainLayout } from './components/layout/MainLayout';
 import { Dashboard, Channels, EPG, Accounts, Settings, Logs } from './views';
 import { ROUTES } from './lib/routes';
@@ -20,6 +20,7 @@ const routes: RouteObject[] = [
       { path: ROUTES.ACCOUNTS.slice(1), element: <Accounts /> },
       { path: ROUTES.SETTINGS.slice(1), element: <Settings /> },
       { path: ROUTES.LOGS.slice(1), element: <Logs /> },
+      { path: '*', element: <Navigate to={ROUTES.DASHBOARD} replace /> },
     ],
   },
 ];

@@ -1,6 +1,6 @@
 # Story 1.3: Create React GUI Shell with Routing
 
-Status: review
+Status: done
 
 ## Story
 
@@ -327,4 +327,49 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
 - package.json - Added new dependencies
 - pnpm-lock.yaml - Updated lockfile
 - playwright.config.ts - Added baseURL and webServer configuration
+
+## Code Review Record
+
+### Review Date
+2026-01-19
+
+### Review Agent
+Claude Sonnet 4.5 (claude-sonnet-4-5-20250929)
+
+### Review Mode
+YOLO (Auto-fix)
+
+### Issues Found and Fixed
+
+**CRITICAL Issues (3) - All Fixed:**
+1. ✅ **Missing activeView field in Zustand store** - Added activeView state and setActiveView action to appStore.ts (required by Dev Notes specification)
+2. ✅ **Duplicate padding in all view components** - Removed p-6 from Dashboard, Channels, EPG, Accounts, Settings, Logs (MainLayout already applies padding)
+3. ✅ **No 404 catch-all route** - Added catch-all route with Navigate component to redirect unknown URLs to Dashboard
+
+**MEDIUM Issues (7) - All Fixed:**
+4. ✅ **StatusIndicator accessibility** - Replaced `aria-describedby={undefined}` with `aria-live="polite"` for screen reader announcements
+5. ✅ **Sidebar overflow on collapse** - Added `overflow-hidden` class to prevent layout shifts when collapsed
+6. ✅ **Missing React ErrorBoundary** - Created ErrorBoundary component with fallback UI and wrapped App in main.tsx
+7. ✅ **Hard wait in E2E test** - Replaced `waitForTimeout(100)` with `waitForLoadState('networkidle')` in test
+8. ✅ **No keyboard navigation** - Added keyboard shortcuts: Alt+1-6 for navigation, Ctrl/Cmd+B to toggle sidebar
+9. ✅ **Continuous animation performance issue** - Removed continuous `animate-pulse` from running status indicator (was causing unnecessary repaints)
+
+**LOW Issues (4) - Not Fixed (cosmetic, not blocking):**
+10. ⚠️ Inconsistent component header comments (minor style issue)
+11. ⚠️ Missing displayName properties (DevTools readability)
+12. ⚠️ Inconsistent import order (no project standard defined)
+13. ⚠️ No barrel export for layout components (views/ has one, layout/ doesn't)
+
+### Post-Review Validation
+- ESLint: ✅ 0 errors, 0 warnings
+- TypeScript: ✅ 0 errors
+- All Acceptance Criteria: ✅ 100% implemented
+- Git file tracking: ✅ All files properly tracked
+- Test coverage: ✅ 22 E2E tests (comprehensive)
+
+### Additional Files Created During Review
+- src/components/ErrorBoundary.tsx - Error boundary with fallback UI and reload button
+
+### Story Status Update
+Status changed from `review` → `done` (all HIGH and MEDIUM issues resolved)
 

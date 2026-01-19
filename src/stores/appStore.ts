@@ -8,18 +8,22 @@ export type ServerStatus = 'running' | 'stopped' | 'error';
 
 export interface AppState {
   sidebarOpen: boolean;
+  activeView: string;
   serverStatus: ServerStatus;
   unreadLogCount: number;
   toggleSidebar: () => void;
+  setActiveView: (view: string) => void;
   setServerStatus: (status: ServerStatus) => void;
   setUnreadLogCount: (count: number) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   sidebarOpen: true,
+  activeView: '/',
   serverStatus: 'stopped',
   unreadLogCount: 0,
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+  setActiveView: (view) => set({ activeView: view }),
   setServerStatus: (status) => set({ serverStatus: status }),
   setUnreadLogCount: (count) => set({ unreadLogCount: count }),
 }));
