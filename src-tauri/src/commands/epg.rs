@@ -67,6 +67,12 @@ impl From<XmltvError> for EpgSourceError {
     }
 }
 
+impl From<diesel::result::Error> for EpgSourceError {
+    fn from(err: diesel::result::Error) -> Self {
+        EpgSourceError::DatabaseError(err.to_string())
+    }
+}
+
 impl From<EpgSourceError> for String {
     fn from(err: EpgSourceError) -> Self {
         err.to_string()
@@ -196,31 +202,36 @@ fn validate_url(url_str: &str) -> Result<(), EpgSourceError> {
             return Err(EpgSourceError::InvalidUrl);
         }
 
-        // Block private IP ranges (rough check)
+        // Block private IP ranges
         if host_lower.starts_with("10.")
             || host_lower.starts_with("192.168.")
-            || host_lower.starts_with("172.16.")
-            || host_lower.starts_with("172.17.")
-            || host_lower.starts_with("172.18.")
-            || host_lower.starts_with("172.19.")
-            || host_lower.starts_with("172.20.")
-            || host_lower.starts_with("172.21.")
-            || host_lower.starts_with("172.22.")
-            || host_lower.starts_with("172.23.")
-            || host_lower.starts_with("172.24.")
-            || host_lower.starts_with("172.25.")
-            || host_lower.starts_with("172.26.")
-            || host_lower.starts_with("172.27.")
-            || host_lower.starts_with("172.28.")
-            || host_lower.starts_with("172.29.")
-            || host_lower.starts_with("172.30.")
-            || host_lower.starts_with("172.31.")
+            || is_172_private(&host_lower)
             || host_lower.starts_with("169.254.") {
             return Err(EpgSourceError::InvalidUrl);
         }
     }
 
     Ok(())
+}
+
+/// Check if host is in the 172.16.0.0/12 private range
+fn is_172_private(host: &str) -> bool {
+    if !host.starts_with("172.") {
+        return false;
+    }
+
+    // Parse the second octet
+    let parts: Vec<&str> = host.split('.').collect();
+    if parts.len() < 2 {
+        return false;
+    }
+
+    if let Ok(second_octet) = parts[1].parse::<u8>() {
+        // 172.16.0.0 - 172.31.255.255 is private
+        return (16..=31).contains(&second_octet);
+    }
+
+    false
 }
 
 /// Validate format value
@@ -436,15 +447,17 @@ pub async fn refresh_epg_source(
     let (parsed_channels, parsed_programs) =
         parse_xmltv_data(&data).map_err(EpgSourceError::from)?;
 
-    // Clear existing data for this source (cascade will delete programs too)
-    diesel::delete(xmltv_channels::table.filter(xmltv_channels::source_id.eq(source_id)))
-        .execute(&mut conn)
-        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+    // Wrap all database operations in a transaction for atomicity
+    conn.transaction::<_, EpgSourceError, _>(|conn| {
+        // Clear existing data for this source (cascade will delete programs too)
+        diesel::delete(xmltv_channels::table.filter(xmltv_channels::source_id.eq(source_id)))
+            .execute(conn)
+            .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
 
-    // Insert channels and build mapping from channel_id to db id
-    let mut channel_id_map: HashMap<String, i32> = HashMap::new();
+        // Insert channels and build mapping from channel_id to db id
+        let mut channel_id_map: HashMap<String, i32> = HashMap::new();
 
-    for parsed_channel in &parsed_channels {
+        for parsed_channel in &parsed_channels {
         let new_channel = NewXmltvChannel::new(
             source_id,
             &parsed_channel.channel_id,
@@ -452,66 +465,69 @@ pub async fn refresh_epg_source(
             parsed_channel.icon.clone(),
         );
 
-        let inserted: XmltvChannel = diesel::insert_into(xmltv_channels::table)
-            .values(&new_channel)
-            .get_result(&mut conn)
-            .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+            let inserted: XmltvChannel = diesel::insert_into(xmltv_channels::table)
+                .values(&new_channel)
+                .get_result(conn)
+                .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
 
-        if let Some(id) = inserted.id {
-            channel_id_map.insert(parsed_channel.channel_id.clone(), id);
-        }
-    }
-
-    // Insert programs in batches for performance
-    let mut programs_to_insert: Vec<NewProgram> = Vec::with_capacity(BATCH_SIZE);
-
-    for parsed_program in &parsed_programs {
-        // Look up the db id for this program's channel
-        if let Some(&channel_db_id) = channel_id_map.get(&parsed_program.channel_id) {
-            let mut new_program = NewProgram::new(
-                channel_db_id,
-                &parsed_program.title,
-                &parsed_program.start_time,
-                &parsed_program.end_time,
-            );
-
-            if let Some(ref desc) = parsed_program.description {
-                new_program = new_program.with_description(desc);
-            }
-            if let Some(ref cat) = parsed_program.category {
-                new_program = new_program.with_category(cat);
-            }
-            if let Some(ref ep) = parsed_program.episode_info {
-                new_program = new_program.with_episode_info(ep);
-            }
-
-            programs_to_insert.push(new_program);
-
-            // Insert in batches
-            if programs_to_insert.len() >= BATCH_SIZE {
-                diesel::insert_into(programs::table)
-                    .values(&programs_to_insert)
-                    .execute(&mut conn)
-                    .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
-                programs_to_insert.clear();
+            if let Some(id) = inserted.id {
+                channel_id_map.insert(parsed_channel.channel_id.clone(), id);
             }
         }
-    }
 
-    // Insert remaining programs
-    if !programs_to_insert.is_empty() {
-        diesel::insert_into(programs::table)
-            .values(&programs_to_insert)
-            .execute(&mut conn)
+        // Insert programs in batches for performance
+        let mut programs_to_insert: Vec<NewProgram> = Vec::with_capacity(BATCH_SIZE);
+
+        for parsed_program in &parsed_programs {
+            // Look up the db id for this program's channel
+            if let Some(&channel_db_id) = channel_id_map.get(&parsed_program.channel_id) {
+                let mut new_program = NewProgram::new(
+                    channel_db_id,
+                    &parsed_program.title,
+                    &parsed_program.start_time,
+                    &parsed_program.end_time,
+                );
+
+                if let Some(ref desc) = parsed_program.description {
+                    new_program = new_program.with_description(desc);
+                }
+                if let Some(ref cat) = parsed_program.category {
+                    new_program = new_program.with_category(cat);
+                }
+                if let Some(ref ep) = parsed_program.episode_info {
+                    new_program = new_program.with_episode_info(ep);
+                }
+
+                programs_to_insert.push(new_program);
+
+                // Insert in batches
+                if programs_to_insert.len() >= BATCH_SIZE {
+                    diesel::insert_into(programs::table)
+                        .values(&programs_to_insert)
+                        .execute(conn)
+                        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+                    programs_to_insert.clear();
+                }
+            }
+        }
+
+        // Insert remaining programs
+        if !programs_to_insert.is_empty() {
+            diesel::insert_into(programs::table)
+                .values(&programs_to_insert)
+                .execute(conn)
+                .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+        }
+
+        // Update last_refresh timestamp on the source
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(source_id)))
+            .set(xmltv_sources::last_refresh.eq(&now))
+            .execute(conn)
             .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
-    }
 
-    // Update last_refresh timestamp on the source
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(source_id)))
-        .set(xmltv_sources::last_refresh.eq(&now))
-        .execute(&mut conn)
-        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+        Ok(())
+    }).map_err(|e: EpgSourceError| e.to_string())?;
 
     Ok(())
 }
@@ -529,6 +545,10 @@ pub async fn refresh_all_epg_sources(db: State<'_, DbConnection>) -> Result<(), 
         .load(&mut conn)
         .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
 
+    // Track errors for reporting
+    let mut failed_sources: Vec<String> = Vec::new();
+    let mut success_count = 0;
+
     // Refresh each source
     // Note: We can't use refresh_epg_source directly due to State ownership
     // So we implement the refresh logic inline
@@ -540,6 +560,7 @@ pub async fn refresh_all_epg_sources(db: State<'_, DbConnection>) -> Result<(), 
             Ok(d) => d,
             Err(e) => {
                 eprintln!("Failed to fetch source {}: {}", source.name, e);
+                failed_sources.push(format!("{}: {}", source.name, e));
                 continue; // Skip this source but continue with others
             }
         };
@@ -548,6 +569,7 @@ pub async fn refresh_all_epg_sources(db: State<'_, DbConnection>) -> Result<(), 
             Ok(p) => p,
             Err(e) => {
                 eprintln!("Failed to parse source {}: {}", source.name, e);
+                failed_sources.push(format!("{}: {}", source.name, e));
                 continue;
             }
         };
@@ -644,6 +666,25 @@ pub async fn refresh_all_epg_sources(db: State<'_, DbConnection>) -> Result<(), 
         let _ = diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(source_id)))
             .set(xmltv_sources::last_refresh.eq(&now))
             .execute(&mut conn);
+
+        success_count += 1;
+    }
+
+    // Return error if all sources failed
+    if !failed_sources.is_empty() && success_count == 0 {
+        return Err(format!(
+            "All EPG sources failed to refresh: {}",
+            failed_sources.join("; ")
+        ));
+    }
+
+    // Return partial success message if some failed
+    if !failed_sources.is_empty() {
+        return Err(format!(
+            "Some EPG sources failed: {}. {} source(s) refreshed successfully.",
+            failed_sources.join("; "),
+            success_count
+        ));
     }
 
     Ok(())

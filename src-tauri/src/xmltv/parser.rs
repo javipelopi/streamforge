@@ -2,7 +2,7 @@
 //!
 //! Implements a memory-efficient streaming parser for XMLTV format files.
 
-use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
@@ -198,9 +198,11 @@ pub fn parse_xmltv_timestamp(s: &str) -> Result<String, XmltvError> {
     let datetime_utc = if parts.len() > 1 {
         let offset_str = parts[1];
         let offset = parse_timezone_offset(offset_str)?;
-        let datetime_with_offset = DateTime::<FixedOffset>::from_naive_utc_and_offset(naive, offset);
-        // Convert to UTC by accounting for the offset
-        datetime_with_offset.with_timezone(&Utc) - offset
+        // The naive datetime represents LOCAL time in the given timezone
+        // We need to create a datetime with that offset, then convert to UTC
+        let datetime_local = offset.from_local_datetime(&naive).single()
+            .ok_or_else(|| XmltvError::TimestampError("Ambiguous or invalid local time".into()))?;
+        datetime_local.with_timezone(&Utc)
     } else {
         // Assume UTC if no offset
         DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc)
