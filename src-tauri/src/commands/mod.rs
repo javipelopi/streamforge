@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod channels;
 pub mod epg;
+pub mod logs;
 pub mod matcher;
 pub mod xmltv_channels;
 

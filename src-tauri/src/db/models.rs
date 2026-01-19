@@ -2,7 +2,7 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::db::schema::{
-    accounts, channel_mappings, programs, settings, xmltv_channel_settings, xmltv_channels,
+    accounts, channel_mappings, event_log, programs, settings, xmltv_channel_settings, xmltv_channels,
     xmltv_sources, xtream_channels,
 };
 
@@ -88,7 +88,7 @@ impl NewAccount {
 }
 
 /// Xtream channel model for querying existing channels
-#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize)]
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize, Deserialize)]
 #[diesel(table_name = xtream_channels)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 #[serde(rename_all = "camelCase")]
@@ -454,4 +454,118 @@ pub struct XmltvChannelSettingsUpdate {
     pub is_enabled: Option<i32>,
     pub plex_display_order: Option<i32>,
     pub updated_at: Option<String>,
+}
+
+// ============================================================================
+// Event Log Models (Story 3-4)
+// ============================================================================
+
+/// Event log entry model for querying
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize)]
+#[diesel(table_name = event_log)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[serde(rename_all = "camelCase")]
+pub struct EventLog {
+    pub id: Option<i32>,
+    pub timestamp: String,
+    pub level: String,
+    pub category: String,
+    pub message: String,
+    pub details: Option<String>,
+    #[serde(serialize_with = "serialize_bool")]
+    pub is_read: i32,
+}
+
+/// Serialize SQLite INTEGER (0/1) to JSON boolean
+fn serialize_bool<S>(value: &i32, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_bool(*value != 0)
+}
+
+/// New event log entry for insertion
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = event_log)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewEventLog {
+    pub level: String,
+    pub category: String,
+    pub message: String,
+    pub details: Option<String>,
+}
+
+impl NewEventLog {
+    pub fn new(level: impl Into<String>, category: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            level: level.into(),
+            category: category.into(),
+            message: message.into(),
+            details: None,
+        }
+    }
+
+    pub fn with_details(mut self, details: impl Into<String>) -> Self {
+        self.details = Some(details.into());
+        self
+    }
+
+    /// Create an info-level event
+    pub fn info(category: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new("info", category, message)
+    }
+
+    /// Create a warn-level event
+    pub fn warn(category: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new("warn", category, message)
+    }
+
+    /// Create an error-level event
+    pub fn error(category: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new("error", category, message)
+    }
+}
+
+/// Event level enumeration
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EventLevel {
+    Info,
+    Warn,
+    Error,
+}
+
+impl std::fmt::Display for EventLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EventLevel::Info => write!(f, "info"),
+            EventLevel::Warn => write!(f, "warn"),
+            EventLevel::Error => write!(f, "error"),
+        }
+    }
+}
+
+/// Event category enumeration
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EventCategory {
+    Connection,
+    Stream,
+    Match,
+    Epg,
+    System,
+    Provider,
+}
+
+impl std::fmt::Display for EventCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EventCategory::Connection => write!(f, "connection"),
+            EventCategory::Stream => write!(f, "stream"),
+            EventCategory::Match => write!(f, "match"),
+            EventCategory::Epg => write!(f, "epg"),
+            EventCategory::System => write!(f, "system"),
+            EventCategory::Provider => write!(f, "provider"),
+        }
+    }
 }

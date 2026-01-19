@@ -243,3 +243,121 @@ fn get_match_threshold_internal(db: &State<DbConnection>) -> Result<f64, String>
         None => Ok(DEFAULT_MATCH_THRESHOLD),
     }
 }
+
+// ============================================================================
+// Story 3-4: Auto-Rematch Commands
+// ============================================================================
+
+use crate::matcher::{
+    detect_provider_changes as core_detect_provider_changes,
+    auto_rematch_new_streams as core_auto_rematch_new_streams,
+    handle_removed_streams as core_handle_removed_streams,
+    handle_changed_streams as core_handle_changed_streams,
+    ProviderChanges, ChangedStream,
+};
+
+/// Detect changes in the provider's stream list by comparing with database.
+///
+/// # Arguments
+///
+/// * `account_id` - The Xtream account ID
+/// * `current_streams` - List of streams from the current scan
+///
+/// # Returns
+///
+/// `ProviderChanges` containing new, removed, and changed streams
+#[tauri::command]
+pub fn detect_provider_changes(
+    db: State<DbConnection>,
+    account_id: i32,
+    current_streams: Vec<XtreamChannel>,
+) -> Result<ProviderChanges, String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    core_detect_provider_changes(&mut conn, account_id, &current_streams)
+        .map_err(|e| format!("Failed to detect provider changes: {}", e))
+}
+
+/// Auto-match new streams to XMLTV channels using fuzzy algorithm.
+///
+/// # Arguments
+///
+/// * `new_streams` - List of new Xtream streams to match
+/// * `threshold` - Optional confidence threshold (uses settings if not provided)
+///
+/// # Returns
+///
+/// Number of new mappings created
+#[tauri::command]
+pub fn auto_rematch_new_streams(
+    db: State<DbConnection>,
+    new_streams: Vec<XtreamChannel>,
+    threshold: Option<f64>,
+) -> Result<i32, String> {
+    let threshold = threshold.unwrap_or(get_match_threshold_internal(&db)?);
+    let config = MatchConfig::default().with_threshold(threshold);
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    core_auto_rematch_new_streams(&mut conn, &new_streams, &config)
+        .map_err(|e| format!("Failed to auto-rematch new streams: {}", e))
+}
+
+/// Handle removed streams by deleting auto-generated mappings and promoting backups.
+///
+/// Manual matches (is_manual = 1) are NEVER deleted.
+///
+/// # Arguments
+///
+/// * `account_id` - The Xtream account ID
+/// * `removed_stream_ids` - List of stream IDs that are no longer available
+///
+/// # Returns
+///
+/// Tuple of (mappings_removed, manual_matches_preserved)
+#[tauri::command]
+pub fn handle_removed_streams(
+    db: State<DbConnection>,
+    account_id: i32,
+    removed_stream_ids: Vec<i32>,
+) -> Result<(i32, i32), String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    core_handle_removed_streams(&mut conn, account_id, &removed_stream_ids)
+        .map_err(|e| format!("Failed to handle removed streams: {}", e))
+}
+
+/// Handle changed streams by updating metadata and recalculating match confidence.
+///
+/// # Arguments
+///
+/// * `account_id` - The Xtream account ID
+/// * `changed_streams` - List of changed streams
+/// * `threshold` - Optional confidence threshold (uses settings if not provided)
+///
+/// # Returns
+///
+/// Number of mappings updated
+#[tauri::command]
+pub fn handle_changed_streams(
+    db: State<DbConnection>,
+    account_id: i32,
+    changed_streams: Vec<ChangedStream>,
+    threshold: Option<f64>,
+) -> Result<i32, String> {
+    let threshold = threshold.unwrap_or(get_match_threshold_internal(&db)?);
+    let config = MatchConfig::default().with_threshold(threshold);
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    core_handle_changed_streams(&mut conn, account_id, &changed_streams, &config)
+        .map_err(|e| format!("Failed to handle changed streams: {}", e))
+}
