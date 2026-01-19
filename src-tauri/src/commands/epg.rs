@@ -77,7 +77,7 @@ impl From<XmltvSource> for XmltvSourceResponse {
     }
 }
 
-/// Validate URL format
+/// Validate URL format and check for SSRF risks
 fn validate_url(url_str: &str) -> Result<(), EpgSourceError> {
     if url_str.trim().is_empty() {
         return Err(EpgSourceError::UrlRequired);
@@ -87,6 +87,43 @@ fn validate_url(url_str: &str) -> Result<(), EpgSourceError> {
 
     if parsed.scheme() != "http" && parsed.scheme() != "https" {
         return Err(EpgSourceError::InvalidUrlScheme);
+    }
+
+    // Check for SSRF - block localhost and private IPs
+    if let Some(host) = parsed.host_str() {
+        let host_lower = host.to_lowercase();
+
+        // Block localhost variants
+        if host_lower == "localhost"
+            || host_lower == "127.0.0.1"
+            || host_lower.starts_with("127.")
+            || host_lower == "::1"
+            || host_lower == "0.0.0.0" {
+            return Err(EpgSourceError::InvalidUrl);
+        }
+
+        // Block private IP ranges (rough check)
+        if host_lower.starts_with("10.")
+            || host_lower.starts_with("192.168.")
+            || host_lower.starts_with("172.16.")
+            || host_lower.starts_with("172.17.")
+            || host_lower.starts_with("172.18.")
+            || host_lower.starts_with("172.19.")
+            || host_lower.starts_with("172.20.")
+            || host_lower.starts_with("172.21.")
+            || host_lower.starts_with("172.22.")
+            || host_lower.starts_with("172.23.")
+            || host_lower.starts_with("172.24.")
+            || host_lower.starts_with("172.25.")
+            || host_lower.starts_with("172.26.")
+            || host_lower.starts_with("172.27.")
+            || host_lower.starts_with("172.28.")
+            || host_lower.starts_with("172.29.")
+            || host_lower.starts_with("172.30.")
+            || host_lower.starts_with("172.31.")
+            || host_lower.starts_with("169.254.") {
+            return Err(EpgSourceError::InvalidUrl);
+        }
     }
 
     Ok(())
@@ -123,9 +160,10 @@ pub async fn add_xmltv_source(
         .get_connection()
         .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
 
-    diesel::insert_into(xmltv_sources::table)
+    // Insert and return in single operation to avoid race condition
+    let inserted: XmltvSource = diesel::insert_into(xmltv_sources::table)
         .values(&new_source)
-        .execute(&mut conn)
+        .get_result(&mut conn)
         .map_err(|e| {
             if e.to_string().contains("UNIQUE constraint failed") {
                 EpgSourceError::DuplicateUrl
@@ -133,12 +171,6 @@ pub async fn add_xmltv_source(
                 EpgSourceError::DatabaseError(e.to_string())
             }
         })?;
-
-    // Return the inserted record
-    let inserted: XmltvSource = xmltv_sources::table
-        .order(xmltv_sources::id.desc())
-        .first(&mut conn)
-        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
 
     Ok(XmltvSourceResponse::from(inserted))
 }
@@ -181,17 +213,6 @@ pub async fn update_xmltv_source(
         .get_connection()
         .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
 
-    // Check if source exists
-    let existing_count = xmltv_sources::table
-        .filter(xmltv_sources::id.eq(source_id))
-        .count()
-        .get_result::<i64>(&mut conn)
-        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
-
-    if existing_count == 0 {
-        return Err(EpgSourceError::NotFound.into());
-    }
-
     // Get current timestamp for updated_at
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
@@ -201,7 +222,8 @@ pub async fn update_xmltv_source(
         ..updates
     };
 
-    diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(source_id)))
+    // Update and check affected rows - no separate existence check (avoids TOCTOU)
+    let affected = diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(source_id)))
         .set(&updates_with_timestamp)
         .execute(&mut conn)
         .map_err(|e| {
@@ -211,6 +233,10 @@ pub async fn update_xmltv_source(
                 EpgSourceError::DatabaseError(e.to_string())
             }
         })?;
+
+    if affected == 0 {
+        return Err(EpgSourceError::NotFound.into());
+    }
 
     let updated: XmltvSource = xmltv_sources::table
         .filter(xmltv_sources::id.eq(source_id))
@@ -252,27 +278,21 @@ pub async fn toggle_xmltv_source(
         .get_connection()
         .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
 
-    // Check if source exists
-    let existing_count = xmltv_sources::table
-        .filter(xmltv_sources::id.eq(source_id))
-        .count()
-        .get_result::<i64>(&mut conn)
-        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
-
-    if existing_count == 0 {
-        return Err(EpgSourceError::NotFound.into());
-    }
-
     let is_active_int = if active { 1 } else { 0 };
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-    diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(source_id)))
+    // Update and check affected rows - no separate existence check (avoids TOCTOU)
+    let affected = diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(source_id)))
         .set((
             xmltv_sources::is_active.eq(is_active_int),
             xmltv_sources::updated_at.eq(&now),
         ))
         .execute(&mut conn)
         .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    if affected == 0 {
+        return Err(EpgSourceError::NotFound.into());
+    }
 
     let updated: XmltvSource = xmltv_sources::table
         .filter(xmltv_sources::id.eq(source_id))
@@ -299,6 +319,15 @@ mod tests {
         assert!(validate_url("not-a-url").is_err());
         assert!(validate_url("ftp://example.com/epg.xml").is_err());
         assert!(validate_url("file:///etc/passwd").is_err());
+
+        // SSRF protection - localhost and private IPs should be blocked
+        assert!(validate_url("http://localhost/epg.xml").is_err());
+        assert!(validate_url("http://127.0.0.1/epg.xml").is_err());
+        assert!(validate_url("http://0.0.0.0/epg.xml").is_err());
+        assert!(validate_url("http://10.0.0.1/epg.xml").is_err());
+        assert!(validate_url("http://192.168.1.1/epg.xml").is_err());
+        assert!(validate_url("http://172.16.0.1/epg.xml").is_err());
+        assert!(validate_url("http://169.254.1.1/epg.xml").is_err());
     }
 
     #[test]

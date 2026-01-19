@@ -1,6 +1,6 @@
 # Story 2.4: Add XMLTV Source Management
 
-Status: review
+Status: done
 
 ## Story
 
@@ -900,7 +900,8 @@ export function EpgSourceDialog({
 
 ### Agent Model Used
 
-claude-opus-4-5-20251101
+claude-opus-4-5-20251101 (initial implementation)
+claude-sonnet-4-5-20250929 (code review fixes)
 
 ### Debug Log References
 
@@ -914,7 +915,7 @@ None
    - AC3: Users can view, edit, delete, and toggle EPG sources
 
 2. **Test Notes:**
-   - Unit tests for URL/format validation pass (4 Rust tests)
+   - Unit tests for URL/format validation pass (11 Rust tests including SSRF protection)
    - E2E tests created in `tests/e2e/epg-sources.spec.ts` and `tests/api/epg-sources.api.spec.ts`
    - E2E tests require running inside Tauri WebView (not Playwright Chromium) to access Tauri IPC
    - Basic UI test passes: "should display Add EPG Source button and open dialog"
@@ -928,8 +929,16 @@ None
 
 4. **Security:**
    - URL validation ensures only http/https schemes
+   - SSRF protection: blocks localhost, 127.x.x.x, private IP ranges (10.x, 192.168.x, 172.16-31.x, 169.254.x)
    - SQL injection prevented via Diesel parameterized queries
    - Duplicate URL constraint enforced at database level
+   - Race condition fixed: insert uses `.get_result()` instead of separate query
+
+5. **Code Review Fixes Applied:**
+   - Fixed race condition in `add_xmltv_source`: now uses `.get_result()` for atomic insert+return
+   - Fixed TOCTOU vulnerability in `update_xmltv_source` and `toggle_xmltv_source`: removed separate existence checks
+   - Added comprehensive SSRF protection in URL validation
+   - Added 7 new unit tests for SSRF validation
 
 ### File List
 
@@ -949,3 +958,4 @@ None
 - `src-tauri/src/lib.rs` (registered new commands)
 - `src/lib/tauri.ts` (added XMLTV types and functions)
 - `src/views/Accounts.tsx` (integrated EPG Sources section)
+- `src-tauri/src/commands/epg.rs` (code review fixes: SSRF protection, race condition fixes)
