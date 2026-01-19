@@ -114,7 +114,10 @@ pub fn get_autostart_enabled(app: AppHandle) -> Result<AutostartStatus, String> 
 
     let enabled = autostart_manager
         .is_enabled()
-        .map_err(|e| format!("Failed to check autostart status: {}", e))?;
+        .map_err(|e| {
+            eprintln!("Autostart status check failed: {}", e);
+            "Failed to check autostart status".to_string()
+        })?;
 
     Ok(AutostartStatus { enabled })
 }
@@ -136,25 +139,37 @@ pub fn set_autostart_enabled(
     if enabled {
         autostart_manager
             .enable()
-            .map_err(|e| format!("Failed to enable autostart: {}", e))?;
+            .map_err(|e| {
+                eprintln!("Failed to enable autostart: {}", e);
+                "Failed to enable autostart".to_string()
+            })?;
     } else {
         autostart_manager
             .disable()
-            .map_err(|e| format!("Failed to disable autostart: {}", e))?;
+            .map_err(|e| {
+                eprintln!("Failed to disable autostart: {}", e);
+                "Failed to disable autostart".to_string()
+            })?;
     }
 
     // Also persist the setting to database for UI sync
     const AUTOSTART_KEY: &str = "autostart_enabled";
     let mut conn = db
         .get_connection()
-        .map_err(|e| format!("Database connection error: {}", e))?;
+        .map_err(|e| {
+            eprintln!("Database connection error while saving autostart: {}", e);
+            "Failed to save autostart setting".to_string()
+        })?;
 
     let setting = Setting::new(AUTOSTART_KEY.to_string(), enabled.to_string());
 
     diesel::replace_into(settings::table)
         .values(&setting)
         .execute(&mut conn)
-        .map_err(|e| format!("Failed to save autostart setting: {}", e))?;
+        .map_err(|e| {
+            eprintln!("Database insert error for autostart setting: {}", e);
+            "Failed to save autostart setting".to_string()
+        })?;
 
     Ok(())
 }
