@@ -1,7 +1,14 @@
 use diesel::prelude::*;
-use tauri::State;
+use serde::Serialize;
+use tauri::{AppHandle, State};
 
 use crate::db::{schema::settings, DbConnection, Setting};
+
+/// Response type for autostart status queries
+#[derive(Serialize)]
+pub struct AutostartStatus {
+    pub enabled: bool,
+}
 
 #[tauri::command]
 pub fn greet(name: &str) -> String {
@@ -91,6 +98,63 @@ pub fn set_server_port(db: State<DbConnection>, port: u16) -> Result<(), String>
         .values(&setting)
         .execute(&mut conn)
         .map_err(|e| format!("Insert error: {}", e))?;
+
+    Ok(())
+}
+
+/// Get the current autostart status
+///
+/// Returns whether the application is configured to auto-start on boot.
+#[allow(dead_code)] // Used by lib crate via tauri invoke_handler
+#[tauri::command]
+pub fn get_autostart_enabled(app: AppHandle) -> Result<AutostartStatus, String> {
+    use tauri_plugin_autostart::ManagerExt;
+
+    let autostart_manager = app.autolaunch();
+
+    let enabled = autostart_manager
+        .is_enabled()
+        .map_err(|e| format!("Failed to check autostart status: {}", e))?;
+
+    Ok(AutostartStatus { enabled })
+}
+
+/// Set the autostart status
+///
+/// Enables or disables the application's auto-start on boot.
+#[allow(dead_code)] // Used by lib crate via tauri invoke_handler
+#[tauri::command]
+pub fn set_autostart_enabled(
+    app: AppHandle,
+    db: State<DbConnection>,
+    enabled: bool,
+) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+
+    let autostart_manager = app.autolaunch();
+
+    if enabled {
+        autostart_manager
+            .enable()
+            .map_err(|e| format!("Failed to enable autostart: {}", e))?;
+    } else {
+        autostart_manager
+            .disable()
+            .map_err(|e| format!("Failed to disable autostart: {}", e))?;
+    }
+
+    // Also persist the setting to database for UI sync
+    const AUTOSTART_KEY: &str = "autostart_enabled";
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    let setting = Setting::new(AUTOSTART_KEY.to_string(), enabled.to_string());
+
+    diesel::replace_into(settings::table)
+        .values(&setting)
+        .execute(&mut conn)
+        .map_err(|e| format!("Failed to save autostart setting: {}", e))?;
 
     Ok(())
 }
