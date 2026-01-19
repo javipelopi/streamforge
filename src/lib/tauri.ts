@@ -455,3 +455,176 @@ export function formatRelativeTime(date: Date | string): string {
     return `yesterday at ${formatScheduleTime(target.getHours(), target.getMinutes())}`;
   }
 }
+
+// ============================================================================
+// Channel Matching types and functions (Story 3-1)
+// ============================================================================
+
+/** Match type enum */
+export type MatchType = 'exact_epg_id' | 'exact_name' | 'fuzzy' | 'none';
+
+/** Match response type for run_channel_matching command */
+export interface MatchResponse {
+  success: boolean;
+  matchedCount: number;
+  unmatchedCount: number;
+  totalXmltv: number;
+  totalXtream: number;
+  durationMs: number;
+  message: string;
+}
+
+/** Match statistics type */
+export interface MatchStats {
+  totalXmltv: number;
+  totalXtream: number;
+  matched: number;
+  unmatched: number;
+  multipleMatches: number;
+  durationMs: number;
+}
+
+/** Channel mapping type */
+export interface ChannelMapping {
+  id: number;
+  xmltvChannelId: number;
+  xtreamChannelId: number;
+  matchConfidence: number | null;
+  isManual: number | null;
+  isPrimary: number | null;
+  streamPriority: number | null;
+  createdAt: string;
+}
+
+/** XMLTV channel settings type */
+export interface XmltvChannelSettings {
+  id: number;
+  xmltvChannelId: number;
+  isEnabled: number | null;
+  plexDisplayOrder: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Match progress event payload */
+export interface MatchProgressEvent {
+  status: 'starting' | 'saving' | 'complete';
+  message?: string;
+  matched?: number;
+  unmatched?: number;
+}
+
+/**
+ * Run the channel matching algorithm
+ * Matches all XMLTV channels to Xtream streams using fuzzy matching.
+ * @param threshold - Optional confidence threshold (0.0 to 1.0). Defaults to 0.85.
+ * @returns Match response with statistics
+ */
+export async function runChannelMatching(threshold?: number): Promise<MatchResponse> {
+  return invoke<MatchResponse>('run_channel_matching', { threshold });
+}
+
+/**
+ * Get current match statistics from the database
+ * @returns Match statistics
+ */
+export async function getMatchStats(): Promise<MatchStats> {
+  return invoke<MatchStats>('get_match_stats');
+}
+
+/**
+ * Get channel mappings for a specific XMLTV channel
+ * @param xmltvChannelId - XMLTV channel ID
+ * @returns List of channel mappings sorted by priority
+ */
+export async function getChannelMappingsForXmltv(xmltvChannelId: number): Promise<ChannelMapping[]> {
+  return invoke<ChannelMapping[]>('get_channel_mappings_for_xmltv', { xmltvChannelId });
+}
+
+/**
+ * Get XMLTV channel settings
+ * @param xmltvChannelId - XMLTV channel ID
+ * @returns Channel settings or null if not found
+ */
+export async function getXmltvChannelSettings(xmltvChannelId: number): Promise<XmltvChannelSettings | null> {
+  return invoke<XmltvChannelSettings | null>('get_xmltv_channel_settings', { xmltvChannelId });
+}
+
+/**
+ * Get the current matching threshold
+ * @returns Current threshold value (0.0 to 1.0)
+ */
+export async function getMatchThreshold(): Promise<number> {
+  return invoke<number>('get_match_threshold');
+}
+
+/**
+ * Set the matching threshold
+ * @param threshold - New threshold value (0.0 to 1.0)
+ */
+export async function setMatchThreshold(threshold: number): Promise<void> {
+  return invoke<void>('set_match_threshold', { threshold });
+}
+
+/**
+ * Normalize a channel name (for testing/debugging)
+ * @param name - Channel name to normalize
+ * @returns Normalized channel name
+ */
+export async function normalizeChannelName(name: string): Promise<string> {
+  return invoke<string>('normalize_channel_name', { name });
+}
+
+/**
+ * Calculate match score between two channel names (for testing/debugging)
+ * @param xmltvName - XMLTV channel name
+ * @param xtreamName - Xtream stream name
+ * @param epgIdMatch - Whether EPG IDs match
+ * @param exactNameMatch - Whether normalized names match exactly
+ * @returns Match score (0.0 to 1.0)
+ */
+export async function calculateMatchScore(
+  xmltvName: string,
+  xtreamName: string,
+  epgIdMatch: boolean,
+  exactNameMatch: boolean
+): Promise<number> {
+  return invoke<number>('calculate_match_score', {
+    xmltvName,
+    xtreamName,
+    epgIdMatch,
+    exactNameMatch,
+  });
+}
+
+/**
+ * Format confidence score as percentage
+ * @param confidence - Confidence score (0.0 to 1.0)
+ * @returns Formatted percentage string (e.g., "95%")
+ */
+export function formatConfidence(confidence: number | null): string {
+  if (confidence === null) {
+    return 'N/A';
+  }
+  return `${Math.round(confidence * 100)}%`;
+}
+
+/**
+ * Get match type display name
+ * @param matchType - Match type
+ * @returns Human-readable match type string
+ */
+export function getMatchTypeDisplay(matchType: MatchType): string {
+  switch (matchType) {
+    case 'exact_epg_id':
+      return 'EPG ID Match';
+    case 'exact_name':
+      return 'Exact Name';
+    case 'fuzzy':
+      return 'Fuzzy Match';
+    case 'none':
+      return 'No Match';
+    default:
+      return 'Unknown';
+  }
+}
