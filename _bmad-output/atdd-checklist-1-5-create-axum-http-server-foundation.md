@@ -420,39 +420,40 @@ See `_bmad/bmm/testarch/tea-index.csv` for complete knowledge fragment mapping.
 
 ### Initial Test Run (RED Phase Verification)
 
-**Command:** `npm run test:integration -- http-server.spec.ts`
+**Command:** `npm run test -- tests/integration/http-server.spec.ts`
 
-**Expected Results:**
+**Actual Results (2026-01-19):**
 
 ```
-Running 8 tests using 1 worker
+Running 10 tests using 4 workers
 
-  ✗ HTTP Server - Health Check Endpoint › should have HTTP server running on configured port
-    Error: HTTP server is not running on http://127.0.0.1:5004. Expected server to be accessible but got: connect ECONNREFUSED 127.0.0.1:5004
+  ✘ HTTP Server - Health Check Endpoint › should have HTTP server running on configured port
+    Error: HTTP server is not running on http://127.0.0.1:5004.
+    Expected server to be accessible but got: connect ECONNREFUSED 127.0.0.1:5004
 
-  ✗ HTTP Server - Health Check Endpoint › should respond to /health endpoint with 200 OK
-    Error: connect ECONNREFUSED 127.0.0.1:5004
+  ✘ HTTP Server - Health Check Endpoint › should respond to /health endpoint with 200 OK
+    Error: apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:5004
 
-  ✗ HTTP Server - Health Check Endpoint › should return JSON response from /health endpoint
-    Error: connect ECONNREFUSED 127.0.0.1:5004
+  ✘ HTTP Server - Health Check Endpoint › should return JSON response from /health endpoint
+    Error: apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:5004
 
-  ✗ HTTP Server - Health Check Endpoint › should only bind to localhost (127.0.0.1)
-    Error: connect ECONNREFUSED 127.0.0.1:5004
+  ✘ HTTP Server - Health Check Endpoint › should only bind to localhost (127.0.0.1)
+    Error: apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:5004
 
-  ✗ HTTP Server - Health Check Endpoint › should return 404 for unknown routes
-    Error: connect ECONNREFUSED 127.0.0.1:5004
+  ✘ HTTP Server - Health Check Endpoint › should return 404 for unknown routes
+    Error: apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:5004
 
-  ✗ HTTP Server - Initialization › should start automatically when application launches
-    Error: connect ECONNREFUSED 127.0.0.1:5004
+  ✘ HTTP Server - Initialization › should start automatically when application launches
+    Error: apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:5004
 
-  ✗ HTTP Server - Initialization › should run on Tokio async runtime without blocking
-    Error: connect ECONNREFUSED 127.0.0.1:5004
+  ✘ HTTP Server - Initialization › should run on Tokio async runtime without blocking
+    Error: apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:5004
 
-  ✗ HTTP Server - Port Configuration › should use default port 5004
-    Error: connect ECONNREFUSED 127.0.0.1:5004
+  ✘ HTTP Server - Port Configuration › should use default port 5004
+    Error: apiRequestContext.get: connect ECONNREFUSED 127.0.0.1:5004
 
-  ○ HTTP Server - Port Configuration › should read port from settings table (SKIPPED)
-  ○ HTTP Server - Port Configuration › should allow port configuration via settings (SKIPPED)
+  - HTTP Server - Port Configuration › should read port from settings table (SKIPPED)
+  - HTTP Server - Port Configuration › should allow port configuration via settings (SKIPPED)
 
 8 failed, 2 skipped
 ```
@@ -464,11 +465,13 @@ Running 8 tests using 1 worker
 - Failing: 8 (expected - server not implemented)
 - Skipped: 2 (expected - future functionality)
 - Status: ✅ RED phase verified
+- Execution time: < 1 second
 
-**Expected Failure Messages:**
-- Connection refused errors (ECONNREFUSED) on all active tests
+**Failure Analysis:**
+- All active tests fail with ECONNREFUSED on 127.0.0.1:5004
 - Tests fail because HTTP server doesn't exist yet
-- This is the correct starting point for TDD
+- Failure messages are clear and actionable
+- This is the correct starting point for TDD (RED → GREEN → REFACTOR)
 
 ---
 
