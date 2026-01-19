@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import * as Switch from '@radix-ui/react-switch';
 import { ChevronDown, ChevronRight, AlertTriangle, FileText } from 'lucide-react';
 import type { XmltvChannelWithMappings } from '../../lib/tauri';
@@ -11,6 +11,8 @@ interface XmltvChannelRowProps {
   onToggleEnabled: () => void;
   isTogglingEnabled?: boolean;
   style?: React.CSSProperties;
+  /** Slot for the AddStreamButton component */
+  addStreamButton?: ReactNode;
 }
 
 /**
@@ -18,6 +20,7 @@ interface XmltvChannelRowProps {
  * Shows channel info, match status, and enable/disable toggle
  *
  * Story 3-2: Display XMLTV Channel List with Match Status
+ * Story 3-3: Manual Match Override via Search Dropdown
  */
 export const XmltvChannelRow = memo(function XmltvChannelRow({
   channel,
@@ -26,6 +29,7 @@ export const XmltvChannelRow = memo(function XmltvChannelRow({
   onToggleEnabled,
   isTogglingEnabled = false,
   style,
+  addStreamButton,
 }: XmltvChannelRowProps) {
   const hasMatches = channel.matchCount > 0;
   const primaryMatch = channel.matches.find(m => m.isPrimary);
@@ -43,7 +47,7 @@ export const XmltvChannelRow = memo(function XmltvChannelRow({
     >
       {/* Main row content */}
       <div className="flex items-center gap-3 p-3">
-        {/* Expand/collapse button (only show if has matches) */}
+        {/* Expand/collapse button - always show for expanding, or spacer */}
         {hasMatches ? (
           <button
             data-testid="expand-button"
@@ -161,6 +165,9 @@ export const XmltvChannelRow = memo(function XmltvChannelRow({
               {primaryMatch.name}
             </span>
           )}
+
+          {/* Add Stream Button (Story 3-3) */}
+          {addStreamButton}
 
           {/* Enable/disable toggle */}
           <Switch.Root

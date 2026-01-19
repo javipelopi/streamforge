@@ -5,14 +5,19 @@ import {
   getXmltvChannelsWithMappings,
   toggleXmltvChannel,
   setPrimaryStream,
+  getAllXtreamStreams,
+  addManualStreamMapping,
+  removeStreamMapping,
   type XmltvChannelWithMappings,
   type XtreamStreamMatch,
+  type XtreamStreamSearchResult,
 } from '../lib/tauri';
 
 /**
  * Channels View - Displays XMLTV channels with their matched Xtream streams
  *
  * Story 3-2: Display XMLTV Channel List with Match Status
+ * Story 3-3: Manual Match Override via Search Dropdown
  *
  * CRITICAL DESIGN PRINCIPLE: XMLTV channels are the PRIMARY channel list for Plex.
  * This view shows XMLTV channels as the primary list, with their matched Xtream streams.
@@ -38,6 +43,16 @@ export function Channels() {
     queryKey: ['xmltv-channels-with-mappings'],
     queryFn: getXmltvChannelsWithMappings,
     staleTime: 30000, // 30 seconds
+  });
+
+  // Fetch all Xtream streams for manual matching (Story 3-3)
+  const {
+    data: xtreamStreams = [],
+    isLoading: isLoadingStreams,
+  } = useQuery<XtreamStreamSearchResult[], Error>({
+    queryKey: ['xtream-streams-for-matching'],
+    queryFn: getAllXtreamStreams,
+    staleTime: 60000, // 1 minute - streams don't change often
   });
 
   // Toggle channel mutation
@@ -90,6 +105,86 @@ export function Channels() {
     },
   });
 
+  // Add manual mapping mutation (Story 3-3)
+  const addMappingMutation = useMutation({
+    mutationFn: ({
+      xmltvChannelId,
+      xtreamChannelId,
+      setAsPrimary,
+    }: {
+      xmltvChannelId: number;
+      xtreamChannelId: number;
+      setAsPrimary: boolean;
+    }) => addManualStreamMapping(xmltvChannelId, xtreamChannelId, setAsPrimary),
+    onSuccess: (updatedMatches, { xmltvChannelId }) => {
+      // Update channels cache with new matches
+      queryClient.setQueryData<XmltvChannelWithMappings[]>(
+        ['xmltv-channels-with-mappings'],
+        (old) =>
+          old?.map((ch) =>
+            ch.id === xmltvChannelId
+              ? { ...ch, matches: updatedMatches, matchCount: updatedMatches.length }
+              : ch
+          )
+      );
+      // Invalidate streams cache to update matchedToXmltvIds
+      queryClient.invalidateQueries({ queryKey: ['xtream-streams-for-matching'] });
+      showToast('Stream added successfully', 'success');
+    },
+    onError: (err) => {
+      console.error('Failed to add manual mapping:', err);
+      showToast(`Failed to add stream: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+      // Refetch to get actual state on error
+      refetch();
+    },
+  });
+
+  // Remove mapping mutation (Story 3-3)
+  const removeMappingMutation = useMutation({
+    mutationFn: (mappingId: number) => removeStreamMapping(mappingId),
+    onSuccess: (updatedMatches, _mappingId) => {
+      // Find which channel this mapping belonged to and update it
+      // We need to update all channels since we don't have xmltvChannelId in mutation args
+      queryClient.setQueryData<XmltvChannelWithMappings[]>(
+        ['xmltv-channels-with-mappings'],
+        (old) => {
+          if (!old) return old;
+          // Find channel that had this mapping removed
+          return old.map((ch) => {
+            // Check if any of the returned matches belong to this channel
+            // The backend returns the updated matches for the affected channel
+            const hasMatchingIds =
+              updatedMatches.length === 0 ||
+              ch.matches.some((m) =>
+                updatedMatches.some((um) => um.mappingId === m.mappingId || um.id === m.id)
+              );
+            if (hasMatchingIds && ch.matches.length !== updatedMatches.length) {
+              // This might be the updated channel - check by comparing match counts
+              // More reliable: check if any of our matches are no longer in updated
+              const ourMatchIds = new Set(ch.matches.map((m) => m.mappingId));
+              const newMatchIds = new Set(updatedMatches.map((m) => m.mappingId));
+              // If our channel had a match that's no longer present
+              const lostMatch = [...ourMatchIds].some((id) => !newMatchIds.has(id));
+              if (lostMatch || (ch.matches.length > 0 && updatedMatches.length === ch.matches.length - 1)) {
+                return { ...ch, matches: updatedMatches, matchCount: updatedMatches.length };
+              }
+            }
+            return ch;
+          });
+        }
+      );
+      // Invalidate streams cache to update matchedToXmltvIds
+      queryClient.invalidateQueries({ queryKey: ['xtream-streams-for-matching'] });
+      showToast('Stream removed successfully', 'success');
+    },
+    onError: (err) => {
+      console.error('Failed to remove mapping:', err);
+      showToast(`Failed to remove stream: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+      // Refetch to get actual state on error
+      refetch();
+    },
+  });
+
   // Handle toggle channel
   const handleToggleChannel = useCallback(
     (channelId: number) => {
@@ -108,6 +203,32 @@ export function Channels() {
       return result;
     },
     [setPrimaryMutation]
+  );
+
+  // Handle add manual mapping (Story 3-3)
+  const handleAddManualMapping = useCallback(
+    async (
+      xmltvChannelId: number,
+      xtreamChannelId: number,
+      setAsPrimary: boolean
+    ): Promise<XtreamStreamMatch[]> => {
+      const result = await addMappingMutation.mutateAsync({
+        xmltvChannelId,
+        xtreamChannelId,
+        setAsPrimary,
+      });
+      return result;
+    },
+    [addMappingMutation]
+  );
+
+  // Handle remove mapping (Story 3-3)
+  const handleRemoveMapping = useCallback(
+    async (mappingId: number): Promise<XtreamStreamMatch[]> => {
+      const result = await removeMappingMutation.mutateAsync(mappingId);
+      return result;
+    },
+    [removeMappingMutation]
   );
 
   // Calculate stats for header
@@ -182,6 +303,10 @@ export function Channels() {
           isLoading={isLoading}
           onToggleChannel={handleToggleChannel}
           onSetPrimaryStream={handleSetPrimaryStream}
+          xtreamStreams={xtreamStreams}
+          isLoadingStreams={isLoadingStreams}
+          onAddManualMapping={handleAddManualMapping}
+          onRemoveMapping={handleRemoveMapping}
         />
       </div>
 

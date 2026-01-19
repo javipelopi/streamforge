@@ -2,3 +2,5 @@ export { ChannelsList } from './ChannelsList';
 export { XmltvChannelsList } from './XmltvChannelsList';
 export { XmltvChannelRow } from './XmltvChannelRow';
 export { MatchedStreamsList } from './MatchedStreamsList';
+export { StreamSearchDropdown } from './StreamSearchDropdown';
+export { AddStreamButton } from './AddStreamButton';

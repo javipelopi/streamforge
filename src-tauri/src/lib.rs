@@ -281,7 +281,10 @@ pub fn run() {
             commands::matcher::calculate_match_score,
             commands::xmltv_channels::get_xmltv_channels_with_mappings,
             commands::xmltv_channels::set_primary_stream,
-            commands::xmltv_channels::toggle_xmltv_channel
+            commands::xmltv_channels::toggle_xmltv_channel,
+            commands::xmltv_channels::get_all_xtream_streams,
+            commands::xmltv_channels::add_manual_stream_mapping,
+            commands::xmltv_channels::remove_stream_mapping
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

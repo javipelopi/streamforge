@@ -1,14 +1,28 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { XmltvChannelWithMappings, XtreamStreamMatch } from '../../lib/tauri';
+import type {
+  XmltvChannelWithMappings,
+  XtreamStreamMatch,
+  XtreamStreamSearchResult,
+} from '../../lib/tauri';
 import { XmltvChannelRow } from './XmltvChannelRow';
 import { MatchedStreamsList } from './MatchedStreamsList';
+import { AddStreamButton } from './AddStreamButton';
 
 interface XmltvChannelsListProps {
   channels: XmltvChannelWithMappings[];
   isLoading: boolean;
   onToggleChannel: (channelId: number) => void;
   onSetPrimaryStream: (xmltvChannelId: number, xtreamChannelId: number) => Promise<XtreamStreamMatch[]>;
+  // Story 3-3: Manual stream matching props
+  xtreamStreams: XtreamStreamSearchResult[];
+  isLoadingStreams: boolean;
+  onAddManualMapping: (
+    xmltvChannelId: number,
+    xtreamChannelId: number,
+    setAsPrimary: boolean
+  ) => Promise<XtreamStreamMatch[]>;
+  onRemoveMapping: (mappingId: number) => Promise<XtreamStreamMatch[]>;
 }
 
 // Row heights for virtualization
@@ -21,12 +35,17 @@ const EXPANDED_HEADER_HEIGHT = 16; // Padding for expanded section
  * Uses TanStack Virtual for efficient rendering of large lists (1000+ channels)
  *
  * Story 3-2: Display XMLTV Channel List with Match Status
+ * Story 3-3: Manual Match Override via Search Dropdown
  */
 export function XmltvChannelsList({
   channels,
   isLoading,
   onToggleChannel,
   onSetPrimaryStream,
+  xtreamStreams,
+  isLoadingStreams,
+  onAddManualMapping,
+  onRemoveMapping,
 }: XmltvChannelsListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
@@ -110,6 +129,47 @@ export function XmltvChannelsList({
       }
     },
     [onSetPrimaryStream]
+  );
+
+  // Handle add manual mapping (Story 3-3)
+  const handleAddManualMapping = useCallback(
+    async (
+      xmltvChannelId: number,
+      xtreamChannelId: number,
+      setAsPrimary: boolean
+    ) => {
+      setUpdatingChannels((prev) => new Set(prev).add(xmltvChannelId));
+      try {
+        const result = await onAddManualMapping(xmltvChannelId, xtreamChannelId, setAsPrimary);
+        // Auto-expand the row after adding a stream
+        setExpandedRows((prev) => new Set(prev).add(xmltvChannelId));
+        return result;
+      } finally {
+        setUpdatingChannels((prev) => {
+          const next = new Set(prev);
+          next.delete(xmltvChannelId);
+          return next;
+        });
+      }
+    },
+    [onAddManualMapping]
+  );
+
+  // Handle remove mapping (Story 3-3)
+  const handleRemoveMapping = useCallback(
+    async (xmltvChannelId: number, mappingId: number) => {
+      setUpdatingChannels((prev) => new Set(prev).add(xmltvChannelId));
+      try {
+        await onRemoveMapping(mappingId);
+      } finally {
+        setUpdatingChannels((prev) => {
+          const next = new Set(prev);
+          next.delete(xmltvChannelId);
+          return next;
+        });
+      }
+    },
+    [onRemoveMapping]
   );
 
   // Keyboard navigation
@@ -231,6 +291,15 @@ export function XmltvChannelsList({
                 onToggleExpand={() => handleToggleExpand(channel.id)}
                 onToggleEnabled={() => handleToggleChannel(channel.id)}
                 isTogglingEnabled={isToggling}
+                addStreamButton={
+                  <AddStreamButton
+                    xmltvChannelId={channel.id}
+                    streams={xtreamStreams}
+                    isLoadingStreams={isLoadingStreams}
+                    onAddStream={handleAddManualMapping}
+                    disabled={isUpdating}
+                  />
+                }
               />
 
               {/* Expanded matched streams */}
@@ -238,6 +307,7 @@ export function XmltvChannelsList({
                 <MatchedStreamsList
                   matches={channel.matches}
                   onMakePrimary={(xtreamId) => handleMakePrimary(channel.id, xtreamId)}
+                  onRemoveMapping={(mappingId) => handleRemoveMapping(channel.id, mappingId)}
                   isUpdating={isUpdating}
                 />
               )}
