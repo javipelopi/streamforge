@@ -1,6 +1,6 @@
 # Story 2.5: Parse and Store XMLTV EPG Data
 
-Status: ready-for-review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -508,7 +508,7 @@ N/A
 ### Completion Notes List
 
 1. **Implementation Complete**: All 10 tasks and subtasks completed successfully
-2. **Rust Tests**: 53 unit tests pass (including XMLTV parser, timestamp parsing, gzip detection, SSRF protection)
+2. **Rust Tests**: 46 unit tests pass (including XMLTV parser, timestamp parsing, gzip detection, SSRF protection)
 3. **TypeScript**: Compiles without errors
 4. **ATDD Tests Status**: API and E2E tests cannot run due to test infrastructure limitation - Playwright browser context doesn't have access to Tauri IPC (`window.__TAURI__` undefined). This is a known limitation of testing Tauri apps with Playwright without WebDriver integration.
 5. **Test Mode**: Added `IPTV_TEST_MODE=1` environment variable to allow localhost in SSRF protection for testing with mock servers. Private IP ranges remain blocked in all modes.
@@ -517,9 +517,18 @@ N/A
    - Streaming XMLTV parser using quick-xml for memory efficiency
    - Gzip decompression with auto-detection from magic bytes
    - SSRF protection blocking localhost (except test mode) and private IPs
-   - Full refresh strategy (delete existing + reinsert)
+   - Full refresh strategy with transaction wrapping for atomicity
    - Toast notifications for success/error feedback
    - EPG stats display (channel/program counts, last refresh time)
+
+### Code Review Fixes Applied
+
+8. **Code Review (2026-01-19)**: Fixed 5 issues found in adversarial review
+   - **CRITICAL**: Fixed timezone conversion bug (was double-applying offset, now uses `from_local_datetime`)
+   - **MEDIUM**: Consolidated SSRF protection logic (removed duplicate 172.x checks, use `is_172_private` helper)
+   - **MEDIUM**: Added transaction wrapping to `refresh_epg_source` for atomicity
+   - **MEDIUM**: Improved `refresh_all_epg_sources` error reporting (returns detailed error if sources fail)
+   - **MEDIUM**: Added `From<diesel::result::Error>` implementation for transaction support
 
 ### File List
 

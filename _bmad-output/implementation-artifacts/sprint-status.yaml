@@ -54,7 +54,7 @@ development_status:
   2-2-test-xtream-connection-and-display-account-status: done
   2-3-retrieve-and-store-channel-list-from-xtream: done
   2-4-add-xmltv-source-management: done
-  2-5-parse-and-store-xmltv-epg-data: review
+  2-5-parse-and-store-xmltv-epg-data: done
   2-6-implement-scheduled-epg-refresh: backlog
   epic-2-retrospective: optional
 
