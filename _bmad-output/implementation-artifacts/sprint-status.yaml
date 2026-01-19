@@ -2,6 +2,7 @@
 # project: iptv
 # tracking_system: file-system
 # story_location: _bmad-output/implementation-artifacts
+# course_correction: XMLTV-first channel hierarchy (2026-01-19)
 
 # STATUS DEFINITIONS:
 # ==================
@@ -49,24 +50,25 @@ development_status:
   epic-1-retrospective: optional
 
   # Epic 2: Account & Source Configuration
-  epic-2: backlog
-  2-1-add-xtream-account-with-secure-credential-storage: backlog
-  2-2-test-xtream-connection-and-display-account-status: backlog
-  2-3-retrieve-and-store-channel-list-from-xtream: backlog
-  2-4-add-xmltv-source-management: backlog
-  2-5-parse-and-store-xmltv-epg-data: backlog
-  2-6-implement-scheduled-epg-refresh: backlog
+  epic-2: done
+  2-1-add-xtream-account-with-secure-credential-storage: done
+  2-2-test-xtream-connection-and-display-account-status: done
+  2-3-retrieve-and-store-channel-list-from-xtream: done
+  2-4-add-xmltv-source-management: done
+  2-5-parse-and-store-xmltv-epg-data: done
+  2-6-implement-scheduled-epg-refresh: done
   epic-2-retrospective: optional
 
-  # Epic 3: Channel Discovery & Matching
+  # Epic 3: Channel Discovery & Matching (XMLTV-First) - REWRITTEN
   epic-3: backlog
   3-1-implement-fuzzy-channel-matching-algorithm: backlog
-  3-2-display-channel-list-with-match-status-and-confidence: backlog
+  3-2-display-xmltv-channel-list-with-match-status: backlog
   3-3-manual-match-override-via-search-dropdown: backlog
   3-4-auto-rematch-on-provider-changes: backlog
-  3-5-channel-enable-disable-functionality: backlog
+  3-5-channel-enable-disable-for-plex: backlog
   3-6-drag-and-drop-channel-reordering: backlog
   3-7-bulk-channel-operations: backlog
+  3-8-manage-orphan-xtream-channels: backlog
   epic-3-retrospective: optional
 
   # Epic 4: Plex Integration & Streaming

@@ -77,7 +77,7 @@ completedDate: '2026-01-18'
 | **Tauri IPC** | Type-safe communication between frontend and Rust |
 | **Xtream Client** | API authentication, channel/stream retrieval |
 | **XMLTV Parser** | Parse XML/gzipped EPG data, extract programs |
-| **Channel Matcher** | Fuzzy matching, auto-rematch on changes |
+| **Channel Matcher** | Fuzzy matching of Xtream streams to XMLTV channels (XMLTV is primary), auto-rematch on changes |
 | **Stream Proxy** | Proxy streams, handle failover between quality tiers |
 | **HTTP Server** | Serve M3U, EPG, and stream endpoints to Plex |
 | **HDHomeRun Emulator** | Respond to Plex tuner discovery |
@@ -173,28 +173,38 @@ CREATE TABLE xtream_channels (
     UNIQUE(account_id, stream_id)
 );
 
--- Channels from XMLTV
+-- Channels from XMLTV (or synthetic for orphan Xtream channels)
 CREATE TABLE xmltv_channels (
     id INTEGER PRIMARY KEY,
     source_id INTEGER REFERENCES xmltv_sources(id) ON DELETE CASCADE,
     channel_id TEXT NOT NULL,
     display_name TEXT NOT NULL,
     icon TEXT,
+    is_synthetic BOOLEAN DEFAULT FALSE,  -- True for promoted orphan Xtream channels
     UNIQUE(source_id, channel_id)
 );
 
--- Channel mappings (Xtream -> XMLTV)
+-- Channel mappings (XMLTV -> Xtream) - One XMLTV channel can have MULTIPLE Xtream streams
 CREATE TABLE channel_mappings (
     id INTEGER PRIMARY KEY,
-    xtream_channel_id INTEGER REFERENCES xtream_channels(id) ON DELETE CASCADE,
-    xmltv_channel_id INTEGER REFERENCES xmltv_channels(id) ON DELETE SET NULL,
+    xmltv_channel_id INTEGER NOT NULL REFERENCES xmltv_channels(id) ON DELETE CASCADE,
+    xtream_channel_id INTEGER NOT NULL REFERENCES xtream_channels(id) ON DELETE CASCADE,
     match_confidence REAL,
     is_manual BOOLEAN DEFAULT FALSE,
-    is_enabled BOOLEAN DEFAULT TRUE,
-    display_order INTEGER,
+    is_primary BOOLEAN DEFAULT FALSE,  -- Best match for this XMLTV channel
+    stream_priority INTEGER DEFAULT 0,  -- Order for failover (0 = highest priority)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(xtream_channel_id)
+    UNIQUE(xmltv_channel_id, xtream_channel_id)  -- Prevent duplicate mappings
+);
+
+-- XMLTV channel settings for Plex lineup (one per XMLTV channel)
+CREATE TABLE xmltv_channel_settings (
+    id INTEGER PRIMARY KEY,
+    xmltv_channel_id INTEGER NOT NULL UNIQUE REFERENCES xmltv_channels(id) ON DELETE CASCADE,
+    is_enabled BOOLEAN DEFAULT FALSE,  -- User must enable for Plex
+    plex_display_order INTEGER,         -- Channel order in Plex lineup
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- EPG program data (cached)
@@ -231,18 +241,21 @@ CREATE INDEX idx_event_log_timestamp ON event_log(timestamp DESC);
 
 ### Data Flow
 
+**Channel Hierarchy:** XMLTV channels are the PRIMARY source for Plex lineup (names, IDs, icons, EPG). Xtream streams are matched TO XMLTV channels as video sources.
+
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
 │   Xtream     │     │    XMLTV     │     │    User      │
 │   Provider   │     │   Sources    │     │   Actions    │
+│  (streams)   │     │  (PRIMARY)   │     │              │
 └──────┬───────┘     └──────┬───────┘     └──────┬───────┘
        │                    │                    │
        ▼                    ▼                    ▼
 ┌──────────────────────────────────────────────────────────┐
 │                    Rust Core Service                      │
 │  ┌────────────┐  ┌────────────┐  ┌────────────────────┐  │
-│  │ Fetch &    │  │ Parse &    │  │ Update Mappings    │  │
-│  │ Sync       │  │ Cache EPG  │  │ & Preferences      │  │
+│  │ Fetch      │  │ Parse &    │  │ Match Xtream TO    │  │
+│  │ Streams    │  │ Cache EPG  │  │ XMLTV + User Prefs │  │
 │  └─────┬──────┘  └─────┬──────┘  └─────────┬──────────┘  │
 │        │               │                   │             │
 │        └───────────────┼───────────────────┘             │
@@ -250,6 +263,12 @@ CREATE INDEX idx_event_log_timestamp ON event_log(timestamp DESC);
 │              ┌─────────────────┐                         │
 │              │  SQLite (Diesel)│                         │
 │              └─────────────────┘                         │
+│                        │                                 │
+│                        ▼                                 │
+│              ┌─────────────────┐                         │
+│              │ M3U/EPG Gen     │ (uses XMLTV channel     │
+│              │ for Plex        │  info for enabled       │
+│              └─────────────────┘  channels only)         │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -337,23 +356,26 @@ matcher/
 ```
 
 **Matching Algorithm:**
-1. Normalize channel names (lowercase, remove HD/SD/FHD suffixes, strip punctuation)
-2. Calculate Jaro-Winkler similarity
-3. Boost score for exact EPG ID matches
-4. Apply confidence threshold (default: 0.85)
-5. Return ranked matches
+XMLTV channels are the primary channel list for Plex. Xtream streams are matched TO XMLTV channels.
+
+1. For each XMLTV channel, find candidate Xtream streams
+2. Normalize channel names (lowercase, remove HD/SD/FHD suffixes, strip punctuation)
+3. Calculate Jaro-Winkler similarity
+4. Boost score for exact EPG ID matches
+5. Apply confidence threshold (default: 0.85)
+6. Return ranked matches with XMLTV as primary key
 
 ```rust
 pub struct MatchResult {
-    xtream_channel_id: i32,
-    xmltv_channel_id: Option<i32>,
+    xmltv_channel_id: i32,           // Primary - defines Plex channel
+    xtream_channel_id: Option<i32>,  // Matched stream source (nullable)
     confidence: f64,
     match_type: MatchType, // Exact, Fuzzy, EpgId, None
 }
 
 pub fn match_channels(
-    xtream: &[XtreamChannel],
-    xmltv: &[XmltvChannel],
+    xmltv: &[XmltvChannel],   // Primary channel list
+    xtream: &[XtreamChannel], // Stream sources to match
     threshold: f64,
 ) -> Vec<MatchResult>;
 ```
@@ -536,11 +558,13 @@ interface Channel {
 
 interface ChannelMapping {
   id: number;
-  xmltvChannelId?: number;
-  xmltvChannelName?: string;
+  xmltvChannelId: number;        // Primary - required, defines Plex channel
+  xmltvChannelName: string;
+  xtreamChannelId?: number;      // Matched stream source (optional)
+  xtreamChannelName?: string;
   matchConfidence?: number;
   isManual: boolean;
-  isEnabled: boolean;
+  isEnabled: boolean;            // Defaults false - user explicitly enables for Plex
   displayOrder: number;
 }
 
@@ -803,3 +827,12 @@ GET /lineup.json
   }
 ]
 ```
+
+---
+
+## Document History
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-18 | Javier | Initial Architecture creation |
+| 1.1 | 2026-01-19 | Bob (SM) | Course correction: Updated channel_mappings schema, MatchResult struct, data flow to reflect XMLTV channels as primary for Plex lineup |

@@ -1,0 +1,475 @@
+//! Account management Tauri commands
+//!
+//! This module provides commands for adding, retrieving, updating, and deleting
+//! Xtream Codes account credentials with secure password storage.
+
+use diesel::prelude::*;
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager, State};
+use thiserror::Error;
+
+use crate::credentials::CredentialManager;
+use crate::db::{
+    schema::accounts,
+    Account, AccountStatusUpdate, DbConnection, NewAccount,
+};
+use crate::xtream::XtreamClient;
+
+/// Error types for account operations
+#[derive(Debug, Error)]
+pub enum AccountError {
+    #[error("Account name is required")]
+    NameRequired,
+
+    #[error("Server URL is required")]
+    ServerUrlRequired,
+
+    #[error("Server URL format is invalid - must start with http:// or https://")]
+    InvalidServerUrl,
+
+    #[error("Username is required")]
+    UsernameRequired,
+
+    #[error("Password is required")]
+    PasswordRequired,
+
+    #[error("Failed to store credentials securely")]
+    CredentialStorageError,
+
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+
+    #[error("Account not found")]
+    NotFound,
+
+    #[error("Failed to get app data directory")]
+    AppDataDirError,
+}
+
+impl From<AccountError> for String {
+    fn from(err: AccountError) -> Self {
+        err.to_string()
+    }
+}
+
+/// Response type for account data (excludes password)
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountResponse {
+    pub id: i32,
+    pub name: String,
+    pub server_url: String,
+    pub username: String,
+    pub max_connections: i32,
+    pub is_active: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    // Connection status fields
+    pub connection_status: Option<String>,
+    pub expiry_date: Option<String>,
+    pub max_connections_actual: Option<i32>,
+    pub active_connections: Option<i32>,
+}
+
+impl From<Account> for AccountResponse {
+    fn from(account: Account) -> Self {
+        Self {
+            id: account.id.unwrap_or(0),
+            name: account.name,
+            server_url: account.server_url,
+            username: account.username,
+            max_connections: account.max_connections,
+            is_active: account.is_active != 0,
+            created_at: account.created_at,
+            updated_at: account.updated_at,
+            // Connection status fields
+            connection_status: account.connection_status,
+            expiry_date: account.expiry_date,
+            max_connections_actual: account.max_connections_actual,
+            active_connections: account.active_connections,
+        }
+    }
+}
+
+/// Request type for adding a new account
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddAccountRequest {
+    pub name: String,
+    pub server_url: String,
+    pub username: String,
+    pub password: String,
+}
+
+/// Request type for updating an account
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAccountRequest {
+    pub name: String,
+    pub server_url: String,
+    pub username: String,
+    pub password: Option<String>, // Optional - only update if provided
+}
+
+/// Normalize server URL by removing trailing slashes
+fn normalize_url(url: &str) -> String {
+    url.trim().trim_end_matches('/').to_string()
+}
+
+/// Validate account input fields
+fn validate_account_input(
+    name: &str,
+    server_url: &str,
+    username: &str,
+    password: Option<&str>,
+) -> Result<(), AccountError> {
+    // Validate name
+    if name.trim().is_empty() {
+        return Err(AccountError::NameRequired);
+    }
+    if name.len() > 100 {
+        return Err(AccountError::DatabaseError("Account name must be 100 characters or less".to_string()));
+    }
+
+    // Validate server URL
+    if server_url.trim().is_empty() {
+        return Err(AccountError::ServerUrlRequired);
+    }
+
+    // Validate URL format by attempting to parse it
+    if !server_url.starts_with("http://") && !server_url.starts_with("https://") {
+        return Err(AccountError::InvalidServerUrl);
+    }
+
+    // Validate that URL is actually parseable
+    if url::Url::parse(server_url.trim()).is_err() {
+        return Err(AccountError::InvalidServerUrl);
+    }
+
+    // Validate username
+    if username.trim().is_empty() {
+        return Err(AccountError::UsernameRequired);
+    }
+    if username.len() > 100 {
+        return Err(AccountError::DatabaseError("Username must be 100 characters or less".to_string()));
+    }
+
+    // Validate password (only if provided)
+    if let Some(pwd) = password {
+        if pwd.trim().is_empty() {
+            return Err(AccountError::PasswordRequired);
+        }
+        if pwd.len() > 500 {
+            return Err(AccountError::DatabaseError("Password must be 500 characters or less".to_string()));
+        }
+    }
+
+    Ok(())
+}
+
+/// Add a new Xtream Codes account
+///
+/// Stores the password securely using OS keychain (preferred) or AES-256-GCM encryption (fallback).
+#[tauri::command]
+pub async fn add_account(
+    app: AppHandle,
+    db: State<'_, DbConnection>,
+    request: AddAccountRequest,
+) -> Result<AccountResponse, String> {
+    // Validate input
+    validate_account_input(
+        &request.name,
+        &request.server_url,
+        &request.username,
+        Some(&request.password),
+    )?;
+
+    // Normalize server URL
+    let normalized_server_url = normalize_url(&request.server_url);
+
+    // Get app data directory for credential storage
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| AccountError::AppDataDirError)?;
+
+    // Get database connection
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    // First, insert the account to get the ID
+    let new_account = NewAccount::new(
+        request.name.clone(),
+        normalized_server_url,
+        request.username.clone(),
+        vec![], // Placeholder - will be updated after we have the ID
+    );
+
+    diesel::insert_into(accounts::table)
+        .values(&new_account)
+        .execute(&mut conn)
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    // Get the inserted account to retrieve its ID
+    let inserted: Account = accounts::table
+        .order(accounts::id.desc())
+        .first(&mut conn)
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    let account_id = inserted.id.unwrap_or(0);
+
+    // Store password securely using the account ID as key
+    let credential_manager = CredentialManager::new(app_data_dir);
+    let (_, encrypted_password) = credential_manager
+        .store_password(&account_id.to_string(), &request.password)
+        .map_err(|_| AccountError::CredentialStorageError)?;
+
+    // Update the account with the encrypted password
+    diesel::update(accounts::table.filter(accounts::id.eq(account_id)))
+        .set(accounts::password_encrypted.eq(&encrypted_password))
+        .execute(&mut conn)
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    // Retrieve the final account
+    let account: Account = accounts::table
+        .filter(accounts::id.eq(account_id))
+        .first(&mut conn)
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    Ok(AccountResponse::from(account))
+}
+
+/// Get all accounts (without passwords)
+#[tauri::command]
+pub async fn get_accounts(db: State<'_, DbConnection>) -> Result<Vec<AccountResponse>, String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    let account_list: Vec<Account> = accounts::table
+        .load(&mut conn)
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    Ok(account_list.into_iter().map(AccountResponse::from).collect())
+}
+
+/// Delete an account
+#[tauri::command]
+pub async fn delete_account(
+    app: AppHandle,
+    db: State<'_, DbConnection>,
+    id: i32,
+) -> Result<(), String> {
+    // Get app data directory for credential storage
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| AccountError::AppDataDirError)?;
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    // First, get the account to retrieve the encrypted password for deletion
+    let account: Account = accounts::table
+        .filter(accounts::id.eq(id))
+        .first(&mut conn)
+        .map_err(|_| AccountError::NotFound)?;
+
+    // Delete the stored credential
+    let credential_manager = CredentialManager::new(app_data_dir);
+    let _ = credential_manager.delete_password(&id.to_string(), &account.password_encrypted);
+
+    // Delete the account from database
+    diesel::delete(accounts::table.filter(accounts::id.eq(id)))
+        .execute(&mut conn)
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    Ok(())
+}
+
+/// Update an existing account
+#[tauri::command]
+pub async fn update_account(
+    app: AppHandle,
+    db: State<'_, DbConnection>,
+    id: i32,
+    request: UpdateAccountRequest,
+) -> Result<AccountResponse, String> {
+    // Validate input (password is optional for updates)
+    validate_account_input(
+        &request.name,
+        &request.server_url,
+        &request.username,
+        request.password.as_deref(),
+    )?;
+
+    // Normalize server URL
+    let normalized_server_url = normalize_url(&request.server_url);
+
+    // Get app data directory for credential storage
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| AccountError::AppDataDirError)?;
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    // First, check if account exists
+    let existing: Account = accounts::table
+        .filter(accounts::id.eq(id))
+        .first(&mut conn)
+        .map_err(|_| AccountError::NotFound)?;
+
+    // Get current timestamp for updated_at
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    // Update basic fields
+    diesel::update(accounts::table.filter(accounts::id.eq(id)))
+        .set((
+            accounts::name.eq(&request.name),
+            accounts::server_url.eq(&normalized_server_url),
+            accounts::username.eq(&request.username),
+            accounts::updated_at.eq(&now),
+        ))
+        .execute(&mut conn)
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    // If password is provided, update it
+    if let Some(password) = &request.password {
+        let credential_manager = CredentialManager::new(app_data_dir);
+
+        // Delete old credential
+        let _ = credential_manager.delete_password(&id.to_string(), &existing.password_encrypted);
+
+        // Store new password
+        let (_, encrypted_password) = credential_manager
+            .store_password(&id.to_string(), password)
+            .map_err(|_| AccountError::CredentialStorageError)?;
+
+        // Update the encrypted password in database
+        diesel::update(accounts::table.filter(accounts::id.eq(id)))
+            .set(accounts::password_encrypted.eq(&encrypted_password))
+            .execute(&mut conn)
+            .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+    }
+
+    // Retrieve and return the updated account
+    let account: Account = accounts::table
+        .filter(accounts::id.eq(id))
+        .first(&mut conn)
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    Ok(AccountResponse::from(account))
+}
+
+/// Response type for test_connection command
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TestConnectionResponse {
+    pub success: bool,
+    pub status: Option<String>,
+    pub expiry_date: Option<String>,
+    pub max_connections: Option<i32>,
+    pub active_connections: Option<i32>,
+    pub error_message: Option<String>,
+    pub suggestions: Option<Vec<String>>,
+}
+
+/// Test connection to Xtream Codes server
+///
+/// Retrieves credentials, authenticates with the Xtream API, and updates
+/// the account status in the database.
+#[tauri::command]
+pub async fn test_connection(
+    app: AppHandle,
+    db: State<'_, DbConnection>,
+    account_id: i32,
+) -> Result<TestConnectionResponse, String> {
+    // Get app data directory for credential retrieval
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| AccountError::AppDataDirError)?;
+
+    // Get database connection
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    // Load account from database
+    let account: Account = accounts::table
+        .filter(accounts::id.eq(account_id))
+        .first(&mut conn)
+        .map_err(|_| AccountError::NotFound)?;
+
+    // Retrieve password from keyring/fallback (password is NEVER logged)
+    let credential_manager = CredentialManager::new(app_data_dir);
+    let password = credential_manager
+        .retrieve_password(&account_id.to_string(), &account.password_encrypted)
+        .map_err(|_| "Failed to retrieve credentials".to_string())?;
+
+    // Create Xtream client and authenticate
+    let client = XtreamClient::new(&account.server_url, &account.username, &password)
+        .map_err(|e| e.user_message())?;
+
+    match client.authenticate().await {
+        Ok(info) => {
+            // Format expiry date for storage and display
+            let expiry_date_str = info.expiry_date.map(|d| d.to_rfc3339());
+            let last_check = chrono::Utc::now().to_rfc3339();
+
+            // Update account status in database
+            let status_update = AccountStatusUpdate {
+                expiry_date: expiry_date_str.clone(),
+                max_connections_actual: Some(info.max_connections),
+                active_connections: Some(info.active_connections),
+                last_check: Some(last_check),
+                connection_status: Some("connected".to_string()),
+            };
+
+            diesel::update(accounts::table.filter(accounts::id.eq(account_id)))
+                .set(&status_update)
+                .execute(&mut conn)
+                .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+            Ok(TestConnectionResponse {
+                success: true,
+                status: Some(info.status),
+                expiry_date: expiry_date_str,
+                max_connections: Some(info.max_connections),
+                active_connections: Some(info.active_connections),
+                error_message: None,
+                suggestions: None,
+            })
+        }
+        Err(e) => {
+            // Update account status to failed
+            let last_check = chrono::Utc::now().to_rfc3339();
+            let status_update = AccountStatusUpdate {
+                expiry_date: None,
+                max_connections_actual: None,
+                active_connections: None,
+                last_check: Some(last_check),
+                connection_status: Some("failed".to_string()),
+            };
+
+            let _ = diesel::update(accounts::table.filter(accounts::id.eq(account_id)))
+                .set(&status_update)
+                .execute(&mut conn);
+
+            Ok(TestConnectionResponse {
+                success: false,
+                status: None,
+                expiry_date: None,
+                max_connections: None,
+                active_connections: None,
+                error_message: Some(e.user_message()),
+                suggestions: Some(e.suggestions()),
+            })
+        }
+    }
+}

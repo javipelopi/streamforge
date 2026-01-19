@@ -1,6 +1,10 @@
 pub mod commands;
+pub mod credentials;
 pub mod db;
+pub mod scheduler;
 pub mod server;
+pub mod xmltv;
+pub mod xtream;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -52,6 +56,77 @@ pub fn run() {
                     eprintln!("HTTP server error: {}", e);
                 }
             });
+
+            // Initialize EPG scheduler
+            // Clone pool for scheduler - scheduler runs independently of commands
+            let scheduler_pool = db_connection.clone_pool();
+            let epg_scheduler = scheduler::EpgScheduler::new();
+
+            // Spawn scheduler initialization in background
+            let scheduler_clone = epg_scheduler.clone();
+            tauri::async_runtime::spawn(async move {
+                // Set up database pool
+                scheduler_clone.set_db_pool(scheduler_pool).await;
+
+                // Start the scheduler
+                if let Err(e) = scheduler_clone.start().await {
+                    tracing::error!(
+                        "CRITICAL: Failed to start EPG scheduler: {}. Automatic EPG refresh will not work!",
+                        e
+                    );
+                    eprintln!("Failed to start EPG scheduler: {}. Automatic EPG refresh will not work!", e);
+                    return;
+                }
+                tracing::info!("EPG scheduler started successfully");
+
+                // Get a temporary connection to read schedule settings
+                if let Some(mut conn) = scheduler_clone.get_db_connection().await {
+                    let schedule = scheduler::get_epg_schedule(&mut conn);
+
+                    // Set enabled state
+                    if let Err(e) = scheduler_clone.set_enabled(schedule.enabled).await {
+                        tracing::error!("Failed to set scheduler enabled state: {}. Using default enabled state.", e);
+                        eprintln!("Failed to set scheduler enabled state: {}", e);
+                    }
+
+                    // Update schedule if enabled
+                    if schedule.enabled {
+                        if let Err(e) = scheduler_clone.update_schedule(schedule.hour, schedule.minute).await {
+                            tracing::error!(
+                                "Failed to configure EPG schedule ({:02}:{:02}): {}. Automatic refresh will not work!",
+                                schedule.hour,
+                                schedule.minute,
+                                e
+                            );
+                            eprintln!("Failed to update EPG schedule: {}", e);
+                        } else {
+                            tracing::info!(
+                                "EPG scheduler configured: refresh at {:02}:{:02} daily",
+                                schedule.hour,
+                                schedule.minute
+                            );
+                        }
+                    } else {
+                        tracing::info!("EPG automatic refresh is disabled in settings");
+                    }
+
+                    // Wait 7 seconds after scheduler initialization before checking for missed refresh
+                    // This ensures the schedule is fully configured before checking for missed refreshes
+                    tokio::time::sleep(tokio::time::Duration::from_secs(7)).await;
+
+                    // Check for missed refresh and trigger if needed
+                    // This must happen AFTER schedule is configured to detect missed refreshes correctly
+                    scheduler::check_and_trigger_missed_refresh(&scheduler_clone).await;
+                } else {
+                    tracing::error!(
+                        "CRITICAL: Failed to get database connection for scheduler initialization. Automatic EPG refresh will not work!"
+                    );
+                    eprintln!("Failed to get database connection for scheduler initialization");
+                }
+            });
+
+            // Store scheduler in managed state for commands to access
+            app.manage(epg_scheduler);
 
             app.manage(db_connection);
 
@@ -174,7 +249,27 @@ pub fn run() {
             commands::get_server_port,
             commands::set_server_port,
             commands::get_autostart_enabled,
-            commands::set_autostart_enabled
+            commands::set_autostart_enabled,
+            commands::accounts::add_account,
+            commands::accounts::get_accounts,
+            commands::accounts::delete_account,
+            commands::accounts::update_account,
+            commands::accounts::test_connection,
+            commands::channels::scan_channels,
+            commands::channels::get_channels,
+            commands::channels::get_channel_count,
+            commands::epg::add_xmltv_source,
+            commands::epg::get_xmltv_sources,
+            commands::epg::update_xmltv_source,
+            commands::epg::delete_xmltv_source,
+            commands::epg::toggle_xmltv_source,
+            commands::epg::refresh_epg_source,
+            commands::epg::refresh_all_epg_sources,
+            commands::epg::get_epg_stats,
+            commands::epg::get_xmltv_channels,
+            commands::epg::get_programs,
+            commands::epg::get_epg_schedule,
+            commands::epg::set_epg_schedule
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
