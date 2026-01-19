@@ -22,6 +22,10 @@ export default [
         document: 'readonly',
         console: 'readonly',
         HTMLElement: 'readonly',
+        HTMLInputElement: 'readonly',
+        URL: 'readonly',
+        confirm: 'readonly',
+        React: 'readonly',
       },
     },
     plugins: {
