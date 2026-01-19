@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod credentials;
 pub mod db;
 pub mod server;
 
@@ -174,7 +175,11 @@ pub fn run() {
             commands::get_server_port,
             commands::set_server_port,
             commands::get_autostart_enabled,
-            commands::set_autostart_enabled
+            commands::set_autostart_enabled,
+            commands::accounts::add_account,
+            commands::accounts::get_accounts,
+            commands::accounts::delete_account,
+            commands::accounts::update_account
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
