@@ -2,6 +2,7 @@ pub mod commands;
 pub mod credentials;
 pub mod db;
 pub mod server;
+pub mod xtream;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -179,7 +180,8 @@ pub fn run() {
             commands::accounts::add_account,
             commands::accounts::get_accounts,
             commands::accounts::delete_account,
-            commands::accounts::update_account
+            commands::accounts::update_account,
+            commands::accounts::test_connection
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -11,8 +11,9 @@ use thiserror::Error;
 use crate::credentials::CredentialManager;
 use crate::db::{
     schema::accounts,
-    Account, DbConnection, NewAccount,
+    Account, AccountStatusUpdate, DbConnection, NewAccount,
 };
+use crate::xtream::XtreamClient;
 
 /// Error types for account operations
 #[derive(Debug, Error)]
@@ -131,7 +132,7 @@ fn validate_account_input(
     }
 
     // Validate that URL is actually parseable
-    if let Err(_) = url::Url::parse(server_url.trim()) {
+    if url::Url::parse(server_url.trim()).is_err() {
         return Err(AccountError::InvalidServerUrl);
     }
 
@@ -353,4 +354,112 @@ pub async fn update_account(
         .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
 
     Ok(AccountResponse::from(account))
+}
+
+/// Response type for test_connection command
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TestConnectionResponse {
+    pub success: bool,
+    pub status: Option<String>,
+    pub expiry_date: Option<String>,
+    pub max_connections: Option<i32>,
+    pub active_connections: Option<i32>,
+    pub error_message: Option<String>,
+    pub suggestions: Option<Vec<String>>,
+}
+
+/// Test connection to Xtream Codes server
+///
+/// Retrieves credentials, authenticates with the Xtream API, and updates
+/// the account status in the database.
+#[tauri::command]
+pub async fn test_connection(
+    app: AppHandle,
+    db: State<'_, DbConnection>,
+    account_id: i32,
+) -> Result<TestConnectionResponse, String> {
+    // Get app data directory for credential retrieval
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| AccountError::AppDataDirError)?;
+
+    // Get database connection
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    // Load account from database
+    let account: Account = accounts::table
+        .filter(accounts::id.eq(account_id))
+        .first(&mut conn)
+        .map_err(|_| AccountError::NotFound)?;
+
+    // Retrieve password from keyring/fallback (password is NEVER logged)
+    let credential_manager = CredentialManager::new(app_data_dir);
+    let password = credential_manager
+        .retrieve_password(&account_id.to_string(), &account.password_encrypted)
+        .map_err(|_| "Failed to retrieve credentials".to_string())?;
+
+    // Create Xtream client and authenticate
+    let client = XtreamClient::new(&account.server_url, &account.username, &password)
+        .map_err(|e| e.user_message())?;
+
+    match client.authenticate().await {
+        Ok(info) => {
+            // Format expiry date for storage and display
+            let expiry_date_str = info.expiry_date.map(|d| d.to_rfc3339());
+            let last_check = chrono::Utc::now().to_rfc3339();
+
+            // Update account status in database
+            let status_update = AccountStatusUpdate {
+                expiry_date: expiry_date_str.clone(),
+                max_connections_actual: Some(info.max_connections),
+                active_connections: Some(info.active_connections),
+                last_check: Some(last_check),
+                connection_status: Some("connected".to_string()),
+            };
+
+            diesel::update(accounts::table.filter(accounts::id.eq(account_id)))
+                .set(&status_update)
+                .execute(&mut conn)
+                .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+            Ok(TestConnectionResponse {
+                success: true,
+                status: Some(info.status),
+                expiry_date: expiry_date_str,
+                max_connections: Some(info.max_connections),
+                active_connections: Some(info.active_connections),
+                error_message: None,
+                suggestions: None,
+            })
+        }
+        Err(e) => {
+            // Update account status to failed
+            let last_check = chrono::Utc::now().to_rfc3339();
+            let status_update = AccountStatusUpdate {
+                expiry_date: None,
+                max_connections_actual: None,
+                active_connections: None,
+                last_check: Some(last_check),
+                connection_status: Some("failed".to_string()),
+            };
+
+            let _ = diesel::update(accounts::table.filter(accounts::id.eq(account_id)))
+                .set(&status_update)
+                .execute(&mut conn);
+
+            Ok(TestConnectionResponse {
+                success: false,
+                status: None,
+                expiry_date: None,
+                max_connections: None,
+                active_connections: None,
+                error_message: Some(e.user_message()),
+                suggestions: Some(e.suggestions()),
+            })
+        }
+    }
 }
