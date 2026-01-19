@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod db;
+pub mod server;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -28,6 +29,18 @@ pub fn run() {
             // Create connection pool and store for later use by commands
             let db_connection = db::DbConnection::new(database_url)
                 .map_err(|e| format!("Failed to create connection pool: {}", e))?;
+
+            // Create HTTP server state from database pool
+            let server_state = server::create_app_state(db_connection.clone_pool());
+
+            // Spawn HTTP server in background - MUST use tauri::async_runtime
+            // Server runs independently of GUI and continues when window is hidden
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = server::start_server(server_state).await {
+                    eprintln!("HTTP server error: {}", e);
+                }
+            });
+
             app.manage(db_connection);
 
             // Create tray menu items
@@ -127,7 +140,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::greet,
             commands::get_setting,
-            commands::set_setting
+            commands::set_setting,
+            commands::get_server_port,
+            commands::set_server_port
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

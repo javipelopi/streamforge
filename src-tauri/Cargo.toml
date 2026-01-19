@@ -25,3 +25,10 @@ diesel = { version = "2.2.0", features = ["sqlite", "returning_clauses_for_sqlit
 diesel_migrations = "2.2.0"
 dotenvy = "0.15"
 r2d2 = "0.8"
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+futures = "0.3"

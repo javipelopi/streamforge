@@ -10,6 +10,8 @@
     "build:vite": "vite build",
     "preview": "vite preview",
     "test": "pnpm exec playwright test",
+    "test:integration": "TAURI_DEV=true pnpm exec playwright test tests/integration/",
+    "test:rust": "cd src-tauri && cargo test",
     "lint": "eslint src --ext .ts,.tsx",
     "lint:fix": "eslint src --ext .ts,.tsx --fix"
   },
