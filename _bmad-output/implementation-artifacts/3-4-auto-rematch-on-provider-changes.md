@@ -1,0 +1,415 @@
+# Story 3.4: Auto-Rematch on Provider Changes
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As a user,
+I want the app to detect provider changes and re-match automatically,
+So that I don't lose my channel mappings when my provider updates their list.
+
+## Acceptance Criteria
+
+1. **Given** a new Xtream channel scan is performed
+   **When** comparing to existing channels
+   **Then** the system detects:
+   - New Xtream streams (not previously seen)
+   - Removed Xtream streams (no longer in provider list)
+   - Changed Xtream streams (same stream_id, different name)
+
+2. **Given** new Xtream streams are detected
+   **When** auto-rematch runs
+   **Then** new streams are matched to XMLTV channels using fuzzy algorithm
+   **And** they are added as additional stream options (not replacing existing)
+
+3. **Given** an Xtream stream is removed by provider
+   **When** auto-rematch runs
+   **Then** the mapping is marked as unavailable
+   **And** if it was primary, the next backup stream becomes primary
+   **And** an event is logged
+
+4. **Given** manual matches exist
+   **When** auto-rematch runs
+   **Then** manual matches are NEVER auto-changed or removed
+
+5. **Given** a re-match event occurs
+   **When** the process completes
+   **Then** an event is logged with change summary
+   **And** a notification badge appears in the UI
+
+## Tasks / Subtasks
+
+- [ ] Task 1: Create auto_rematch module in matcher (AC: #1, #2, #3, #4)
+  - [ ] 1.1 Create `src-tauri/src/matcher/auto_rematch.rs` module
+  - [ ] 1.2 Implement `detect_provider_changes()` function that compares current Xtream channels with database:
+    - Returns `ProviderChanges { new_streams: Vec<XtreamChannel>, removed_stream_ids: Vec<i32>, changed_streams: Vec<(XtreamChannel, XtreamChannel)> }`
+    - Compare by stream_id for identity, name/icon/qualities for changes
+  - [ ] 1.3 Implement `auto_rematch_new_streams()` function:
+    - Takes new Xtream streams and runs fuzzy matching against ALL XMLTV channels
+    - Only creates mappings with `is_manual = false`
+    - Adds as backup streams (not primary) unless XMLTV channel has no matches
+    - Uses existing `match_channels()` and `save_channel_mappings()` from fuzzy.rs/persistence.rs
+  - [ ] 1.4 Implement `handle_removed_streams()` function:
+    - Marks affected channel_mappings as unavailable (delete the mapping)
+    - If deleted mapping was primary, promotes next backup to primary (similar to `remove_stream_mapping`)
+    - Preserves manual matches - only removes auto-generated mappings
+  - [ ] 1.5 Implement `handle_changed_streams()` function:
+    - Updates Xtream channel info (name, icon, qualities) in database
+    - Recalculates match confidence for affected mappings using new name
+    - If confidence drops below threshold, log warning but keep mapping
+  - [ ] 1.6 Export new module in `src-tauri/src/matcher/mod.rs`
+
+- [ ] Task 2: Create Tauri commands for auto-rematch (AC: #1, #2, #3, #5)
+  - [ ] 2.1 Create `scan_and_rematch_channels()` command in `commands/channels.rs`:
+    - Combines existing `scan_channels()` with new auto-rematch logic
+    - Calls detect_provider_changes() after scan
+    - Calls auto_rematch_new_streams(), handle_removed_streams(), handle_changed_streams()
+    - Returns enhanced response with change details
+  - [ ] 2.2 Create `ScanAndRematchResponse` type with fields:
+    - All fields from `ScanChannelsResponse`
+    - `newMatchesCreated: number`
+    - `mappingsRemoved: number`
+    - `mappingsUpdated: number`
+    - `manualMatchesPreserved: number`
+    - `changes: ProviderChangeSummary`
+  - [ ] 2.3 Create `ProviderChangeSummary` type:
+    - `newStreams: number`
+    - `removedStreams: number`
+    - `changedStreams: number`
+    - `affectedXmltvChannels: number`
+  - [ ] 2.4 Register new command in `lib.rs`
+
+- [ ] Task 3: Create event logging system (AC: #3, #5)
+  - [ ] 3.1 Create database migration for `event_log` table (if not exists):
+    ```sql
+    CREATE TABLE IF NOT EXISTS event_log (
+        id INTEGER PRIMARY KEY,
+        timestamp TEXT DEFAULT (datetime('now')),
+        level TEXT CHECK(level IN ('info', 'warn', 'error')) NOT NULL,
+        category TEXT NOT NULL,
+        message TEXT NOT NULL,
+        details TEXT,
+        is_read INTEGER DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_event_log_timestamp ON event_log(timestamp DESC);
+    ```
+  - [ ] 3.2 Create `src-tauri/src/db/models/event_log.rs` with:
+    - `EventLog` struct for reading
+    - `NewEventLog` struct for inserting
+    - `EventLevel` enum (Info, Warn, Error)
+    - `EventCategory` enum (Connection, Stream, Match, Epg, System, Provider)
+  - [ ] 3.3 Create `src-tauri/src/commands/logs.rs` with:
+    - `log_event()` helper function for inserting events
+    - `get_events()` command with pagination and filters
+    - `get_unread_event_count()` command
+    - `mark_events_read()` command
+    - `clear_event_log()` command
+  - [ ] 3.4 Register log commands in `lib.rs`
+
+- [ ] Task 4: Add TypeScript types and API functions (AC: #1, #2, #3, #5)
+  - [ ] 4.1 Add `ScanAndRematchResponse` interface to `tauri.ts`
+  - [ ] 4.2 Add `ProviderChangeSummary` interface
+  - [ ] 4.3 Add `scanAndRematchChannels(accountId: number)` function
+  - [ ] 4.4 Add event log types:
+    - `EventLogEntry` interface
+    - `EventLevel` type ('info' | 'warn' | 'error')
+    - `EventCategory` type
+  - [ ] 4.5 Add event log functions:
+    - `getEvents(filters?)` function
+    - `getUnreadEventCount()` function
+    - `markEventsRead(eventIds?: number[])` function
+    - `clearEventLog()` function
+
+- [ ] Task 5: Update Accounts view to use scan_and_rematch (AC: #1, #2)
+  - [ ] 5.1 Update "Scan Channels" button in Accounts view to call `scanAndRematchChannels()`
+  - [ ] 5.2 Update scan result toast to show change summary:
+    - "Scanned X channels. Y new matches, Z removed, W updated."
+  - [ ] 5.3 Show detailed change breakdown in expandable section (optional UX enhancement)
+
+- [ ] Task 6: Add notification badge for unread events (AC: #5)
+  - [ ] 6.1 Create `useUnreadEventCount` hook using TanStack Query
+  - [ ] 6.2 Add notification badge to Logs nav item in Sidebar
+  - [ ] 6.3 Invalidate unread count query on event emission
+  - [ ] 6.4 Clear badge when Logs view is visited (mark events read)
+
+- [ ] Task 7: Testing and verification (AC: #1, #2, #3, #4, #5)
+  - [ ] 7.1 Run `cargo check` - verify no Rust errors
+  - [ ] 7.2 Run `pnpm exec tsc --noEmit` - verify TypeScript compiles
+  - [ ] 7.3 Full build succeeds with `pnpm build`
+  - [ ] 7.4 Manual testing: simulate provider adding new channels
+  - [ ] 7.5 Manual testing: simulate provider removing channels
+  - [ ] 7.6 Manual testing: verify manual matches are preserved
+  - [ ] 7.7 Manual testing: verify event log entries appear
+  - [ ] 7.8 Manual testing: verify notification badge appears
+
+## Dev Notes
+
+### Architecture Compliance
+
+**CRITICAL DESIGN PRINCIPLE:** XMLTV channels are the PRIMARY channel list for Plex. This story enables automatic re-matching when the Xtream provider updates their stream list. The matching direction is always: Xtream streams → XMLTV channels.
+
+**From PRD FR18-FR19:**
+> FR18: System can detect when Xtream channel list has changed
+> FR19: System can automatically re-match channels when provider updates list
+
+**From Architecture - Channel Matcher:**
+> - `auto_rematch.rs`: Change detection and rematch
+> - Manual matches should be marked with `is_manual = true` and are NEVER auto-changed
+
+[Source: _bmad-output/planning-artifacts/architecture.md#Channel Matcher]
+
+**From Epics - Story 3.4:**
+> System detects provider changes (new, removed, changed streams) and re-matches automatically. Manual matches are NEVER auto-changed or removed.
+
+[Source: _bmad-output/planning-artifacts/epics.md#Story 3.4]
+
+### Database Schema Reference
+
+**From Architecture - Existing Tables:**
+
+```sql
+-- Xtream channels (streams from provider)
+CREATE TABLE xtream_channels (
+    id INTEGER PRIMARY KEY,
+    account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
+    stream_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    stream_icon TEXT,
+    category_id INTEGER,
+    category_name TEXT,
+    qualities TEXT, -- JSON array: ["HD", "SD", "4K"]
+    epg_channel_id TEXT,
+    tv_archive INTEGER DEFAULT 0,
+    tv_archive_duration INTEGER DEFAULT 0,
+    added_at TEXT,
+    updated_at TEXT,
+    UNIQUE(account_id, stream_id)
+);
+
+-- Channel mappings (XMLTV -> Xtream) - One XMLTV channel can have MULTIPLE Xtream streams
+CREATE TABLE channel_mappings (
+    id INTEGER PRIMARY KEY,
+    xmltv_channel_id INTEGER NOT NULL REFERENCES xmltv_channels(id) ON DELETE CASCADE,
+    xtream_channel_id INTEGER NOT NULL REFERENCES xtream_channels(id) ON DELETE CASCADE,
+    match_confidence REAL,
+    is_manual INTEGER DEFAULT 0, -- 1 for manual matches (NEVER auto-changed)
+    is_primary INTEGER DEFAULT 0,
+    stream_priority INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(xmltv_channel_id, xtream_channel_id)
+);
+
+-- Event log (NEW - to be created)
+CREATE TABLE event_log (
+    id INTEGER PRIMARY KEY,
+    timestamp TEXT DEFAULT (datetime('now')),
+    level TEXT CHECK(level IN ('info', 'warn', 'error')) NOT NULL,
+    category TEXT NOT NULL,
+    message TEXT NOT NULL,
+    details TEXT, -- JSON for additional context
+    is_read INTEGER DEFAULT 0
+);
+CREATE INDEX idx_event_log_timestamp ON event_log(timestamp DESC);
+```
+
+[Source: _bmad-output/planning-artifacts/architecture.md#Database Schema]
+
+### Technology Stack Requirements
+
+**From Architecture - Backend:**
+- Rust + Tauri 2.0
+- SQLite + Diesel ORM
+- Tokio async runtime
+
+**From Architecture - Frontend:**
+- React 18 + TypeScript
+- TanStack Query for data fetching
+- Tailwind CSS for styling
+
+### Previous Story Intelligence
+
+**From Story 3-3 (Manual Match Override):**
+
+**Key Patterns Established:**
+1. `remove_stream_mapping()` in `xmltv_channels.rs` - Reuse logic for handling removed streams
+2. Primary promotion logic: When removing primary, promote next highest confidence
+3. Priority recalculation: Primary=0, backups=1,2,3...
+4. Manual matches have `is_manual = 1` and `match_confidence = 1.0`
+
+**Key Files:**
+- `src-tauri/src/commands/channels.rs` - `scan_channels()` command (to be extended)
+- `src-tauri/src/commands/xmltv_channels.rs` - Remove mapping logic to reuse
+- `src-tauri/src/matcher/` - Matching algorithm modules
+- `src-tauri/src/matcher/persistence.rs` - `save_channel_mappings()` function
+
+**Code Review Learnings from 3-3:**
+- Add input validation before database transactions
+- Use transactions for atomicity
+- Handle race conditions in priority calculations
+- Log important events for debugging
+
+### Git Intelligence
+
+**Recent Commits (from Story 3-3):**
+- `844f33a` - Code review fixes for story 3-3
+- `8518c3a` - Implement story 3-3: Manual match override via search dropdown
+
+**Patterns from Recent Work:**
+- Commands are registered in `src-tauri/src/lib.rs` via `.invoke_handler(tauri::generate_handler![...])`
+- Transactions wrap multiple database operations for atomicity
+- TanStack Query invalidation patterns for cache updates
+
+### Existing Code to Leverage
+
+**From `scan_channels()` in channels.rs (lines 80-289):**
+- Already detects new, updated, removed channels
+- Returns `ScanChannelsResponse` with counts
+- Has `removed_stream_ids` calculation (lines 189-195)
+- Uses transactions for atomicity
+
+**From `save_channel_mappings()` in persistence.rs:**
+- Deletes auto-generated mappings (`is_manual = 0`) before inserting new
+- Preserves manual mappings naturally
+- Creates `xmltv_channel_settings` for unmatched channels
+
+**From `remove_stream_mapping()` in xmltv_channels.rs (lines 483-589):**
+- Primary promotion logic on removal
+- Priority recalculation
+- Can be refactored into reusable helper
+
+### Auto-Rematch Algorithm
+
+```
+1. SCAN: Fetch current streams from Xtream provider
+   - Call existing get_live_streams() API
+
+2. DETECT CHANGES: Compare with database
+   - NEW: stream_id not in xtream_channels table
+   - REMOVED: stream_id in DB but not in fetched list
+   - CHANGED: stream_id exists but name/icon/qualities differ
+
+3. HANDLE NEW STREAMS:
+   a. Run fuzzy matching against ALL XMLTV channels
+   b. For each match above threshold:
+      - Check if mapping already exists (skip if yes)
+      - Create new mapping with is_manual=0
+      - Set is_primary=true ONLY if XMLTV channel has no other matches
+      - Otherwise set as backup (is_primary=0, stream_priority = max + 1)
+
+4. HANDLE REMOVED STREAMS:
+   a. Find all channel_mappings referencing removed xtream_channel_ids
+   b. For each mapping where is_manual=0:
+      - Delete the mapping
+      - If was primary, promote next backup to primary
+   c. For each mapping where is_manual=1:
+      - Keep the mapping (log warning that stream is unavailable)
+      - Or: Mark stream as unavailable in UI (future enhancement)
+
+5. HANDLE CHANGED STREAMS:
+   a. Update xtream_channels record with new name/icon/qualities
+   b. Recalculate match_confidence for affected mappings
+   c. If confidence drops below threshold, log warning but keep mapping
+
+6. LOG EVENT:
+   - Category: "provider"
+   - Level: "info"
+   - Message: "Provider changes detected: X new, Y removed, Z changed"
+   - Details: JSON with affected channel lists
+```
+
+### TypeScript Response Types
+
+```typescript
+/** Response type for scan_and_rematch_channels command */
+export interface ScanAndRematchResponse {
+  // From ScanChannelsResponse
+  success: boolean;
+  totalChannels: number;
+  newChannels: number;
+  updatedChannels: number;
+  removedChannels: number;
+  scanDurationMs: number;
+  errorMessage?: string;
+
+  // Auto-rematch additions
+  newMatchesCreated: number;
+  mappingsRemoved: number;
+  mappingsUpdated: number;
+  manualMatchesPreserved: number;
+  changes: ProviderChangeSummary;
+}
+
+/** Summary of provider changes */
+export interface ProviderChangeSummary {
+  newStreams: number;
+  removedStreams: number;
+  changedStreams: number;
+  affectedXmltvChannels: number;
+}
+
+/** Event log entry */
+export interface EventLogEntry {
+  id: number;
+  timestamp: string;
+  level: 'info' | 'warn' | 'error';
+  category: string;
+  message: string;
+  details?: string; // JSON
+  isRead: boolean;
+}
+```
+
+### Project Structure Notes
+
+**Files to Create:**
+- `src-tauri/src/matcher/auto_rematch.rs` - Auto-rematch logic
+- `src-tauri/src/db/models/event_log.rs` - Event log models
+- `src-tauri/src/commands/logs.rs` - Event log commands
+- `src-tauri/migrations/YYYYMMDDHHMMSS_create_event_log/up.sql` - Migration
+
+**Files to Modify:**
+- `src-tauri/src/matcher/mod.rs` - Export auto_rematch module
+- `src-tauri/src/db/models/mod.rs` - Export event_log models
+- `src-tauri/src/commands/mod.rs` - Export logs commands
+- `src-tauri/src/commands/channels.rs` - Add `scan_and_rematch_channels()` command
+- `src-tauri/src/lib.rs` - Register new commands
+- `src/lib/tauri.ts` - Add new types and functions
+- `src/views/Accounts.tsx` - Update scan button to use new command
+- `src/components/layout/Sidebar.tsx` - Add notification badge to Logs
+
+### Performance Considerations
+
+- **Batch database operations:** Use transactions and batch inserts/updates
+- **Avoid N+1 queries:** Load all mappings in one query, group by channel ID
+- **Progress events:** Emit events for long-running operations (like Story 3-1 matching)
+- **Event log cleanup:** Consider periodic cleanup of old events (future story)
+
+### Error Handling
+
+- If fuzzy matching fails: Log error, continue with partial results
+- If database transaction fails: Rollback all changes, return error
+- If Xtream API fails: Return existing scan error response
+- Manual matches are NEVER deleted - only log warning if stream unavailable
+
+### References
+
+- [Source: _bmad-output/planning-artifacts/architecture.md#Channel Matcher]
+- [Source: _bmad-output/planning-artifacts/architecture.md#Database Schema]
+- [Source: _bmad-output/planning-artifacts/prd.md#Channel Matching (XMLTV-First)]
+- [Source: _bmad-output/planning-artifacts/epics.md#Story 3.4]
+- [Source: src-tauri/src/commands/channels.rs - scan_channels() implementation]
+- [Source: src-tauri/src/matcher/persistence.rs - save_channel_mappings() implementation]
+
+## Dev Agent Record
+
+### Agent Model Used
+
+{{agent_model_name_version}}
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
