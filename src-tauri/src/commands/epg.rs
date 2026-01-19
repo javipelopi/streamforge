@@ -777,6 +777,105 @@ pub async fn get_programs(
     Ok(progs.into_iter().map(ProgramResponse::from).collect())
 }
 
+// ============================================================================
+// EPG Schedule Commands
+// ============================================================================
+
+use crate::scheduler::{EpgScheduleConfig, EpgScheduler};
+
+/// Response type for EPG schedule
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EpgScheduleResponse {
+    pub hour: u8,
+    pub minute: u8,
+    pub enabled: bool,
+    pub last_scheduled_refresh: Option<String>,
+}
+
+/// Get the current EPG schedule settings
+#[tauri::command]
+pub async fn get_epg_schedule(
+    db: State<'_, DbConnection>,
+) -> Result<EpgScheduleResponse, String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    let config = crate::scheduler::get_epg_schedule(&mut conn);
+    let last_refresh = crate::scheduler::get_last_scheduled_refresh(&mut conn);
+
+    Ok(EpgScheduleResponse {
+        hour: config.hour,
+        minute: config.minute,
+        enabled: config.enabled,
+        last_scheduled_refresh: last_refresh.map(|dt| dt.to_rfc3339()),
+    })
+}
+
+/// Set the EPG schedule settings
+///
+/// Updates the schedule in the database and updates the scheduler if running.
+#[tauri::command]
+pub async fn set_epg_schedule(
+    db: State<'_, DbConnection>,
+    scheduler: State<'_, EpgScheduler>,
+    hour: u8,
+    minute: u8,
+    enabled: bool,
+) -> Result<EpgScheduleResponse, String> {
+    // Validate inputs
+    if hour > 23 {
+        return Err("Hour must be between 0 and 23".to_string());
+    }
+    if minute > 59 {
+        return Err("Minute must be between 0 and 59".to_string());
+    }
+
+    let config = EpgScheduleConfig {
+        hour,
+        minute,
+        enabled,
+    };
+
+    // Save to database
+    {
+        let mut conn = db
+            .get_connection()
+            .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+        crate::scheduler::set_epg_schedule(&mut conn, &config)
+            .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+    }
+
+    // Update the running scheduler
+    scheduler
+        .set_enabled(enabled)
+        .await
+        .map_err(|e| format!("Failed to update scheduler enabled state: {}", e))?;
+
+    if enabled {
+        scheduler
+            .update_schedule(hour, minute)
+            .await
+            .map_err(|e| format!("Failed to update schedule: {}", e))?;
+    }
+
+    // Return updated schedule
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    let last_refresh = crate::scheduler::get_last_scheduled_refresh(&mut conn);
+
+    Ok(EpgScheduleResponse {
+        hour: config.hour,
+        minute: config.minute,
+        enabled: config.enabled,
+        last_scheduled_refresh: last_refresh.map(|dt| dt.to_rfc3339()),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

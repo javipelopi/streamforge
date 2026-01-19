@@ -38,7 +38,11 @@ export const test = base.extend<{
         return page.evaluate(
           async (scheduleData) => {
             // @ts-ignore - Tauri invoke available in Tauri context
-            return window.__TAURI__.invoke('set_epg_schedule', scheduleData);
+            return window.__TAURI__.invoke('set_epg_schedule', {
+              hour: scheduleData.hour,
+              minute: scheduleData.minute,
+              enabled: scheduleData.enabled,
+            });
           },
           schedule
         );
