@@ -147,3 +147,108 @@ export async function getChannels(accountId: number): Promise<Channel[]> {
 export async function getChannelCount(accountId: number): Promise<number> {
   return invoke<number>('get_channel_count', { accountId });
 }
+
+// XMLTV EPG Source types and functions
+
+/** XMLTV format type */
+export type XmltvFormat = 'xml' | 'xml_gz' | 'auto';
+
+/** XMLTV source response type */
+export interface XmltvSource {
+  id: number;
+  name: string;
+  url: string;
+  format: XmltvFormat;
+  refreshHour: number;
+  lastRefresh?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Request type for adding a new XMLTV source */
+export interface NewXmltvSource {
+  name: string;
+  url: string;
+  format: XmltvFormat;
+}
+
+/** Request type for updating an XMLTV source */
+export interface XmltvSourceUpdate {
+  name?: string;
+  url?: string;
+  format?: XmltvFormat;
+  refreshHour?: number;
+  isActive?: boolean;
+}
+
+/**
+ * Add a new XMLTV EPG source
+ * @param source - Source details
+ * @returns The created source
+ */
+export async function addXmltvSource(source: NewXmltvSource): Promise<XmltvSource> {
+  return invoke<XmltvSource>('add_xmltv_source', {
+    name: source.name,
+    url: source.url,
+    format: source.format,
+  });
+}
+
+/**
+ * Get all XMLTV EPG sources
+ * @returns List of all configured EPG sources
+ */
+export async function getXmltvSources(): Promise<XmltvSource[]> {
+  return invoke<XmltvSource[]>('get_xmltv_sources');
+}
+
+/**
+ * Update an existing XMLTV source
+ * @param sourceId - Source ID to update
+ * @param updates - Fields to update
+ * @returns The updated source
+ */
+export async function updateXmltvSource(
+  sourceId: number,
+  updates: XmltvSourceUpdate
+): Promise<XmltvSource> {
+  return invoke<XmltvSource>('update_xmltv_source', { sourceId, updates });
+}
+
+/**
+ * Delete an XMLTV source
+ * @param sourceId - Source ID to delete
+ */
+export async function deleteXmltvSource(sourceId: number): Promise<void> {
+  return invoke<void>('delete_xmltv_source', { sourceId });
+}
+
+/**
+ * Toggle XMLTV source active state
+ * @param sourceId - Source ID to toggle
+ * @param active - New active state
+ * @returns The updated source
+ */
+export async function toggleXmltvSource(
+  sourceId: number,
+  active: boolean
+): Promise<XmltvSource> {
+  return invoke<XmltvSource>('toggle_xmltv_source', { sourceId, active });
+}
+
+/**
+ * Detect XMLTV format from URL
+ * @param url - URL to analyze
+ * @returns Detected format or 'auto' if unable to determine
+ */
+export function detectXmltvFormat(url: string): XmltvFormat {
+  const urlLower = url.toLowerCase();
+  if (urlLower.endsWith('.xml.gz') || urlLower.endsWith('.xmltv.gz')) {
+    return 'xml_gz';
+  }
+  if (urlLower.endsWith('.xml') || urlLower.endsWith('.xmltv')) {
+    return 'xml';
+  }
+  return 'auto';
+}

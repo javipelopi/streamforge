@@ -184,7 +184,12 @@ pub fn run() {
             commands::accounts::test_connection,
             commands::channels::scan_channels,
             commands::channels::get_channels,
-            commands::channels::get_channel_count
+            commands::channels::get_channel_count,
+            commands::epg::add_xmltv_source,
+            commands::epg::get_xmltv_sources,
+            commands::epg::update_xmltv_source,
+            commands::epg::delete_xmltv_source,
+            commands::epg::toggle_xmltv_source
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
