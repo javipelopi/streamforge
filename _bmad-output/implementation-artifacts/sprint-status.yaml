@@ -44,7 +44,7 @@ development_status:
   1-2-set-up-sqlite-database-with-diesel-orm: done
   1-3-create-react-gui-shell-with-routing: done
   1-4-implement-system-tray-integration: done
-  1-5-create-axum-http-server-foundation: ready-for-dev
+  1-5-create-axum-http-server-foundation: review
   1-6-add-auto-start-on-boot-capability: backlog
   epic-1-retrospective: optional
 

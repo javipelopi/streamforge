@@ -37,6 +37,10 @@ Thumbs.db
 *.log
 logs/
 
+# Test outputs
+playwright-report/
+test-results/
+
 # Tauri build artifacts (future)
 src-tauri/target/
 

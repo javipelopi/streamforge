@@ -32,6 +32,14 @@ impl DbConnection {
         self.pool.get()
             .map_err(|e| format!("Failed to get connection from pool: {}", e).into())
     }
+
+    /// Clone the database pool for use by the HTTP server
+    ///
+    /// This allows the server module to have its own pool reference
+    /// while Tauri manages the DbConnection state.
+    pub fn clone_pool(&self) -> DbPool {
+        self.pool.clone()
+    }
 }
 
 /// Get the database path using Tauri's app data directory API
