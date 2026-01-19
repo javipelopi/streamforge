@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod channels;
+pub mod epg;
 
 use diesel::prelude::*;
 use serde::Serialize;
@@ -12,6 +13,9 @@ pub use accounts::{add_account, delete_account, get_accounts, test_connection, u
 
 // Re-export channel commands for convenient access
 pub use channels::{get_channel_count, get_channels, scan_channels};
+
+// Re-export EPG source commands for convenient access
+pub use epg::{add_xmltv_source, delete_xmltv_source, get_xmltv_sources, toggle_xmltv_source, update_xmltv_source};
 
 /// Response type for autostart status queries
 #[derive(Serialize)]

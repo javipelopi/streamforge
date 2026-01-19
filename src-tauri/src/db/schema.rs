@@ -27,6 +27,20 @@ diesel::table! {
 }
 
 diesel::table! {
+    xmltv_sources (id) {
+        id -> Nullable<Integer>,
+        name -> Text,
+        url -> Text,
+        format -> Text,
+        refresh_hour -> Integer,
+        last_refresh -> Nullable<Text>,
+        is_active -> Integer,
+        created_at -> Text,
+        updated_at -> Text,
+    }
+}
+
+diesel::table! {
     xtream_channels (id) {
         id -> Nullable<Integer>,
         account_id -> Integer,
@@ -46,4 +60,4 @@ diesel::table! {
 
 diesel::joinable!(xtream_channels -> accounts (account_id));
 
-diesel::allow_tables_to_appear_in_same_query!(accounts, settings, xtream_channels,);
+diesel::allow_tables_to_appear_in_same_query!(accounts, settings, xmltv_sources, xtream_channels,);

@@ -1,20 +1,38 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PlusIcon } from '@radix-ui/react-icons';
 import { AccountForm, AccountsList } from '../components/accounts';
+import { EpgSourcesList, EpgSourceDialog } from '../components/epg';
 import type { AccountFormData } from '../components/accounts';
-import type { Account } from '../lib/tauri';
-import { addAccount, getAccounts, deleteAccount } from '../lib/tauri';
+import type { Account, XmltvSource, NewXmltvSource } from '../lib/tauri';
+import {
+  addAccount,
+  getAccounts,
+  deleteAccount,
+  getXmltvSources,
+  addXmltvSource,
+  updateXmltvSource,
+  deleteXmltvSource,
+  toggleXmltvSource,
+} from '../lib/tauri';
 
 /**
- * Accounts View - Manages Xtream Codes IPTV provider accounts
+ * Accounts View - Manages Xtream Codes IPTV provider accounts and EPG sources
  * Story 2.1: Add Xtream Account with Secure Credential Storage
+ * Story 2.4: Add XMLTV Source Management
  */
 export function Accounts() {
+  // Account state
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // EPG Sources state
+  const [epgSources, setEpgSources] = useState<XmltvSource[]>([]);
+  const [showEpgDialog, setShowEpgDialog] = useState(false);
+  const [editingEpgSource, setEditingEpgSource] = useState<XmltvSource | undefined>(undefined);
+  const [epgLoading, setEpgLoading] = useState(false);
 
   // Load accounts on mount
   const loadAccounts = useCallback(async () => {
@@ -30,9 +48,20 @@ export function Accounts() {
     }
   }, []);
 
+  // Load EPG sources
+  const loadEpgSources = useCallback(async () => {
+    try {
+      const sources = await getXmltvSources();
+      setEpgSources(sources);
+    } catch (err) {
+      console.error('Failed to load EPG sources:', err);
+    }
+  }, []);
+
   useEffect(() => {
     loadAccounts();
-  }, [loadAccounts]);
+    loadEpgSources();
+  }, [loadAccounts, loadEpgSources]);
 
   // Handle form submission
   const handleSubmit = async (data: AccountFormData) => {
@@ -84,6 +113,70 @@ export function Accounts() {
     setError(null);
   };
 
+  // EPG Source handlers
+  const handleAddEpgSource = () => {
+    setEditingEpgSource(undefined);
+    setShowEpgDialog(true);
+  };
+
+  const handleEditEpgSource = (source: XmltvSource) => {
+    setEditingEpgSource(source);
+    setShowEpgDialog(true);
+  };
+
+  const handleEpgDialogSubmit = async (data: NewXmltvSource) => {
+    setEpgLoading(true);
+    try {
+      if (editingEpgSource) {
+        // Update existing source
+        const updated = await updateXmltvSource(editingEpgSource.id, {
+          name: data.name,
+          url: data.url,
+          format: data.format,
+        });
+        setEpgSources((prev) =>
+          prev.map((s) => (s.id === updated.id ? updated : s))
+        );
+      } else {
+        // Add new source
+        const newSource = await addXmltvSource(data);
+        setEpgSources((prev) => [...prev, newSource]);
+      }
+      setShowEpgDialog(false);
+      setEditingEpgSource(undefined);
+    } finally {
+      setEpgLoading(false);
+    }
+  };
+
+  const handleDeleteEpgSource = async (source: XmltvSource) => {
+    setEpgLoading(true);
+    try {
+      await deleteXmltvSource(source.id);
+      setEpgSources((prev) => prev.filter((s) => s.id !== source.id));
+    } catch (err) {
+      console.error('Failed to delete EPG source:', err);
+      setError('Failed to delete EPG source. Please try again.');
+    } finally {
+      setEpgLoading(false);
+    }
+  };
+
+  const handleToggleEpgSource = async (source: XmltvSource, active: boolean) => {
+    setEpgLoading(true);
+    try {
+      const updated = await toggleXmltvSource(source.id, active);
+      setEpgSources((prev) =>
+        prev.map((s) => (s.id === updated.id ? updated : s))
+      );
+    } catch (err) {
+      console.error('Failed to toggle EPG source:', err);
+      setError('Failed to update EPG source. Please try again.');
+    } finally {
+      setEpgLoading(false);
+    }
+  };
+
   if (isInitialLoading) {
     return (
       <div data-testid="accounts-view" className="p-4">
@@ -131,6 +224,40 @@ export function Accounts() {
           isLoading={isLoading}
         />
       )}
+
+      {/* EPG Sources Section */}
+      {!showForm && (
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">EPG Sources</h2>
+            <button
+              data-testid="add-epg-source-button"
+              onClick={handleAddEpgSource}
+              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <PlusIcon className="w-4 h-4 mr-2" />
+              Add EPG Source
+            </button>
+          </div>
+
+          <EpgSourcesList
+            sources={epgSources}
+            onEdit={handleEditEpgSource}
+            onDelete={handleDeleteEpgSource}
+            onToggle={handleToggleEpgSource}
+            isLoading={epgLoading}
+          />
+        </div>
+      )}
+
+      {/* EPG Source Dialog */}
+      <EpgSourceDialog
+        open={showEpgDialog}
+        onOpenChange={setShowEpgDialog}
+        source={editingEpgSource}
+        onSubmit={handleEpgDialogSubmit}
+        isLoading={epgLoading}
+      />
     </div>
   );
 }
