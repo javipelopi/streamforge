@@ -37,6 +37,11 @@ async function injectXmltvChannelDisplayMocks(
         greet: (args) => \`Hello, \${args.name}! Welcome to iptv.\`,
         get_setting: () => null,
         set_setting: () => undefined,
+        get_server_port: () => 5004,
+        set_server_port: () => undefined,
+        get_autostart_enabled: () => ({ enabled: false }),
+        set_autostart_enabled: () => undefined,
+        get_accounts: () => [],
 
         // NEW COMMAND: Get XMLTV channels with mappings
         get_xmltv_channels_with_mappings: () => {
@@ -58,11 +63,12 @@ async function injectXmltvChannelDisplayMocks(
             throw new Error('Channel not found');
           }
 
-          // Update primary status
-          channel.matches.forEach(match => {
-            match.isPrimary = match.id === xtreamChannelId;
-            match.streamPriority = match.id === xtreamChannelId ? 0 : 1;
-          });
+          // Create new matches array with updated primary status (important for React re-render)
+          channel.matches = channel.matches.map(match => ({
+            ...match,
+            isPrimary: match.id === xtreamChannelId,
+            streamPriority: match.id === xtreamChannelId ? 0 : 1,
+          }));
 
           return channel.matches;
         },
@@ -100,11 +106,29 @@ async function injectXmltvChannelDisplayMocks(
         throw new Error(\`Unknown command: \${cmd}\`);
       }
 
-      if (!window.__TAURI__) {
-        window.__TAURI__ = {};
-      }
-      window.__TAURI__.invoke = mockInvoke;
-      window.__TAURI_INTERNALS__ = { invoke: mockInvoke };
+      // Set up Tauri V2 internals mock
+      window.__TAURI_INTERNALS__ = {
+        invoke: mockInvoke,
+        metadata: {
+          currentWindow: { label: 'main' },
+          currentWebview: { label: 'main' },
+          windows: [{ label: 'main' }],
+          webviews: [{ label: 'main' }],
+        },
+        plugins: {},
+      };
+
+      // Also set __TAURI__ for detection (but invoke isn't used by Tauri V2)
+      window.__TAURI__ = {
+        invoke: mockInvoke,
+      };
+
+      window.__TAURI_MOCK__ = {
+        invoke: mockInvoke,
+        commands: mockCommands,
+      };
+
+      console.log('[Tauri Mock] XMLTV channels display mock initialized');
     })();
   `;
 
@@ -141,9 +165,10 @@ test.describe('XMLTV Channels Display (Story 3.2)', () => {
     ];
 
     await injectXmltvChannelDisplayMocks(page, channels);
-    await page.goto('/channels');
+    await page.goto('/');
 
-    // WHEN: The Channels view loads
+    // WHEN: Navigate to Channels via sidebar
+    await page.click('a[href="/channels"]');
     await page.waitForLoadState('networkidle');
 
     // THEN: I see a list of all XMLTV channels
@@ -181,7 +206,8 @@ test.describe('XMLTV Channels Display (Story 3.2)', () => {
     });
 
     await injectXmltvChannelDisplayMocks(page, [channel]);
-    await page.goto('/channels');
+    await page.goto('/');
+    await page.click('a[href="/channels"]');
 
     // WHEN: I click the expand button on a channel row
     const channelRow = page.locator('[data-testid="channel-row-1"]');
@@ -237,7 +263,8 @@ test.describe('XMLTV Channels Display (Story 3.2)', () => {
     });
 
     await injectXmltvChannelDisplayMocks(page, [channel]);
-    await page.goto('/channels');
+    await page.goto('/');
+    await page.click('a[href="/channels"]');
 
     // WHEN: I expand the channel row
     await page.locator('[data-testid="channel-row-1"]').locator('[data-testid="expand-button"]').click();
@@ -271,7 +298,8 @@ test.describe('XMLTV Channels Display (Story 3.2)', () => {
     });
 
     await injectXmltvChannelDisplayMocks(page, [channel]);
-    await page.goto('/channels');
+    await page.goto('/');
+    await page.click('a[href="/channels"]');
 
     // WHEN: I expand the channel and click "Make Primary" on a backup stream
     await page.locator('[data-testid="channel-row-1"]').locator('[data-testid="expand-button"]').click();
@@ -302,7 +330,8 @@ test.describe('XMLTV Channels Display (Story 3.2)', () => {
     });
 
     await injectXmltvChannelDisplayMocks(page, [unmatchedChannel]);
-    await page.goto('/channels');
+    await page.goto('/');
+    await page.click('a[href="/channels"]');
 
     // WHEN: Viewing the channel list
     const channelRow = page.locator('[data-testid="channel-row-1"]');
@@ -331,7 +360,8 @@ test.describe('XMLTV Channels Display (Story 3.2)', () => {
 
     // WHEN: Navigating to channels view
     const startTime = Date.now();
-    await page.goto('/channels');
+    await page.goto('/');
+    await page.click('a[href="/channels"]');
     await page.waitForSelector('[data-testid="xmltv-channels-list"]');
     const loadTime = Date.now() - startTime;
 
@@ -373,7 +403,8 @@ test.describe('XMLTV Channels Display (Story 3.2)', () => {
     });
 
     await injectXmltvChannelDisplayMocks(page, [channel]);
-    await page.goto('/channels');
+    await page.goto('/');
+    await page.click('a[href="/channels"]');
 
     // WHEN: I click the toggle switch
     const channelRow = page.locator('[data-testid="channel-row-1"]');
@@ -395,7 +426,8 @@ test.describe('XMLTV Channels Display (Story 3.2)', () => {
     const channels = createLargeXmltvChannelList(25);
 
     await injectXmltvChannelDisplayMocks(page, channels);
-    await page.goto('/channels');
+    await page.goto('/');
+    await page.click('a[href="/channels"]');
 
     // THEN: Header shows total channel count
     await expect(page.locator('[data-testid="channel-count"]')).toHaveText('25 channels');
@@ -414,7 +446,8 @@ test.describe('XMLTV Channels Display (Story 3.2)', () => {
     ];
 
     await injectXmltvChannelDisplayMocks(page, channels);
-    await page.goto('/channels');
+    await page.goto('/');
+    await page.click('a[href="/channels"]');
 
     // WHEN: Using keyboard to navigate
     const channelsList = page.locator('[data-testid="xmltv-channels-list"]');

@@ -1,136 +1,179 @@
-import { useState, useEffect, useCallback } from 'react';
-import { ChannelsList } from '../components/channels';
-import { getChannels, getAccounts, type Channel, type Account } from '../lib/tauri';
+import { useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { XmltvChannelsList } from '../components/channels';
+import {
+  getXmltvChannelsWithMappings,
+  toggleXmltvChannel,
+  setPrimaryStream,
+  type XmltvChannelWithMappings,
+  type XtreamStreamMatch,
+} from '../lib/tauri';
 
 /**
- * Channels View - Displays channels from all accounts
- * Story 2-3: Retrieve and store channel list from Xtream
+ * Channels View - Displays XMLTV channels with their matched Xtream streams
+ *
+ * Story 3-2: Display XMLTV Channel List with Match Status
+ *
+ * CRITICAL DESIGN PRINCIPLE: XMLTV channels are the PRIMARY channel list for Plex.
+ * This view shows XMLTV channels as the primary list, with their matched Xtream streams.
  */
 export function Channels() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  // Load accounts on mount
-  const loadAccounts = useCallback(async () => {
-    try {
-      const loadedAccounts = await getAccounts();
-      setAccounts(loadedAccounts);
-      // Select first account by default if available
-      if (loadedAccounts.length > 0 && !selectedAccountId) {
-        setSelectedAccountId(loadedAccounts[0].id);
-      }
-    } catch (err) {
-      console.error('Failed to load accounts:', err);
-      setError('Failed to load accounts');
-    }
-  }, [selectedAccountId]);
+  // Fetch XMLTV channels with mappings using TanStack Query
+  const {
+    data: channels = [],
+    isLoading,
+    error,
+    refetch,
+  } = useQuery<XmltvChannelWithMappings[], Error>({
+    queryKey: ['xmltv-channels-with-mappings'],
+    queryFn: getXmltvChannelsWithMappings,
+    staleTime: 30000, // 30 seconds
+  });
 
-  // Load channels when account is selected
-  const loadChannels = useCallback(async () => {
-    if (!selectedAccountId) {
-      setChannels([]);
-      setIsLoading(false);
-      return;
-    }
+  // Toggle channel mutation
+  const toggleMutation = useMutation({
+    mutationFn: (channelId: number) => toggleXmltvChannel(channelId),
+    onSuccess: (updatedChannel) => {
+      // Update cache optimistically
+      queryClient.setQueryData<XmltvChannelWithMappings[]>(
+        ['xmltv-channels-with-mappings'],
+        (old) =>
+          old?.map((ch) =>
+            ch.id === updatedChannel.id ? updatedChannel : ch
+          )
+      );
+    },
+    onError: (err) => {
+      console.error('Failed to toggle channel:', err);
+      // Refetch to get actual state on error
+      refetch();
+    },
+  });
 
-    setIsLoading(true);
-    setError(null);
+  // Set primary stream mutation
+  const setPrimaryMutation = useMutation({
+    mutationFn: ({
+      xmltvChannelId,
+      xtreamChannelId,
+    }: {
+      xmltvChannelId: number;
+      xtreamChannelId: number;
+    }) => setPrimaryStream(xmltvChannelId, xtreamChannelId),
+    onSuccess: (updatedMatches, { xmltvChannelId }) => {
+      // Update cache with new matches
+      queryClient.setQueryData<XmltvChannelWithMappings[]>(
+        ['xmltv-channels-with-mappings'],
+        (old) =>
+          old?.map((ch) =>
+            ch.id === xmltvChannelId
+              ? { ...ch, matches: updatedMatches }
+              : ch
+          )
+      );
+    },
+    onError: (err) => {
+      console.error('Failed to set primary stream:', err);
+      // Refetch to get actual state on error
+      refetch();
+    },
+  });
 
-    try {
-      const loadedChannels = await getChannels(selectedAccountId);
-      setChannels(loadedChannels);
-    } catch (err) {
-      console.error('Failed to load channels:', err);
-      setError('Failed to load channels');
-      setChannels([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [selectedAccountId]);
+  // Handle toggle channel
+  const handleToggleChannel = useCallback(
+    (channelId: number) => {
+      toggleMutation.mutate(channelId);
+    },
+    [toggleMutation]
+  );
 
-  useEffect(() => {
-    loadAccounts();
-  }, [loadAccounts]);
+  // Handle set primary stream
+  const handleSetPrimaryStream = useCallback(
+    async (xmltvChannelId: number, xtreamChannelId: number): Promise<XtreamStreamMatch[]> => {
+      const result = await setPrimaryMutation.mutateAsync({
+        xmltvChannelId,
+        xtreamChannelId,
+      });
+      return result;
+    },
+    [setPrimaryMutation]
+  );
 
-  useEffect(() => {
-    loadChannels();
-  }, [loadChannels]);
-
-  // Handle account selection change
-  const handleAccountChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const accountId = parseInt(event.target.value, 10);
-    setSelectedAccountId(isNaN(accountId) ? null : accountId);
-  };
+  // Calculate stats for header
+  const totalChannels = channels.length;
+  const enabledChannels = channels.filter((ch) => ch.isEnabled).length;
+  const matchedChannels = channels.filter((ch) => ch.matchCount > 0).length;
+  const unmatchedChannels = totalChannels - matchedChannels;
 
   return (
     <div data-testid="channels-view" className="p-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Channels</h1>
+        <div>
+          <h1 className="text-2xl font-bold">Channels</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            XMLTV channels with matched Xtream streams
+          </p>
+        </div>
 
-        {/* Account selector */}
-        {accounts.length > 0 && (
-          <select
-            data-testid="account-selector"
-            value={selectedAccountId ?? ''}
-            onChange={handleAccountChange}
-            className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Select account...</option>
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name}
-              </option>
-            ))}
-          </select>
-        )}
+        {/* Refresh button */}
+        <button
+          onClick={() => refetch()}
+          disabled={isLoading}
+          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+        >
+          {isLoading ? 'Loading...' : 'Refresh'}
+        </button>
       </div>
+
+      {/* Stats bar */}
+      {!isLoading && channels.length > 0 && (
+        <div className="mb-4 flex items-center gap-4 text-sm">
+          <span data-testid="channel-count" className="text-gray-600">
+            {totalChannels} channel{totalChannels !== 1 ? 's' : ''}
+          </span>
+          <span className="text-gray-300">|</span>
+          <span data-testid="enabled-count" className="text-gray-600">
+            {enabledChannels} enabled
+          </span>
+          <span className="text-gray-300">|</span>
+          <span className="text-green-600">
+            {matchedChannels} matched
+          </span>
+          {unmatchedChannels > 0 && (
+            <>
+              <span className="text-gray-300">|</span>
+              <span className="text-amber-600">
+                {unmatchedChannels} unmatched
+              </span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Error message */}
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-md">
-          {error}
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-md flex items-center justify-between">
+          <span>Failed to load channels: {error.message}</span>
+          <button
+            onClick={() => refetch()}
+            className="px-3 py-1 text-sm font-medium text-red-600 hover:text-red-800 hover:bg-red-100 rounded"
+          >
+            Retry
+          </button>
         </div>
       )}
 
-      {/* No accounts state */}
-      {accounts.length === 0 && !isLoading && (
-        <div className="text-center py-8 text-gray-500">
-          <p className="text-lg">No accounts configured</p>
-          <p className="text-sm mt-1">
-            Add an account in the Accounts section first
-          </p>
-        </div>
-      )}
-
-      {/* No account selected state */}
-      {accounts.length > 0 && !selectedAccountId && (
-        <div className="text-center py-8 text-gray-500">
-          <p className="text-lg">Select an account</p>
-          <p className="text-sm mt-1">
-            Choose an account from the dropdown to view its channels
-          </p>
-        </div>
-      )}
-
-      {/* Channels list */}
-      {selectedAccountId && (
-        <div className="bg-white border border-gray-200 rounded-lg">
-          <div className="px-4 py-3 border-b border-gray-200">
-            <span className="text-sm text-gray-500">
-              {channels.length} channel{channels.length !== 1 ? 's' : ''}
-            </span>
-          </div>
-          <ChannelsList
-            accountId={selectedAccountId}
-            channels={channels}
-            isLoading={isLoading}
-          />
-        </div>
-      )}
+      {/* Main content */}
+      <div className="bg-white border border-gray-200 rounded-lg">
+        <XmltvChannelsList
+          channels={channels}
+          isLoading={isLoading}
+          onToggleChannel={handleToggleChannel}
+          onSetPrimaryStream={handleSetPrimaryStream}
+        />
+      </div>
     </div>
   );
 }

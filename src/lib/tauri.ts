@@ -628,3 +628,101 @@ export function getMatchTypeDisplay(matchType: MatchType): string {
       return 'Unknown';
   }
 }
+
+// ============================================================================
+// XMLTV Channel Display types and functions (Story 3-2)
+// ============================================================================
+
+/** Matched Xtream stream info for display */
+export interface XtreamStreamMatch {
+  id: number;
+  mappingId: number;
+  name: string;
+  streamIcon: string | null;
+  qualities: string[];
+  matchConfidence: number;
+  isPrimary: boolean;
+  streamPriority: number;
+}
+
+/** XMLTV channel with all mapping info for display */
+export interface XmltvChannelWithMappings {
+  id: number;
+  sourceId: number;
+  channelId: string;
+  displayName: string;
+  icon: string | null;
+  isSynthetic: boolean;
+  // Settings
+  isEnabled: boolean;
+  plexDisplayOrder: number | null;
+  // Matches
+  matchCount: number;
+  matches: XtreamStreamMatch[];
+}
+
+/**
+ * Get all XMLTV channels with their mapped Xtream streams
+ * @returns List of XMLTV channels with mapping info
+ */
+export async function getXmltvChannelsWithMappings(): Promise<XmltvChannelWithMappings[]> {
+  return invoke<XmltvChannelWithMappings[]>('get_xmltv_channels_with_mappings');
+}
+
+/**
+ * Set the primary stream for an XMLTV channel
+ * @param xmltvChannelId - XMLTV channel ID
+ * @param xtreamChannelId - Xtream stream ID to make primary
+ * @returns Updated list of matches
+ */
+export async function setPrimaryStream(
+  xmltvChannelId: number,
+  xtreamChannelId: number
+): Promise<XtreamStreamMatch[]> {
+  return invoke<XtreamStreamMatch[]>('set_primary_stream', {
+    xmltvChannelId,
+    xtreamChannelId,
+  });
+}
+
+/**
+ * Toggle the enabled status of an XMLTV channel
+ * @param channelId - XMLTV channel ID
+ * @returns Updated channel with mappings
+ */
+export async function toggleXmltvChannel(
+  channelId: number
+): Promise<XmltvChannelWithMappings> {
+  return invoke<XmltvChannelWithMappings>('toggle_xmltv_channel', { channelId });
+}
+
+/**
+ * Get match count label for display
+ * @param count - Number of matched streams
+ * @returns Formatted string (e.g., "1 stream", "3 streams")
+ */
+export function getMatchCountLabel(count: number): string {
+  if (count === 0) {
+    return 'No stream matched';
+  }
+  return `${count} stream${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * Get quality badge classes for styling
+ * @param quality - Quality tier (SD, HD, FHD, 4K)
+ * @returns Tailwind CSS classes for the badge
+ */
+export function getQualityBadgeClasses(quality: string): string {
+  switch (quality.toUpperCase()) {
+    case '4K':
+      return 'bg-purple-100 text-purple-800';
+    case 'FHD':
+      return 'bg-blue-100 text-blue-800';
+    case 'HD':
+      return 'bg-green-100 text-green-800';
+    case 'SD':
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+}
