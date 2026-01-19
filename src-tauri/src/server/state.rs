@@ -1,4 +1,10 @@
-use crate::db::{DbPool, DbPooledConnection};
+use diesel::prelude::*;
+
+use crate::db::{schema::settings, DbPool, DbPooledConnection};
+
+/// Default server port constant
+const DEFAULT_SERVER_PORT: u16 = 5004;
+const SERVER_PORT_KEY: &str = "server_port";
 
 /// Application state for the HTTP server
 ///
@@ -18,12 +24,21 @@ impl AppState {
     /// Get the configured server port
     ///
     /// Returns the port from settings table, defaulting to 5004.
-    /// For now, returns the default - full implementation when settings
-    /// CRUD is established in Epic 2.
+    /// Reads actual value from database to honor user configuration.
     pub fn get_port(&self) -> u16 {
-        // TODO: Read from settings table when available
-        // For now, return default port 5004
-        5004
+        // Try to read from settings table, fall back to default
+        match self.pool.get() {
+            Ok(mut conn) => {
+                settings::table
+                    .filter(settings::key.eq(SERVER_PORT_KEY))
+                    .select(settings::value)
+                    .first::<String>(&mut conn)
+                    .ok()
+                    .and_then(|port_str| port_str.parse::<u16>().ok())
+                    .unwrap_or(DEFAULT_SERVER_PORT)
+            }
+            Err(_) => DEFAULT_SERVER_PORT,
+        }
     }
 
     /// Get a database connection from the pool

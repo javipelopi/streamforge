@@ -37,6 +37,7 @@ impl DbConnection {
     ///
     /// This allows the server module to have its own pool reference
     /// while Tauri manages the DbConnection state.
+    #[allow(dead_code)] // Used by lib crate for server initialization
     pub fn clone_pool(&self) -> DbPool {
         self.pool.clone()
     }

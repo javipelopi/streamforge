@@ -1,7 +1,9 @@
 pub mod connection;
 pub mod models;
-pub(crate) mod schema;
+pub mod schema;
 
+// Note: These exports are used by the lib crate (server module, tests), not the bin crate
+// Clippy's dead_code lint doesn't understand the lib/bin split
+#[allow(unused_imports)]
 pub use connection::{establish_connection, get_db_path, run_migrations, DbConnection, DbPool, DbPooledConnection};
 pub use models::Setting;
-pub use schema::settings; // Export only what's needed
