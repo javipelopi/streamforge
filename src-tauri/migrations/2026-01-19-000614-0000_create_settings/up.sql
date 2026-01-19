@@ -7,3 +7,4 @@ CREATE TABLE settings (
 -- Insert default settings
 INSERT INTO settings (key, value) VALUES ('server_port', '5004');
 INSERT INTO settings (key, value) VALUES ('auto_start', 'false');
+INSERT INTO settings (key, value) VALUES ('db_version', '1');

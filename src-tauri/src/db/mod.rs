@@ -1,6 +1,7 @@
 pub mod connection;
 pub mod models;
-pub mod schema;
+pub(crate) mod schema;
 
 pub use connection::{establish_connection, get_db_path, run_migrations, DbConnection};
 pub use models::Setting;
+pub use schema::settings; // Export only what's needed
