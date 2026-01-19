@@ -1,6 +1,6 @@
 # Story 2.1: Add Xtream Account with Secure Credential Storage
 
-Status: review
+Status: done
 
 ## Story
 
@@ -480,15 +480,25 @@ N/A
 
 1. Implementation complete for Story 2.1 - Add Xtream Account with Secure Credential Storage
 2. All acceptance criteria met:
-   - AC1: Form with all required fields (name, server URL, username, password)
-   - AC2: Password encryption via keyring (primary) or AES-256-GCM (fallback)
-   - AC3: Validation with appropriate error messages
+   - AC1: Form with all required fields (name, server URL, username, password) ✅
+   - AC2: Password encryption via keyring (primary) or AES-256-GCM (fallback) ✅
+   - AC3: Validation with appropriate error messages ✅
 3. Key technical decisions:
    - Used `keyring` v3.x with platform-specific features for OS keychain integration
    - Implemented AES-256-GCM fallback encryption for environments without keychain
    - Password never logged or returned in API responses
    - Database stores encrypted password blob for fallback scenarios
 4. Tests generated via ATDD workflow are ready for execution once full Tauri app is running
+5. **Code Review (2026-01-19)**: Performed adversarial review and applied 7 critical fixes:
+   - **SECURITY FIX**: Replaced weak XOR key derivation with HKDF-SHA256 (credentials/mod.rs:226-240)
+   - **TASK FIX**: Implemented form clearing after successful submission (AccountForm.tsx:74) - Task 6.6
+   - **VALIDATION FIX**: Added proper URL parsing validation (accounts.rs:121-132)
+   - **VALIDATION FIX**: Fixed password whitespace-only validation (AccountForm.tsx:59, accounts.rs:138)
+   - **IMPROVEMENT**: Added URL normalization to prevent duplicate entries (accounts.rs:104, 158, 279)
+   - **VALIDATION FIX**: Added maximum length validation (100 chars for name/username, 500 for password)
+   - **QUALITY FIX**: Improved error handling consistency (Accounts.tsx:54)
+   - Added dependencies: `hkdf = "0.12"`, `sha2 = "0.10"`, `url = "2.5"`
+   - All code now compiles without warnings (cargo check ✅, tsc ✅)
 
 ### File List
 
@@ -502,14 +512,17 @@ N/A
 - `src/components/accounts/index.ts`
 
 **Modified Files:**
-- `src-tauri/Cargo.toml` - Added keyring, aes-gcm, rand, base64, hostname, chrono dependencies
+- `src-tauri/Cargo.toml` - Added keyring, aes-gcm, rand, base64, hostname, chrono, hkdf, sha2, url dependencies
 - `src-tauri/src/lib.rs` - Added credentials module, registered account commands
 - `src-tauri/src/db/mod.rs` - Exported Account and NewAccount models
 - `src-tauri/src/db/models.rs` - Added Account and NewAccount structs
 - `src-tauri/src/db/schema.rs` - Auto-generated accounts table schema
 - `src-tauri/src/commands/mod.rs` - Added accounts submodule and exports
 - `src-tauri/src/main.rs` - Simplified to call lib::run()
-- `src/views/Accounts.tsx` - Full implementation with form and list
+- `src-tauri/src/credentials/mod.rs` - **[Code Review Fix]** Replaced XOR with HKDF-SHA256 key derivation
+- `src-tauri/src/commands/accounts.rs` - **[Code Review Fix]** Added URL parsing, normalization, and length validation
+- `src/components/accounts/AccountForm.tsx` - **[Code Review Fix]** Added form clearing, maxLength attributes, improved validation
+- `src/views/Accounts.tsx` - **[Code Review Fix]** Improved error handling
 - `src/lib/tauri.ts` - Added account-related functions and types
 - `eslint.config.js` - Added browser globals for ESLint
 - `tests/integration/accounts.spec.ts` - Updated to use correct API contract

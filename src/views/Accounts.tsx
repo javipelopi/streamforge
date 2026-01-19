@@ -51,7 +51,8 @@ export function Accounts() {
       setShowForm(false);
     } catch (err) {
       console.error('Failed to add account:', err);
-      setError(typeof err === 'string' ? err : 'Failed to add account. Please try again.');
+      const errorMessage = err instanceof Error ? err.message : typeof err === 'string' ? err : 'Failed to add account. Please try again.';
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

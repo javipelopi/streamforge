@@ -28,6 +28,7 @@ r2d2 = "0.8"
 axum = "0.8"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
+url = "2.5"
 
 # Credential storage
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
@@ -36,6 +37,8 @@ rand = "0.8"
 base64 = "0.22"
 hostname = "0.4"
 chrono = "0.4"
+hkdf = "0.12"
+sha2 = "0.10"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-autostart = "2"

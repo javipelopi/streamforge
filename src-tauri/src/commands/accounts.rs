@@ -100,6 +100,11 @@ pub struct UpdateAccountRequest {
     pub password: Option<String>, // Optional - only update if provided
 }
 
+/// Normalize server URL by removing trailing slashes
+fn normalize_url(url: &str) -> String {
+    url.trim().trim_end_matches('/').to_string()
+}
+
 /// Validate account input fields
 fn validate_account_input(
     name: &str,
@@ -111,14 +116,22 @@ fn validate_account_input(
     if name.trim().is_empty() {
         return Err(AccountError::NameRequired);
     }
+    if name.len() > 100 {
+        return Err(AccountError::DatabaseError("Account name must be 100 characters or less".to_string()));
+    }
 
     // Validate server URL
     if server_url.trim().is_empty() {
         return Err(AccountError::ServerUrlRequired);
     }
 
-    // Validate URL format
+    // Validate URL format by attempting to parse it
     if !server_url.starts_with("http://") && !server_url.starts_with("https://") {
+        return Err(AccountError::InvalidServerUrl);
+    }
+
+    // Validate that URL is actually parseable
+    if let Err(_) = url::Url::parse(server_url.trim()) {
         return Err(AccountError::InvalidServerUrl);
     }
 
@@ -126,11 +139,17 @@ fn validate_account_input(
     if username.trim().is_empty() {
         return Err(AccountError::UsernameRequired);
     }
+    if username.len() > 100 {
+        return Err(AccountError::DatabaseError("Username must be 100 characters or less".to_string()));
+    }
 
     // Validate password (only if provided)
     if let Some(pwd) = password {
-        if pwd.is_empty() {
+        if pwd.trim().is_empty() {
             return Err(AccountError::PasswordRequired);
+        }
+        if pwd.len() > 500 {
+            return Err(AccountError::DatabaseError("Password must be 500 characters or less".to_string()));
         }
     }
 
@@ -154,6 +173,9 @@ pub async fn add_account(
         Some(&request.password),
     )?;
 
+    // Normalize server URL
+    let normalized_server_url = normalize_url(&request.server_url);
+
     // Get app data directory for credential storage
     let app_data_dir = app
         .path()
@@ -168,7 +190,7 @@ pub async fn add_account(
     // First, insert the account to get the ID
     let new_account = NewAccount::new(
         request.name.clone(),
-        request.server_url.clone(),
+        normalized_server_url,
         request.username.clone(),
         vec![], // Placeholder - will be updated after we have the ID
     );
@@ -272,6 +294,9 @@ pub async fn update_account(
         request.password.as_deref(),
     )?;
 
+    // Normalize server URL
+    let normalized_server_url = normalize_url(&request.server_url);
+
     // Get app data directory for credential storage
     let app_data_dir = app
         .path()
@@ -295,7 +320,7 @@ pub async fn update_account(
     diesel::update(accounts::table.filter(accounts::id.eq(id)))
         .set((
             accounts::name.eq(&request.name),
-            accounts::server_url.eq(&request.server_url),
+            accounts::server_url.eq(&normalized_server_url),
             accounts::username.eq(&request.username),
             accounts::updated_at.eq(&now),
         ))

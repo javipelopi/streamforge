@@ -1,4 +1,4 @@
-import React, { useState, FormEvent, ChangeEvent } from 'react';
+import { useState, FormEvent, ChangeEvent } from 'react';
 
 export interface AccountFormData {
   name: string;
@@ -41,6 +41,8 @@ export function AccountForm({ onSubmit, onCancel, isLoading = false }: AccountFo
     // Validate account name
     if (!formData.name.trim()) {
       newErrors.name = 'Account name is required';
+    } else if (formData.name.length > 100) {
+      newErrors.name = 'Account name must be 100 characters or less';
     }
 
     // Validate server URL
@@ -53,11 +55,15 @@ export function AccountForm({ onSubmit, onCancel, isLoading = false }: AccountFo
     // Validate username
     if (!formData.username.trim()) {
       newErrors.username = 'Username is required';
+    } else if (formData.username.length > 100) {
+      newErrors.username = 'Username must be 100 characters or less';
     }
 
     // Validate password
-    if (!formData.password) {
+    if (!formData.password.trim()) {
       newErrors.password = 'Password is required';
+    } else if (formData.password.length > 500) {
+      newErrors.password = 'Password must be 500 characters or less';
     }
 
     setErrors(newErrors);
@@ -72,6 +78,15 @@ export function AccountForm({ onSubmit, onCancel, isLoading = false }: AccountFo
     }
 
     await onSubmit(formData);
+
+    // Clear form after successful submission (Story Task 6.6)
+    setFormData({
+      name: '',
+      serverUrl: '',
+      username: '',
+      password: '',
+    });
+    setErrors({});
   };
 
   const handleChange = (field: keyof AccountFormData) => (
@@ -102,6 +117,7 @@ export function AccountForm({ onSubmit, onCancel, isLoading = false }: AccountFo
           value={formData.name}
           onChange={handleChange('name')}
           placeholder="My IPTV Provider"
+          maxLength={100}
           className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
             errors.name ? 'border-red-500' : 'border-gray-300'
           }`}
@@ -150,6 +166,7 @@ export function AccountForm({ onSubmit, onCancel, isLoading = false }: AccountFo
           value={formData.username}
           onChange={handleChange('username')}
           placeholder="your_username"
+          maxLength={100}
           className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
             errors.username ? 'border-red-500' : 'border-gray-300'
           }`}
@@ -174,6 +191,7 @@ export function AccountForm({ onSubmit, onCancel, isLoading = false }: AccountFo
           value={formData.password}
           onChange={handleChange('password')}
           placeholder="your_password"
+          maxLength={500}
           className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
             errors.password ? 'border-red-500' : 'border-gray-300'
           }`}
