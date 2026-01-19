@@ -20,9 +20,35 @@ diesel::table! {
 }
 
 diesel::table! {
+    programs (id) {
+        id -> Nullable<Integer>,
+        xmltv_channel_id -> Integer,
+        title -> Text,
+        description -> Nullable<Text>,
+        start_time -> Text,
+        end_time -> Text,
+        category -> Nullable<Text>,
+        episode_info -> Nullable<Text>,
+        created_at -> Text,
+    }
+}
+
+diesel::table! {
     settings (key) {
         key -> Text,
         value -> Text,
+    }
+}
+
+diesel::table! {
+    xmltv_channels (id) {
+        id -> Nullable<Integer>,
+        source_id -> Integer,
+        channel_id -> Text,
+        display_name -> Text,
+        icon -> Nullable<Text>,
+        created_at -> Text,
+        updated_at -> Text,
     }
 }
 
@@ -58,6 +84,15 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(programs -> xmltv_channels (xmltv_channel_id));
+diesel::joinable!(xmltv_channels -> xmltv_sources (source_id));
 diesel::joinable!(xtream_channels -> accounts (account_id));
 
-diesel::allow_tables_to_appear_in_same_query!(accounts, settings, xmltv_sources, xtream_channels,);
+diesel::allow_tables_to_appear_in_same_query!(
+    accounts,
+    programs,
+    settings,
+    xmltv_channels,
+    xmltv_sources,
+    xtream_channels,
+);

@@ -2,6 +2,7 @@ pub mod commands;
 pub mod credentials;
 pub mod db;
 pub mod server;
+pub mod xmltv;
 pub mod xtream;
 
 use tauri::{
@@ -189,7 +190,12 @@ pub fn run() {
             commands::epg::get_xmltv_sources,
             commands::epg::update_xmltv_source,
             commands::epg::delete_xmltv_source,
-            commands::epg::toggle_xmltv_source
+            commands::epg::toggle_xmltv_source,
+            commands::epg::refresh_epg_source,
+            commands::epg::refresh_all_epg_sources,
+            commands::epg::get_epg_stats,
+            commands::epg::get_xmltv_channels,
+            commands::epg::get_programs
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

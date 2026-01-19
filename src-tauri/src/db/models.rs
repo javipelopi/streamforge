@@ -1,7 +1,7 @@
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::db::schema::{accounts, settings, xmltv_sources, xtream_channels};
+use crate::db::schema::{accounts, programs, settings, xmltv_channels, xmltv_sources, xtream_channels};
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone)]
 #[diesel(table_name = settings)]
@@ -204,4 +204,119 @@ pub struct XmltvSourceUpdate {
     pub refresh_hour: Option<i32>,
     pub is_active: Option<i32>,
     pub updated_at: Option<String>,
+}
+
+// ============================================================================
+// XMLTV Channel Models
+// ============================================================================
+
+/// XMLTV channel model for querying existing channels
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize)]
+#[diesel(table_name = xmltv_channels)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[serde(rename_all = "camelCase")]
+pub struct XmltvChannel {
+    pub id: Option<i32>,
+    pub source_id: i32,
+    pub channel_id: String,
+    pub display_name: String,
+    pub icon: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// New XMLTV channel for insertion
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = xmltv_channels)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewXmltvChannel {
+    pub source_id: i32,
+    pub channel_id: String,
+    pub display_name: String,
+    pub icon: Option<String>,
+}
+
+impl NewXmltvChannel {
+    pub fn new(
+        source_id: i32,
+        channel_id: impl Into<String>,
+        display_name: impl Into<String>,
+        icon: Option<String>,
+    ) -> Self {
+        Self {
+            source_id,
+            channel_id: channel_id.into(),
+            display_name: display_name.into(),
+            icon,
+        }
+    }
+}
+
+// ============================================================================
+// Program Models
+// ============================================================================
+
+/// Program model for querying existing programs
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize)]
+#[diesel(table_name = programs)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[serde(rename_all = "camelCase")]
+pub struct Program {
+    pub id: Option<i32>,
+    pub xmltv_channel_id: i32,
+    pub title: String,
+    pub description: Option<String>,
+    pub start_time: String,
+    pub end_time: String,
+    pub category: Option<String>,
+    pub episode_info: Option<String>,
+    pub created_at: String,
+}
+
+/// New program for insertion
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = programs)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewProgram {
+    pub xmltv_channel_id: i32,
+    pub title: String,
+    pub description: Option<String>,
+    pub start_time: String,
+    pub end_time: String,
+    pub category: Option<String>,
+    pub episode_info: Option<String>,
+}
+
+impl NewProgram {
+    pub fn new(
+        xmltv_channel_id: i32,
+        title: impl Into<String>,
+        start_time: impl Into<String>,
+        end_time: impl Into<String>,
+    ) -> Self {
+        Self {
+            xmltv_channel_id,
+            title: title.into(),
+            description: None,
+            start_time: start_time.into(),
+            end_time: end_time.into(),
+            category: None,
+            episode_info: None,
+        }
+    }
+
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    pub fn with_category(mut self, category: impl Into<String>) -> Self {
+        self.category = Some(category.into());
+        self
+    }
+
+    pub fn with_episode_info(mut self, episode_info: impl Into<String>) -> Self {
+        self.episode_info = Some(episode_info.into());
+        self
+    }
 }

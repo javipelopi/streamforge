@@ -252,3 +252,79 @@ export function detectXmltvFormat(url: string): XmltvFormat {
   }
   return 'auto';
 }
+
+// EPG Refresh types and functions
+
+/** EPG statistics response type */
+export interface EpgStats {
+  channelCount: number;
+  programCount: number;
+  lastRefresh?: string;
+}
+
+/** XMLTV Channel response type */
+export interface XmltvChannel {
+  id: number;
+  sourceId: number;
+  channelId: string;
+  displayName: string;
+  icon?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Program response type */
+export interface Program {
+  id: number;
+  xmltvChannelId: number;
+  title: string;
+  description?: string;
+  startTime: string;
+  endTime: string;
+  category?: string;
+  episodeInfo?: string;
+  createdAt: string;
+}
+
+/**
+ * Refresh EPG data for a single source
+ * Downloads, parses, and stores XMLTV data from the source URL.
+ * @param sourceId - Source ID to refresh
+ */
+export async function refreshEpgSource(sourceId: number): Promise<void> {
+  return invoke<void>('refresh_epg_source', { sourceId });
+}
+
+/**
+ * Refresh EPG data for all active sources
+ */
+export async function refreshAllEpgSources(): Promise<void> {
+  return invoke<void>('refresh_all_epg_sources');
+}
+
+/**
+ * Get EPG statistics for a source
+ * @param sourceId - Source ID to get stats for
+ * @returns EPG statistics including channel/program counts
+ */
+export async function getEpgStats(sourceId: number): Promise<EpgStats> {
+  return invoke<EpgStats>('get_epg_stats', { sourceId });
+}
+
+/**
+ * Get all XMLTV channels for a source
+ * @param sourceId - Source ID to get channels for
+ * @returns List of XMLTV channels
+ */
+export async function getXmltvChannels(sourceId: number): Promise<XmltvChannel[]> {
+  return invoke<XmltvChannel[]>('get_xmltv_channels', { sourceId });
+}
+
+/**
+ * Get programs for a source (through channels)
+ * @param sourceId - Source ID to get programs for
+ * @returns List of programs
+ */
+export async function getPrograms(sourceId: number): Promise<Program[]> {
+  return invoke<Program[]>('get_programs', { sourceId });
+}

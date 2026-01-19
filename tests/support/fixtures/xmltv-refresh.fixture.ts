@@ -67,7 +67,6 @@ export const test = base.extend<{
   mockXmltvServer: async ({}, use) => {
     let server: Server | null = null;
     let currentHandler: ((req: any, res: any) => void) | null = null;
-    const port = 9876; // Fixed port for testing
 
     // Create HTTP server
     server = createServer((req, res) => {
@@ -79,11 +78,16 @@ export const test = base.extend<{
       }
     });
 
+    // Listen on port 0 to get a random available port
     await new Promise<void>((resolve) => {
-      server!.listen(port, () => {
+      server!.listen(0, () => {
         resolve();
       });
     });
+
+    // Get the actual port assigned
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : 0;
 
     const mockServer: MockXmltvServer = {
       url: `http://localhost:${port}`,

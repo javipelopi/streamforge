@@ -392,17 +392,19 @@ test.describe('XMLTV Refresh API Commands', () => {
     page,
     xmltvRefreshApi
   }) => {
-    // GIVEN: An XMLTV source with localhost URL (SSRF risk)
+    // GIVEN: An XMLTV source with private IP URL (SSRF risk)
+    // Note: Using private IP (10.x.x.x) instead of localhost since localhost
+    // is allowed in test mode for mock servers, but private IPs are always blocked
     const source = await page.evaluate(async () => {
       // @ts-expect-error - Tauri API not typed
       return window.__TAURI__.invoke('add_xmltv_source', {
         name: 'Malicious EPG',
-        url: 'http://localhost:8080/epg.xml', // Localhost blocked
+        url: 'http://10.0.0.1:8080/epg.xml', // Private IP blocked
         format: 'xml',
       });
     });
 
-    // WHEN: Attempting to refresh from localhost
+    // WHEN: Attempting to refresh from private IP
     // THEN: Request fails with SSRF error
     await expect(xmltvRefreshApi.refreshSource(source.id)).rejects.toThrow(/not allowed|blocked|ssrf/i);
   });

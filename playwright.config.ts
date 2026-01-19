@@ -65,6 +65,10 @@ export default defineConfig({
         timeout: 180 * 1000, // Tauri takes longer to start
         stdout: 'pipe',
         stderr: 'pipe',
+        env: {
+          ...process.env,
+          IPTV_TEST_MODE: '1', // Enable test mode to allow localhost for mock servers
+        },
       }
     : {
         command: 'pnpm dev:vite',

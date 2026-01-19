@@ -245,6 +245,11 @@ export function Accounts() {
             onEdit={handleEditEpgSource}
             onDelete={handleDeleteEpgSource}
             onToggle={handleToggleEpgSource}
+            onSourceUpdated={(updatedSource) => {
+              setEpgSources((prev) =>
+                prev.map((s) => (s.id === updatedSource.id ? updatedSource : s))
+              );
+            }}
             isLoading={epgLoading}
           />
         </div>
