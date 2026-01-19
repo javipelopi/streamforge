@@ -16,13 +16,18 @@ const MAIN_WINDOW_NAME: &str = "main";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_autostart::init(
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_shell::init());
+
+    // Initialize autostart plugin only on desktop platforms
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
-        ))
-        .setup(|app| {
+        ));
+    }
+
+    builder.setup(|app| {
             // Initialize database
             let db_path = db::get_db_path(app)?;
             let database_url = db_path.to_string_lossy().to_string();
@@ -129,18 +134,21 @@ pub fn run() {
             }
 
             // Handle --minimized startup flag (used when autostart launches the app)
-            // When this flag is present, hide the window so only the tray icon is visible
+            // Window starts hidden by default (visible: false in tauri.conf.json)
+            // Only show window if NOT started with --minimized flag
             let args: Vec<String> = std::env::args().collect();
             let start_minimized = args.iter().any(|arg| arg == "--minimized");
 
-            if start_minimized {
+            if !start_minimized {
+                // Normal startup - show the window
                 if let Some(window) = app.get_webview_window(MAIN_WINDOW_NAME) {
-                    if let Err(e) = window.hide() {
-                        eprintln!("Failed to hide window on minimized start: {}", e);
-                    } else {
-                        println!("App started minimized (--minimized flag detected)");
+                    if let Err(e) = window.show() {
+                        eprintln!("Failed to show window on normal start: {}", e);
                     }
                 }
+            } else {
+                // Minimized startup - window stays hidden, only tray icon visible
+                println!("App started minimized (--minimized flag detected)");
             }
 
             Ok(())
