@@ -8,7 +8,9 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
+use hkdf::Hkdf;
 use rand::RngCore;
+use sha2::Sha256;
 use std::fs;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -224,18 +226,19 @@ impl CredentialManager {
     }
 
     /// Get or create the encryption key
-    /// Key is derived from a stored salt combined with machine-specific info
+    /// Key is derived from a stored salt combined with machine-specific info using HKDF-SHA256
     fn get_or_create_encryption_key(&self) -> Result<[u8; 32]> {
         let salt = self.get_or_create_salt()?;
-
-        // Derive key from salt and machine-specific identifier
-        // Using a simple XOR-based derivation (in production, use HKDF or similar)
         let machine_id = self.get_machine_identifier();
 
+        // Use HKDF-SHA256 for proper key derivation
+        // IKM (Input Key Material) = machine identifier
+        // Salt = stored random salt
+        // Info = application context
+        let hk = Hkdf::<Sha256>::new(Some(&salt), &machine_id);
         let mut key = [0u8; 32];
-        for i in 0..32 {
-            key[i] = salt[i] ^ machine_id[i % machine_id.len()];
-        }
+        hk.expand(b"iptv-credential-encryption-key-v1", &mut key)
+            .map_err(|e| CredentialError::EncryptionError(format!("HKDF expand failed: {}", e)))?;
 
         Ok(key)
     }
