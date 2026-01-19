@@ -168,6 +168,10 @@ test.describe('Scan Channels from Xtream Account', () => {
 
     await expect(page.locator('[data-testid="account-item"]').first()).toBeVisible();
 
+    // Test connection first to enable scan button
+    await page.click('[data-testid="test-connection-button"]');
+    await expect(page.locator('[data-testid="status-badge"]')).toContainText('Connected');
+
     // WHEN: User clicks "Scan Channels"
     const scanBtn = page.locator('[data-testid="scan-channels-button"]').first();
     await scanBtn.click();
@@ -200,6 +204,10 @@ test.describe('Scan Channels from Xtream Account', () => {
     await page.click('[data-testid="submit-account-button"]');
 
     await expect(page.locator('[data-testid="account-item"]').first()).toBeVisible();
+
+    // Test connection first to enable scan button
+    await page.click('[data-testid="test-connection-button"]');
+    await expect(page.locator('[data-testid="status-badge"]')).toContainText('Connected');
 
     // WHEN: User successfully scans channels
     await page.click('[data-testid="scan-channels-button"]');
@@ -234,6 +242,10 @@ test.describe('Scan Channels from Xtream Account', () => {
     await page.click('[data-testid="submit-account-button"]');
 
     await expect(page.locator('[data-testid="account-item"]').first()).toBeVisible();
+
+    // Test connection first to enable scan button
+    await page.click('[data-testid="test-connection-button"]');
+    await expect(page.locator('[data-testid="status-badge"]')).toContainText('Connected');
 
     // Mock the Xtream API endpoint
     let apiCalled = false;
@@ -288,6 +300,10 @@ test.describe('Scan Channels from Xtream Account', () => {
 
     await expect(page.locator('[data-testid="account-item"]').first()).toBeVisible();
 
+    // Test connection first to enable scan button
+    await page.click('[data-testid="test-connection-button"]');
+    await expect(page.locator('[data-testid="status-badge"]')).toContainText('Connected');
+
     // WHEN: User scans channels
     await page.click('[data-testid="scan-channels-button"]');
 
@@ -321,6 +337,10 @@ test.describe('Scan Channels from Xtream Account', () => {
     await page.click('[data-testid="submit-account-button"]');
 
     await expect(page.locator('[data-testid="account-item"]').first()).toBeVisible();
+
+    // Test connection first to enable scan button
+    await page.click('[data-testid="test-connection-button"]');
+    await expect(page.locator('[data-testid="status-badge"]')).toContainText('Connected');
 
     // WHEN: User scans channels with different quality indicators
     await page.click('[data-testid="scan-channels-button"]');
@@ -358,6 +378,10 @@ test.describe('Scan Channels from Xtream Account', () => {
 
     await expect(page.locator('[data-testid="account-item"]').first()).toBeVisible();
 
+    // Test connection first to enable scan button
+    await page.click('[data-testid="test-connection-button"]');
+    await expect(page.locator('[data-testid="status-badge"]')).toContainText('Connected');
+
     // WHEN: User scans 1000 channels
     const startTime = Date.now();
     await page.click('[data-testid="scan-channels-button"]');
@@ -393,6 +417,10 @@ test.describe('Scan Channels from Xtream Account', () => {
 
     await expect(page.locator('[data-testid="account-item"]').first()).toBeVisible();
 
+    // Test connection first to enable scan button
+    await page.click('[data-testid="test-connection-button"]');
+    await expect(page.locator('[data-testid="status-badge"]')).toContainText('Connected');
+
     // WHEN: Scan fails
     await page.click('[data-testid="scan-channels-button"]');
 
@@ -424,6 +452,10 @@ test.describe('Scan Channels from Xtream Account', () => {
     await page.click('[data-testid="submit-account-button"]');
 
     await expect(page.locator('[data-testid="account-item"]').first()).toBeVisible();
+
+    // Test connection first to enable scan button
+    await page.click('[data-testid="test-connection-button"]');
+    await expect(page.locator('[data-testid="status-badge"]')).toContainText('Connected');
 
     // First scan
     await page.click('[data-testid="scan-channels-button"]');

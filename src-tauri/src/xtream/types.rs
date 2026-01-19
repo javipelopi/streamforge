@@ -55,6 +55,33 @@ pub struct AccountInfo {
     pub is_trial: bool,
 }
 
+/// Live stream from Xtream get_live_streams API
+#[derive(Debug, Deserialize, Clone)]
+pub struct XtreamLiveStream {
+    pub num: i32,
+    pub name: String,
+    pub stream_type: String,
+    pub stream_id: i32,
+    pub stream_icon: Option<String>,
+    pub epg_channel_id: Option<String>,
+    pub added: Option<String>,
+    /// Can be string or int in API, we handle both
+    pub category_id: Option<String>,
+    pub category_ids: Option<Vec<i32>>,
+    pub custom_sid: Option<String>,
+    pub tv_archive: Option<i32>,
+    pub direct_source: Option<String>,
+    pub tv_archive_duration: Option<i32>,
+}
+
+/// Category from Xtream get_live_categories API
+#[derive(Debug, Deserialize, Clone)]
+pub struct XtreamCategory {
+    pub category_id: String,
+    pub category_name: String,
+    pub parent_id: Option<i32>,
+}
+
 impl From<XtreamAuthResponse> for AccountInfo {
     fn from(response: XtreamAuthResponse) -> Self {
         let user = response.user_info;

@@ -181,7 +181,10 @@ pub fn run() {
             commands::accounts::get_accounts,
             commands::accounts::delete_account,
             commands::accounts::update_account,
-            commands::accounts::test_connection
+            commands::accounts::test_connection,
+            commands::channels::scan_channels,
+            commands::channels::get_channels,
+            commands::channels::get_channel_count
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { CheckCircledIcon, CrossCircledIcon, ReloadIcon } from '@radix-ui/react-icons';
-import { testConnection, type TestConnectionResponse } from '../../lib/tauri';
+import { CheckCircledIcon, CrossCircledIcon, ReloadIcon, MagnifyingGlassIcon } from '@radix-ui/react-icons';
+import { testConnection, scanChannels, type TestConnectionResponse, type ScanChannelsResponse } from '../../lib/tauri';
 
 interface AccountStatusProps {
   accountId: number;
@@ -34,6 +34,8 @@ export function AccountStatus({
 }: AccountStatusProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [testResult, setTestResult] = useState<TestConnectionResponse | null>(null);
+  const [isScanLoading, setIsScanLoading] = useState(false);
+  const [scanResult, setScanResult] = useState<ScanChannelsResponse | null>(null);
 
   // Use test result or initial values for display
   const status = testResult?.status ?? initialStatus;
@@ -61,6 +63,33 @@ export function AccountStatus({
     }
   };
 
+  const handleScanChannels = async () => {
+    setIsScanLoading(true);
+    setScanResult(null);
+    try {
+      const result = await scanChannels(accountId);
+      setScanResult(result);
+    } catch (error) {
+      setScanResult({
+        success: false,
+        totalChannels: 0,
+        newChannels: 0,
+        updatedChannels: 0,
+        removedChannels: 0,
+        scanDurationMs: 0,
+        errorMessage: error instanceof Error ? error.message : 'Channel scan failed',
+      });
+    } finally {
+      setIsScanLoading(false);
+    }
+  };
+
+  // Format duration in milliseconds to user-friendly string
+  const formatDuration = (ms: number): string => {
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  };
+
   /**
    * Format ISO date string to user-friendly display
    */
@@ -78,27 +107,54 @@ export function AccountStatus({
     }
   };
 
+  // Determine if scan button should be enabled
+  const canScanChannels = hasSuccessfulTest || initialStatus === 'connected';
+
   return (
     <div data-testid="account-status-container" className="flex flex-col gap-2">
-      {/* Test Connection Button */}
-      <button
-        data-testid="test-connection-button"
-        onClick={handleTestConnection}
-        disabled={isLoading}
-        className="inline-flex items-center justify-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {isLoading ? (
-          <>
-            <ReloadIcon data-testid="test-connection-loading" className="w-4 h-4 animate-spin" />
-            <span>Testing...</span>
-          </>
-        ) : (
-          <>
-            <ReloadIcon className="w-4 h-4" />
-            <span>Test Connection</span>
-          </>
-        )}
-      </button>
+      {/* Action Buttons Row */}
+      <div className="flex flex-wrap gap-2">
+        {/* Test Connection Button */}
+        <button
+          data-testid="test-connection-button"
+          onClick={handleTestConnection}
+          disabled={isLoading || isScanLoading}
+          className="inline-flex items-center justify-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isLoading ? (
+            <>
+              <ReloadIcon data-testid="test-connection-loading" className="w-4 h-4 animate-spin" />
+              <span>Testing...</span>
+            </>
+          ) : (
+            <>
+              <ReloadIcon className="w-4 h-4" />
+              <span>Test Connection</span>
+            </>
+          )}
+        </button>
+
+        {/* Scan Channels Button */}
+        <button
+          data-testid="scan-channels-button"
+          onClick={handleScanChannels}
+          disabled={!canScanChannels || isScanLoading || isLoading}
+          className="inline-flex items-center justify-center gap-2 px-3 py-1.5 text-sm font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title={!canScanChannels ? 'Test connection first to enable channel scanning' : 'Scan and update channel list'}
+        >
+          {isScanLoading ? (
+            <>
+              <MagnifyingGlassIcon data-testid="scan-channels-loading" className="w-4 h-4 animate-pulse" />
+              <span>Scanning...</span>
+            </>
+          ) : (
+            <>
+              <MagnifyingGlassIcon className="w-4 h-4" />
+              <span>Scan Channels</span>
+            </>
+          )}
+        </button>
+      </div>
 
       {/* Success State */}
       {hasSuccessfulTest && (
@@ -125,7 +181,7 @@ export function AccountStatus({
         </div>
       )}
 
-      {/* Error State */}
+      {/* Connection Error State */}
       {hasFailedTest && (
         <div className="flex flex-col gap-2 mt-2">
           <div className="flex items-center gap-2">
@@ -143,6 +199,42 @@ export function AccountStatus({
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {/* Scan Result - Success */}
+      {scanResult?.success && (
+        <div data-testid="scan-result-success" className="flex flex-col gap-1 mt-2 p-3 bg-green-50 rounded-md">
+          <div className="flex items-center gap-2">
+            <CheckCircledIcon className="w-5 h-5 text-green-500" />
+            <span className="font-medium text-green-700">Channel scan complete</span>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-green-700">
+            <span data-testid="scan-result-total">
+              Total: <strong>{scanResult.totalChannels}</strong> channels
+            </span>
+            <span data-testid="scan-result-new">
+              New: <strong>{scanResult.newChannels}</strong>
+            </span>
+            <span data-testid="scan-result-updated">
+              Updated: <strong>{scanResult.updatedChannels}</strong>
+            </span>
+            <span data-testid="scan-result-duration">
+              Duration: <strong>{formatDuration(scanResult.scanDurationMs)}</strong>
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Scan Result - Error */}
+      {scanResult && !scanResult.success && (
+        <div data-testid="scan-result-error" className="flex flex-col gap-1 mt-2 p-3 bg-red-50 rounded-md">
+          <div className="flex items-center gap-2">
+            <CrossCircledIcon className="w-5 h-5 text-red-500" />
+            <span data-testid="scan-error-message" className="text-red-600">
+              {scanResult.errorMessage ?? 'Channel scan failed'}
+            </span>
+          </div>
         </div>
       )}
 

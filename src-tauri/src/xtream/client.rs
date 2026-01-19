@@ -6,7 +6,7 @@
 use reqwest::Client;
 use std::time::Duration;
 
-use super::types::{AccountInfo, XtreamAuthResponse};
+use super::types::{AccountInfo, XtreamAuthResponse, XtreamCategory, XtreamLiveStream};
 use super::XtreamError;
 
 /// HTTP timeout for Xtream API requests (10 seconds)
@@ -43,7 +43,7 @@ impl XtreamClient {
         let http = Client::builder()
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
             .build()
-            .map_err(|e| XtreamError::Network(e))?;
+            .map_err(XtreamError::Network)?;
 
         Ok(Self {
             http,
@@ -96,6 +96,72 @@ impl XtreamClient {
         }
 
         Ok(AccountInfo::from(auth_response))
+    }
+
+    /// Get all live streams from the Xtream server
+    ///
+    /// Makes a GET request to `player_api.php` with `action=get_live_streams`
+    /// and parses the response to extract channel information.
+    ///
+    /// # Returns
+    /// * `Ok(Vec<XtreamLiveStream>)` - List of live streams
+    /// * `Err(XtreamError)` - Network error or invalid response
+    pub async fn get_live_streams(&self) -> Result<Vec<XtreamLiveStream>, XtreamError> {
+        let url = format!(
+            "{}/player_api.php?username={}&password={}&action=get_live_streams",
+            self.server_url,
+            urlencoding::encode(&self.username),
+            urlencoding::encode(&self.password)
+        );
+
+        let response = self.http.get(&url).send().await?;
+
+        if !response.status().is_success() {
+            return Err(XtreamError::HttpError(response.status().as_u16()));
+        }
+
+        let streams: Vec<XtreamLiveStream> = response.json().await.map_err(|e| {
+            if e.is_decode() {
+                XtreamError::InvalidResponse
+            } else {
+                XtreamError::Network(e)
+            }
+        })?;
+
+        Ok(streams)
+    }
+
+    /// Get all live categories from the Xtream server
+    ///
+    /// Makes a GET request to `player_api.php` with `action=get_live_categories`
+    /// and parses the response to extract category information.
+    ///
+    /// # Returns
+    /// * `Ok(Vec<XtreamCategory>)` - List of categories
+    /// * `Err(XtreamError)` - Network error or invalid response
+    pub async fn get_live_categories(&self) -> Result<Vec<XtreamCategory>, XtreamError> {
+        let url = format!(
+            "{}/player_api.php?username={}&password={}&action=get_live_categories",
+            self.server_url,
+            urlencoding::encode(&self.username),
+            urlencoding::encode(&self.password)
+        );
+
+        let response = self.http.get(&url).send().await?;
+
+        if !response.status().is_success() {
+            return Err(XtreamError::HttpError(response.status().as_u16()));
+        }
+
+        let categories: Vec<XtreamCategory> = response.json().await.map_err(|e| {
+            if e.is_decode() {
+                XtreamError::InvalidResponse
+            } else {
+                XtreamError::Network(e)
+            }
+        })?;
+
+        Ok(categories)
     }
 }
 
