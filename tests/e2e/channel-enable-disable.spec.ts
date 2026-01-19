@@ -315,8 +315,20 @@ test.describe('Channel Enable/Disable (Story 3-5)', () => {
     await expect(page.locator('[data-testid="channel-row-3"]')
       .locator('[data-testid="channel-toggle"]')).toBeChecked();
 
-    // NOTE: In real app, this data comes from database via get_xmltv_channels_with_mappings
-    // Database persistence ensures state survives restart (FR25)
+    // ============================================================================
+    // TEST LIMITATION: Mock uses in-memory state, not database persistence
+    // ============================================================================
+    // This test validates the UI correctly displays persisted state from backend,
+    // but the mock doesn't actually write to SQLite. In production:
+    // 1. toggle_xmltv_channel writes to xmltv_channel_settings table
+    // 2. App restart triggers get_xmltv_channels_with_mappings
+    // 3. Query loads is_enabled from database (not in-memory state)
+    //
+    // Real persistence is validated by:
+    // - Rust integration tests (database layer)
+    // - Manual QA with actual app restarts
+    //
+    // This E2E test confirms: UI → Backend → UI round-trip works correctly
   });
 
   test('Integration: should show count of enabled channels in header', async ({ page }) => {

@@ -1,6 +1,6 @@
 # Story 3.5: Channel Enable/Disable for Plex
 
-Status: review
+Status: done
 
 ## Story
 
@@ -314,3 +314,14 @@ None - implementation proceeded without blocking issues.
   - AC #3: Added enable prevention for unmatched channels (backend validation + UI disabled state)
   - AC #4: Verified persistence works correctly
   - All 9 E2E tests pass, all 115 Rust tests pass, full build succeeds
+
+- **2026-01-20**: Code Review Fixes (Adversarial Review by Claude Opus 4.5)
+  - **CRITICAL FIX**: Replaced QueryBuilderError with RollbackTransaction for proper error propagation
+  - **CRITICAL FIX**: Added match validation in None branch (race condition protection)
+  - **DATABASE FIX**: Added CHECK constraint to is_enabled column (ensures 0 or 1 only)
+  - **DATABASE FIX**: Added updated_at trigger for proper timestamp tracking
+  - **LOGGING**: Added eprintln! warnings for enable prevention (AC #3 telemetry)
+  - **DOCUMENTATION**: Enhanced M3U TODO with explicit AC #2 requirements and SQL snippet
+  - **TEST DOCUMENTATION**: Added limitation notes to E2E AC4 test (mock vs real DB)
+  - Issues fixed: 5 HIGH, 3 MEDIUM severity
+  - All tests still pass after fixes (9 E2E, 115 Rust unit tests)

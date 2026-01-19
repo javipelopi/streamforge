@@ -65,7 +65,7 @@ development_status:
   3-2-display-xmltv-channel-list-with-match-status: done
   3-3-manual-match-override-via-search-dropdown: done
   3-4-auto-rematch-on-provider-changes: done
-  3-5-channel-enable-disable-for-plex: review
+  3-5-channel-enable-disable-for-plex: done
   3-6-drag-and-drop-channel-reordering: backlog
   3-7-bulk-channel-operations: backlog
   3-8-manage-orphan-xtream-channels: backlog

@@ -768,9 +768,13 @@ pub fn toggle_xmltv_channel(
                 .get_result(conn)?;
 
             if match_count == 0 {
-                return Err(diesel::result::Error::QueryBuilderError(
-                    "Cannot enable channel: No stream source available. Match an Xtream stream first.".into()
-                ));
+                // Log enable prevention for debugging and telemetry
+                eprintln!(
+                    "[WARN] Channel {} enable blocked: no matched Xtream streams (AC #3 validation)",
+                    channel_id
+                );
+                // Use RollbackTransaction to properly propagate error message
+                return Err(diesel::result::Error::RollbackTransaction);
             }
         }
 
@@ -791,6 +795,22 @@ pub fn toggle_xmltv_channel(
             }
             None => {
                 // Create new settings (default to enabled since we're toggling from no-setting state)
+                // CRITICAL: Must re-validate matches even in None branch (race condition protection)
+                let match_count: i64 = channel_mappings::table
+                    .filter(channel_mappings::xmltv_channel_id.eq(channel_id))
+                    .count()
+                    .get_result(conn)?;
+
+                if match_count == 0 {
+                    // Log enable prevention (None branch - race condition case)
+                    eprintln!(
+                        "[WARN] Channel {} enable blocked in None branch: no matched streams (race condition protection)",
+                        channel_id
+                    );
+                    // Cannot enable channel without matches
+                    return Err(diesel::result::Error::RollbackTransaction);
+                }
+
                 let new_settings = NewXmltvChannelSettings::enabled(channel_id);
                 diesel::insert_into(xmltv_channel_settings::table)
                     .values(&new_settings)
@@ -837,7 +857,15 @@ pub fn toggle_xmltv_channel(
             matches,
         })
     })
-    .map_err(|e| format!("Failed to toggle channel: {}", e))
+    .map_err(|e| {
+        // Preserve specific error messages
+        match e {
+            diesel::result::Error::RollbackTransaction => {
+                "Cannot enable channel: No stream source available. Match an Xtream stream first.".to_string()
+            }
+            _ => format!("Failed to toggle channel: {}", e),
+        }
+    })
 }
 
 #[cfg(test)]
