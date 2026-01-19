@@ -2,11 +2,11 @@ import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Search, Check, X, Loader2 } from 'lucide-react';
 import type { XtreamStreamSearchResult } from '../../lib/tauri';
-import { getQualityBadgeClasses } from '../../lib/tauri';
+import { getQualityBadgeClasses, searchXtreamStreams } from '../../lib/tauri';
 
 interface StreamSearchDropdownProps {
-  streams: XtreamStreamSearchResult[];
-  isLoading: boolean;
+  /** XMLTV channel name to use as initial search query */
+  xmltvChannelName: string;
   xmltvChannelId: number;
   onSelect: (stream: XtreamStreamSearchResult) => void;
   onClose: () => void;
@@ -34,47 +34,68 @@ const ITEM_HEIGHT = 56;
 /**
  * StreamSearchDropdown component displays a searchable list of Xtream streams
  * Uses TanStack Virtual for efficient rendering of large lists (1000+ streams)
+ * Results are ordered by fuzzy match score against the search query
  *
  * Story 3-3: Manual Match Override via Search Dropdown
  */
 export const StreamSearchDropdown = memo(function StreamSearchDropdown({
-  streams,
-  isLoading,
+  xmltvChannelName,
   xmltvChannelId,
   onSelect,
   onClose,
 }: StreamSearchDropdownProps) {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(xmltvChannelName);
+  const [streams, setStreams] = useState<XtreamStreamSearchResult[]>([]);
+  // Initialize loading state based on whether we have a valid initial query
+  // This prevents a flash of loading state when xmltvChannelName is empty
+  const [isLoading, setIsLoading] = useState(!!xmltvChannelName.trim());
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Debounce search to prevent lag
-  const debouncedSearch = useDebounce(searchQuery, 150);
+  // Debounce search to prevent excessive API calls
+  // 300ms is appropriate for network calls (vs 150ms for in-memory filtering)
+  // This balances responsiveness with reducing backend load
+  const debouncedSearch = useDebounce(searchQuery, 300);
 
-  // Filter streams based on search query
-  const filteredStreams = streams.filter((stream) => {
-    if (!debouncedSearch) return true;
-    const query = debouncedSearch.toLowerCase();
-    return (
-      stream.name.toLowerCase().includes(query) ||
-      (stream.categoryName?.toLowerCase().includes(query) ?? false)
-    );
-  });
-
-  // Reset highlighted index when filtered results change
+  // Fetch streams when search query changes
   useEffect(() => {
-    setHighlightedIndex(0);
+    if (!debouncedSearch.trim()) {
+      setStreams([]);
+      setIsLoading(false);
+      setSearchError(null);
+      return;
+    }
+
+    setIsLoading(true);
+    setSearchError(null);
+    searchXtreamStreams(debouncedSearch)
+      .then((results) => {
+        setStreams(results);
+        setHighlightedIndex(0);
+      })
+      .catch((err) => {
+        console.error('Failed to search streams:', err);
+        setStreams([]);
+        setSearchError('Failed to search streams. Please try again.');
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   }, [debouncedSearch]);
 
-  // Focus input on mount
+  // Focus input on mount and select all text
   useEffect(() => {
-    inputRef.current?.focus();
+    if (inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
   }, []);
 
   // Virtual list for performance
   const virtualizer = useVirtualizer({
-    count: filteredStreams.length,
+    count: streams.length,
     getScrollElement: () => listRef.current,
     estimateSize: () => ITEM_HEIGHT,
     overscan: 10,
@@ -82,10 +103,10 @@ export const StreamSearchDropdown = memo(function StreamSearchDropdown({
 
   // Scroll to highlighted item
   useEffect(() => {
-    if (highlightedIndex >= 0 && highlightedIndex < filteredStreams.length) {
+    if (highlightedIndex >= 0 && highlightedIndex < streams.length) {
       virtualizer.scrollToIndex(highlightedIndex, { align: 'auto' });
     }
-  }, [highlightedIndex, filteredStreams.length, virtualizer]);
+  }, [highlightedIndex, streams.length, virtualizer]);
 
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
@@ -93,22 +114,25 @@ export const StreamSearchDropdown = memo(function StreamSearchDropdown({
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault();
+          e.stopPropagation();
           setHighlightedIndex((prev) =>
-            Math.min(prev + 1, filteredStreams.length - 1)
+            Math.min(prev + 1, streams.length - 1)
           );
           break;
         case 'ArrowUp':
           e.preventDefault();
+          e.stopPropagation();
           setHighlightedIndex((prev) => Math.max(prev - 1, 0));
           break;
         case 'Enter':
           e.preventDefault();
+          e.stopPropagation();
           // Check for zero-length array before accessing
-          if (filteredStreams.length === 0) {
+          if (streams.length === 0) {
             break;
           }
-          if (highlightedIndex >= 0 && highlightedIndex < filteredStreams.length) {
-            const stream = filteredStreams[highlightedIndex];
+          if (highlightedIndex >= 0 && highlightedIndex < streams.length) {
+            const stream = streams[highlightedIndex];
             // Don't select if already matched to this channel
             if (!stream.matchedToXmltvIds.includes(xmltvChannelId)) {
               onSelect(stream);
@@ -117,11 +141,12 @@ export const StreamSearchDropdown = memo(function StreamSearchDropdown({
           break;
         case 'Escape':
           e.preventDefault();
+          e.stopPropagation();
           onClose();
           break;
       }
     },
-    [filteredStreams, highlightedIndex, xmltvChannelId, onSelect, onClose]
+    [streams, highlightedIndex, xmltvChannelId, onSelect, onClose]
   );
 
   // Handle stream click
@@ -155,9 +180,19 @@ export const StreamSearchDropdown = memo(function StreamSearchDropdown({
             placeholder="Search streams..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              // Stop propagation for typing keys so parent handler doesn't interfere
+              if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter' && e.key !== 'Escape') {
+                e.stopPropagation();
+              }
+            }}
             className="w-full pl-9 pr-8 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             aria-label="Search streams"
             data-testid="stream-search-input"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
           />
           {searchQuery && (
             <button
@@ -176,24 +211,57 @@ export const StreamSearchDropdown = memo(function StreamSearchDropdown({
       {isLoading && (
         <div className="flex items-center justify-center py-8 text-gray-500">
           <Loader2 className="w-5 h-5 animate-spin mr-2" />
-          <span>Loading streams...</span>
+          <span>Searching...</span>
+        </div>
+      )}
+
+      {/* Error state */}
+      {!isLoading && searchError && (
+        <div
+          className="py-6 px-4 text-center"
+          data-testid="search-error-message"
+        >
+          <div className="text-red-600 mb-2">{searchError}</div>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchError(null);
+              setIsLoading(true);
+              searchXtreamStreams(debouncedSearch)
+                .then((results) => {
+                  setStreams(results);
+                  setHighlightedIndex(0);
+                })
+                .catch((err) => {
+                  console.error('Failed to search streams:', err);
+                  setStreams([]);
+                  setSearchError('Failed to search streams. Please try again.');
+                })
+                .finally(() => {
+                  setIsLoading(false);
+                });
+            }}
+            className="text-sm text-blue-600 hover:text-blue-800 underline"
+          >
+            Retry
+          </button>
         </div>
       )}
 
       {/* Empty state */}
-      {!isLoading && filteredStreams.length === 0 && (
+      {!isLoading && !searchError && streams.length === 0 && (
         <div
           className="py-8 text-center text-gray-500"
           data-testid="no-results-message"
         >
-          {searchQuery
+          {searchQuery.trim()
             ? 'No streams match your search'
-            : 'No Xtream streams available'}
+            : 'Enter a search query'}
         </div>
       )}
 
       {/* Stream list */}
-      {!isLoading && filteredStreams.length > 0 && (
+      {!isLoading && !searchError && streams.length > 0 && (
         <>
           {/* Results count */}
           <div
@@ -201,7 +269,7 @@ export const StreamSearchDropdown = memo(function StreamSearchDropdown({
             aria-live="polite"
             aria-atomic="true"
           >
-            {filteredStreams.length} stream{filteredStreams.length !== 1 ? 's' : ''} found
+            {streams.length} stream{streams.length !== 1 ? 's' : ''} found
           </div>
 
           <div
@@ -216,7 +284,7 @@ export const StreamSearchDropdown = memo(function StreamSearchDropdown({
               style={{ height: `${virtualizer.getTotalSize()}px` }}
             >
               {virtualItems.map((virtualItem) => {
-                const stream = filteredStreams[virtualItem.index];
+                const stream = streams[virtualItem.index];
                 const isHighlighted = virtualItem.index === highlightedIndex;
                 const isMatchedToThisChannel = stream.matchedToXmltvIds.includes(xmltvChannelId);
                 const isMatchedToOther = stream.matchedToXmltvIds.length > 0 && !isMatchedToThisChannel;
@@ -258,6 +326,11 @@ export const StreamSearchDropdown = memo(function StreamSearchDropdown({
                         <span className="text-sm font-medium text-gray-900 truncate">
                           {stream.name}
                         </span>
+                        {stream.fuzzyScore !== null && (
+                          <span className="text-xs text-gray-400">
+                            {Math.round(stream.fuzzyScore * 100)}%
+                          </span>
+                        )}
                         {isMatchedToOther && (
                           <span className="text-xs text-gray-500">
                             (matched elsewhere)

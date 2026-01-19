@@ -3,7 +3,6 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type {
   XmltvChannelWithMappings,
   XtreamStreamMatch,
-  XtreamStreamSearchResult,
 } from '../../lib/tauri';
 import { XmltvChannelRow } from './XmltvChannelRow';
 import { MatchedStreamsList } from './MatchedStreamsList';
@@ -15,8 +14,6 @@ interface XmltvChannelsListProps {
   onToggleChannel: (channelId: number) => void;
   onSetPrimaryStream: (xmltvChannelId: number, xtreamChannelId: number) => Promise<XtreamStreamMatch[]>;
   // Story 3-3: Manual stream matching props
-  xtreamStreams: XtreamStreamSearchResult[];
-  isLoadingStreams: boolean;
   onAddManualMapping: (
     xmltvChannelId: number,
     xtreamChannelId: number,
@@ -42,8 +39,6 @@ export function XmltvChannelsList({
   isLoading,
   onToggleChannel,
   onSetPrimaryStream,
-  xtreamStreams,
-  isLoadingStreams,
   onAddManualMapping,
   onRemoveMapping,
 }: XmltvChannelsListProps) {
@@ -294,8 +289,7 @@ export function XmltvChannelsList({
                 addStreamButton={
                   <AddStreamButton
                     xmltvChannelId={channel.id}
-                    streams={xtreamStreams}
-                    isLoadingStreams={isLoadingStreams}
+                    xmltvChannelName={channel.displayName}
                     onAddStream={handleAddManualMapping}
                     disabled={isUpdating}
                   />

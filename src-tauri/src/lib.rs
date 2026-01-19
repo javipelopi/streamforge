@@ -288,6 +288,7 @@ pub fn run() {
             commands::xmltv_channels::set_primary_stream,
             commands::xmltv_channels::toggle_xmltv_channel,
             commands::xmltv_channels::get_all_xtream_streams,
+            commands::xmltv_channels::search_xtream_streams,
             commands::xmltv_channels::add_manual_stream_mapping,
             commands::xmltv_channels::remove_stream_mapping,
             commands::logs::log_event,

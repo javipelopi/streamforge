@@ -22,6 +22,8 @@ export interface XtreamStreamMatch {
   isPrimary: boolean;
   isManual: boolean;
   streamPriority: number;
+  /** True if this is a manual match pointing to a stream that no longer exists */
+  isOrphaned: boolean;
 }
 
 /**
@@ -35,6 +37,8 @@ export interface XtreamStreamSearchResult {
   qualities: string[];
   categoryName: string | null;
   matchedToXmltvIds: number[];
+  /** Fuzzy match score against search query (0.0-1.0), null if no search query */
+  fuzzyScore: number | null;
 }
 
 export interface XmltvChannelWithMappings {
@@ -69,6 +73,7 @@ export const createXtreamStreamMatch = (overrides: Partial<XtreamStreamMatch> = 
     isPrimary: false,
     isManual: false,
     streamPriority: 1,
+    isOrphaned: false,
     ...overrides,
   };
 };
@@ -124,6 +129,7 @@ export const createXmltvChannelWithMultipleMatches = (
       isPrimary: true,
       isManual: false,
       streamPriority: 0,
+      isOrphaned: false,
     }),
     createXtreamStreamMatch({
       name: `${baseChannelName} SD`,
@@ -132,6 +138,7 @@ export const createXmltvChannelWithMultipleMatches = (
       isPrimary: false,
       isManual: false,
       streamPriority: 1,
+      isOrphaned: false,
     }),
     createXtreamStreamMatch({
       name: `${baseChannelName} 4K`,
@@ -140,6 +147,7 @@ export const createXmltvChannelWithMultipleMatches = (
       isPrimary: false,
       isManual: false,
       streamPriority: 2,
+      isOrphaned: false,
     }),
   ];
 
@@ -291,6 +299,7 @@ export const createXtreamStreamSearchResult = (
       { probability: 0.8 }
     ) ?? null,
     matchedToXmltvIds: [],
+    fuzzyScore: null,
     ...overrides,
   };
 };
@@ -333,6 +342,47 @@ export const createXmltvChannelWithManualMatch = (
   return createXmltvChannelWithMappings({
     matchCount: 1,
     matches: [manualMatch],
+    isEnabled: true,
+    ...overrides,
+  });
+};
+
+/**
+ * Create an orphaned match (stream no longer exists from provider)
+ * Used to test the orphaned stream warning UI
+ */
+export const createOrphanedMatch = (overrides: Partial<XtreamStreamMatch> = {}): XtreamStreamMatch => {
+  return createXtreamStreamMatch({
+    name: '[Stream no longer available]',
+    streamIcon: null,
+    qualities: [],
+    isManual: true,
+    isOrphaned: true,
+    ...overrides,
+  });
+};
+
+/**
+ * Create an XMLTV channel with an orphaned primary stream
+ * Used to test the primary stream unavailable warning
+ */
+export const createXmltvChannelWithOrphanedPrimary = (
+  overrides: Partial<XmltvChannelWithMappings> = {}
+): XmltvChannelWithMappings => {
+  const orphanedPrimary = createOrphanedMatch({
+    isPrimary: true,
+    streamPriority: 0,
+  });
+
+  const backupStream = createXtreamStreamMatch({
+    isPrimary: false,
+    streamPriority: 1,
+    isOrphaned: false,
+  });
+
+  return createXmltvChannelWithMappings({
+    matchCount: 2,
+    matches: [orphanedPrimary, backupStream],
     isEnabled: true,
     ...overrides,
   });
