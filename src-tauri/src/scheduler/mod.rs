@@ -324,116 +324,116 @@ async fn run_scheduled_refresh(db_pool: Arc<RwLock<Option<DbPool>>>) {
             }
         };
 
-        // Clear existing data for this source
-        if let Err(e) = diesel::delete(
-            xmltv_channels::table.filter(xmltv_channels::source_id.eq(source_id)),
-        )
-        .execute(&mut conn)
-        {
-            tracing::error!("Failed to clear data for source {}: {}", source_name, e);
-            failed_count += 1;
-            continue;
-        }
+        // Wrap each source refresh in a transaction for atomicity
+        // If the refresh fails mid-way, the old data remains intact
+        let tx_result = conn.transaction::<_, diesel::result::Error, _>(|tx_conn| {
+            // Clear existing data for this source
+            diesel::delete(
+                xmltv_channels::table.filter(xmltv_channels::source_id.eq(source_id)),
+            )
+            .execute(tx_conn)?;
 
-        // Insert channels
-        let mut channel_id_map: HashMap<String, i32> = HashMap::new();
+            // Insert channels
+            let mut channel_id_map: HashMap<String, i32> = HashMap::new();
 
-        for parsed_channel in &parsed_channels {
-            let new_channel = NewXmltvChannel::new(
-                source_id,
-                &parsed_channel.channel_id,
-                &parsed_channel.display_name,
-                parsed_channel.icon.clone(),
-            );
-
-            match diesel::insert_into(xmltv_channels::table)
-                .values(&new_channel)
-                .get_result::<crate::db::XmltvChannel>(&mut conn)
-            {
-                Ok(inserted) => {
-                    if let Some(id) = inserted.id {
-                        channel_id_map.insert(parsed_channel.channel_id.clone(), id);
-                    }
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to insert channel {} for source {}: {}",
-                        parsed_channel.channel_id,
-                        source_name,
-                        e
-                    );
-                }
-            }
-        }
-
-        // Insert programs in batches
-        use crate::db::schema::programs;
-        let mut programs_to_insert: Vec<NewProgram> = Vec::with_capacity(BATCH_SIZE);
-
-        for parsed_program in &parsed_programs {
-            if let Some(&channel_db_id) = channel_id_map.get(&parsed_program.channel_id) {
-                let mut new_program = NewProgram::new(
-                    channel_db_id,
-                    &parsed_program.title,
-                    &parsed_program.start_time,
-                    &parsed_program.end_time,
+            for parsed_channel in &parsed_channels {
+                let new_channel = NewXmltvChannel::new(
+                    source_id,
+                    &parsed_channel.channel_id,
+                    &parsed_channel.display_name,
+                    parsed_channel.icon.clone(),
                 );
 
-                if let Some(ref desc) = parsed_program.description {
-                    new_program = new_program.with_description(desc);
-                }
-                if let Some(ref cat) = parsed_program.category {
-                    new_program = new_program.with_category(cat);
-                }
-                if let Some(ref ep) = parsed_program.episode_info {
-                    new_program = new_program.with_episode_info(ep);
-                }
-
-                programs_to_insert.push(new_program);
-
-                if programs_to_insert.len() >= BATCH_SIZE {
-                    if let Err(e) = diesel::insert_into(programs::table)
-                        .values(&programs_to_insert)
-                        .execute(&mut conn)
-                    {
-                        tracing::error!(
-                            "Failed to insert programs batch for source {}: {}",
+                match diesel::insert_into(xmltv_channels::table)
+                    .values(&new_channel)
+                    .get_result::<crate::db::XmltvChannel>(tx_conn)
+                {
+                    Ok(inserted) => {
+                        if let Some(id) = inserted.id {
+                            channel_id_map.insert(parsed_channel.channel_id.clone(), id);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to insert channel {} for source {}: {}",
+                            parsed_channel.channel_id,
                             source_name,
                             e
                         );
+                        // Don't fail the whole transaction for one channel
                     }
-                    programs_to_insert.clear();
                 }
             }
-        }
 
-        // Insert remaining programs
-        if !programs_to_insert.is_empty() {
-            if let Err(e) = diesel::insert_into(programs::table)
-                .values(&programs_to_insert)
-                .execute(&mut conn)
-            {
+            // Insert programs in batches
+            use crate::db::schema::programs;
+            let mut programs_to_insert: Vec<NewProgram> = Vec::with_capacity(BATCH_SIZE);
+
+            for parsed_program in &parsed_programs {
+                if let Some(&channel_db_id) = channel_id_map.get(&parsed_program.channel_id) {
+                    let mut new_program = NewProgram::new(
+                        channel_db_id,
+                        &parsed_program.title,
+                        &parsed_program.start_time,
+                        &parsed_program.end_time,
+                    );
+
+                    if let Some(ref desc) = parsed_program.description {
+                        new_program = new_program.with_description(desc);
+                    }
+                    if let Some(ref cat) = parsed_program.category {
+                        new_program = new_program.with_category(cat);
+                    }
+                    if let Some(ref ep) = parsed_program.episode_info {
+                        new_program = new_program.with_episode_info(ep);
+                    }
+
+                    programs_to_insert.push(new_program);
+
+                    if programs_to_insert.len() >= BATCH_SIZE {
+                        diesel::insert_into(programs::table)
+                            .values(&programs_to_insert)
+                            .execute(tx_conn)?;
+                        programs_to_insert.clear();
+                    }
+                }
+            }
+
+            // Insert remaining programs
+            if !programs_to_insert.is_empty() {
+                diesel::insert_into(programs::table)
+                    .values(&programs_to_insert)
+                    .execute(tx_conn)?;
+            }
+
+            // Update last_refresh timestamp on the source
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(source_id)))
+                .set(xmltv_sources::last_refresh.eq(&now))
+                .execute(tx_conn)?;
+
+            Ok(())
+        });
+
+        match tx_result {
+            Ok(_) => {
+                success_count += 1;
+                tracing::info!(
+                    "Completed refresh for source: {} ({} channels, {} programs)",
+                    source_name,
+                    parsed_channels.len(),
+                    parsed_programs.len()
+                );
+            }
+            Err(e) => {
                 tracing::error!(
-                    "Failed to insert final programs batch for source {}: {}",
+                    "Transaction failed for source {}: {}. Old data preserved.",
                     source_name,
                     e
                 );
+                failed_count += 1;
             }
         }
-
-        // Update last_refresh timestamp on the source
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let _ = diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(source_id)))
-            .set(xmltv_sources::last_refresh.eq(&now))
-            .execute(&mut conn);
-
-        success_count += 1;
-        tracing::info!(
-            "Completed refresh for source: {} ({} channels, {} programs)",
-            source_name,
-            parsed_channels.len(),
-            parsed_programs.len()
-        );
     }
 
     // Update the last scheduled refresh timestamp
@@ -621,22 +621,26 @@ pub fn should_trigger_missed_refresh(
         return false;
     }
 
+    // Validate schedule time before proceeding
+    // This should never fail due to validation in update_schedule() and set_epg_schedule()
+    // but database could be manually edited or corrupted
+    if schedule.hour > 23 || schedule.minute > 59 {
+        tracing::error!(
+            "CRITICAL: Invalid schedule time in database: hour={}, minute={}. Database may be corrupted. Scheduled refreshes will not work!",
+            schedule.hour,
+            schedule.minute
+        );
+        return false;
+    }
+
     let now = Local::now();
-    let schedule_time = match NaiveTime::from_hms_opt(
+    // Safe to unwrap after validation above
+    let schedule_time = NaiveTime::from_hms_opt(
         schedule.hour as u32,
         schedule.minute as u32,
         0,
-    ) {
-        Some(t) => t,
-        None => {
-            tracing::error!(
-                "Invalid schedule time: {:02}:{:02}",
-                schedule.hour,
-                schedule.minute
-            );
-            return false;
-        }
-    };
+    )
+    .expect("Schedule time validation passed but from_hms_opt still failed - this is a bug");
 
     // Calculate the most recent scheduled time
     let today_scheduled = now.date_naive().and_time(schedule_time);
@@ -821,17 +825,30 @@ mod tests {
 
     #[test]
     fn test_missed_refresh_recent_refresh() {
-        use chrono::Utc;
+        use chrono::{Local, Timelike, Utc};
 
-        // Recent refresh (1 minute ago) should not trigger
+        // Use current time to determine if we're before or after 04:00
+        let now = Local::now();
+        let current_hour = now.hour();
+
+        // If it's currently before 04:00, the most recent schedule was yesterday at 04:00
+        // If it's currently 04:00 or later, the most recent schedule was today at 04:00
+        // We want to test "recent refresh" - so set last refresh to NOW (definitely after most recent schedule)
+        let very_recent = Utc::now() - chrono::Duration::seconds(30);
+
         let schedule = EpgScheduleConfig {
             hour: 4,
             minute: 0,
             enabled: true,
         };
 
-        let one_minute_ago = Utc::now() - chrono::Duration::minutes(1);
-        assert!(!should_trigger_missed_refresh(&schedule, Some(one_minute_ago)));
+        // A refresh 30 seconds ago should NOT trigger missed refresh
+        // (it's after the most recent scheduled time regardless of current hour)
+        assert!(
+            !should_trigger_missed_refresh(&schedule, Some(very_recent)),
+            "A refresh 30 seconds ago should not trigger missed refresh (current hour: {})",
+            current_hour
+        );
     }
 
     #[test]
