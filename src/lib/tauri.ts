@@ -71,3 +71,23 @@ export async function getAccounts(): Promise<Account[]> {
 export async function deleteAccount(id: number): Promise<void> {
   return invoke('delete_account', { id });
 }
+
+/** Response type for test_connection command */
+export interface TestConnectionResponse {
+  success: boolean;
+  status?: string;
+  expiryDate?: string; // ISO 8601 format
+  maxConnections?: number;
+  activeConnections?: number;
+  errorMessage?: string;
+  suggestions?: string[];
+}
+
+/**
+ * Test connection to Xtream Codes server
+ * @param accountId - Account ID to test
+ * @returns Connection test result with status or error
+ */
+export async function testConnection(accountId: number): Promise<TestConnectionResponse> {
+  return invoke<TestConnectionResponse>('test_connection', { accountId });
+}

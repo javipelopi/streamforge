@@ -12,7 +12,7 @@ use hkdf::Hkdf;
 use rand::RngCore;
 use sha2::Sha256;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// Service name for keyring entries
@@ -266,7 +266,7 @@ impl CredentialManager {
         }
 
         // Save salt
-        fs::write(&salt_path, &salt)?;
+        fs::write(&salt_path, salt)?;
 
         Ok(salt)
     }
@@ -285,32 +285,32 @@ impl CredentialManager {
 
 /// Standalone function to store a password (for backward compatibility)
 pub fn store_password(
-    app_data_dir: &PathBuf,
+    app_data_dir: &Path,
     account_id: &str,
     password: &str,
 ) -> Result<Vec<u8>> {
-    let manager = CredentialManager::new(app_data_dir.clone());
+    let manager = CredentialManager::new(app_data_dir.to_path_buf());
     let (_, encrypted) = manager.store_password(account_id, password)?;
     Ok(encrypted)
 }
 
 /// Standalone function to retrieve a password (for backward compatibility)
 pub fn retrieve_password(
-    app_data_dir: &PathBuf,
+    app_data_dir: &Path,
     account_id: &str,
     encrypted_data: &[u8],
 ) -> Result<String> {
-    let manager = CredentialManager::new(app_data_dir.clone());
+    let manager = CredentialManager::new(app_data_dir.to_path_buf());
     manager.retrieve_password(account_id, encrypted_data)
 }
 
 /// Standalone function to delete a password (for backward compatibility)
 pub fn delete_password(
-    app_data_dir: &PathBuf,
+    app_data_dir: &Path,
     account_id: &str,
     encrypted_data: &[u8],
 ) -> Result<()> {
-    let manager = CredentialManager::new(app_data_dir.clone());
+    let manager = CredentialManager::new(app_data_dir.to_path_buf());
     manager.delete_password(account_id, encrypted_data)
 }
 

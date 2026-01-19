@@ -33,6 +33,23 @@ pub struct Account {
     pub is_active: i32,
     pub created_at: String,
     pub updated_at: String,
+    // Connection status fields (added in migration)
+    pub expiry_date: Option<String>,
+    pub max_connections_actual: Option<i32>,
+    pub active_connections: Option<i32>,
+    pub last_check: Option<String>,
+    pub connection_status: Option<String>,
+}
+
+/// Changeset for updating account status fields after connection test
+#[derive(AsChangeset, Debug)]
+#[diesel(table_name = accounts)]
+pub struct AccountStatusUpdate {
+    pub expiry_date: Option<String>,
+    pub max_connections_actual: Option<i32>,
+    pub active_connections: Option<i32>,
+    pub last_check: Option<String>,
+    pub connection_status: Option<String>,
 }
 
 /// New account model for inserting records

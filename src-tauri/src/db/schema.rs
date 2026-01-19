@@ -11,6 +11,11 @@ diesel::table! {
         is_active -> Integer,
         created_at -> Text,
         updated_at -> Text,
+        expiry_date -> Nullable<Text>,
+        max_connections_actual -> Nullable<Integer>,
+        active_connections -> Nullable<Integer>,
+        last_check -> Nullable<Text>,
+        connection_status -> Nullable<Text>,
     }
 }
 
