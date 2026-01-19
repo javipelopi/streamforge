@@ -328,3 +328,107 @@ export async function getXmltvChannels(sourceId: number): Promise<XmltvChannel[]
 export async function getPrograms(sourceId: number): Promise<Program[]> {
   return invoke<Program[]>('get_programs', { sourceId });
 }
+
+// EPG Schedule types and functions
+
+/** EPG schedule response type */
+export interface EpgSchedule {
+  hour: number;
+  minute: number;
+  enabled: boolean;
+  lastScheduledRefresh?: string;
+}
+
+/**
+ * Get the current EPG schedule settings
+ * @returns Current schedule configuration
+ */
+export async function getEpgSchedule(): Promise<EpgSchedule> {
+  return invoke<EpgSchedule>('get_epg_schedule');
+}
+
+/**
+ * Set the EPG schedule settings
+ * @param hour - Hour of day (0-23)
+ * @param minute - Minute of hour (0-59)
+ * @param enabled - Whether automatic refresh is enabled
+ * @returns Updated schedule configuration
+ */
+export async function setEpgSchedule(
+  hour: number,
+  minute: number,
+  enabled: boolean
+): Promise<EpgSchedule> {
+  return invoke<EpgSchedule>('set_epg_schedule', { hour, minute, enabled });
+}
+
+/**
+ * Format schedule time for display
+ * @param hour - Hour (0-23)
+ * @param minute - Minute (0-59)
+ * @returns Formatted time string (e.g., "04:00", "14:30")
+ */
+export function formatScheduleTime(hour: number, minute: number): string {
+  return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Calculate next scheduled refresh time
+ * @param schedule - Current schedule configuration
+ * @returns Date of next scheduled refresh, or null if disabled
+ */
+export function getNextScheduledRefresh(schedule: EpgSchedule): Date | null {
+  if (!schedule.enabled) {
+    return null;
+  }
+
+  const now = new Date();
+  const next = new Date();
+  next.setHours(schedule.hour, schedule.minute, 0, 0);
+
+  // If schedule time has already passed today, use tomorrow
+  if (next <= now) {
+    next.setDate(next.getDate() + 1);
+  }
+
+  return next;
+}
+
+/**
+ * Format relative time from now
+ * @param date - Date to format
+ * @returns Relative time string (e.g., "in 3 hours", "2 minutes ago")
+ */
+export function formatRelativeTime(date: Date | string): string {
+  const target = typeof date === 'string' ? new Date(date) : date;
+  const now = new Date();
+  const diffMs = target.getTime() - now.getTime();
+  const diffMinutes = Math.round(diffMs / (1000 * 60));
+  const diffHours = Math.round(diffMs / (1000 * 60 * 60));
+
+  if (Math.abs(diffMinutes) < 1) {
+    return 'just now';
+  }
+
+  if (diffMinutes > 0) {
+    // Future
+    if (diffMinutes < 60) {
+      return `in ${diffMinutes} minute${diffMinutes === 1 ? '' : 's'}`;
+    }
+    if (diffHours < 24) {
+      return `in ${diffHours} hour${diffHours === 1 ? '' : 's'}`;
+    }
+    return `tomorrow at ${formatScheduleTime(target.getHours(), target.getMinutes())}`;
+  } else {
+    // Past
+    const absMinutes = Math.abs(diffMinutes);
+    const absHours = Math.abs(diffHours);
+    if (absMinutes < 60) {
+      return `${absMinutes} minute${absMinutes === 1 ? '' : 's'} ago`;
+    }
+    if (absHours < 24) {
+      return `${absHours} hour${absHours === 1 ? '' : 's'} ago`;
+    }
+    return `yesterday at ${formatScheduleTime(target.getHours(), target.getMinutes())}`;
+  }
+}
