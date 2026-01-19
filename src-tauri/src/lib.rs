@@ -7,6 +7,9 @@ use tauri::{
     Manager, RunEvent, WindowEvent,
 };
 
+// Constants
+const MAIN_WINDOW_NAME: &str = "main";
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -33,50 +36,92 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
 
             // Build tray icon with menu and event handlers
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .menu(&menu)
-                .show_menu_on_left_click(false) // Left click shows window, right click shows menu
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.unminimize();
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                    "quit" => {
-                        app.exit(0);
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.unminimize();
-                                let _ = window.show();
-                                let _ = window.set_focus();
+            // Note: Tray icon is optional - app continues if creation fails
+            if let Some(icon) = app.default_window_icon() {
+                match TrayIconBuilder::new()
+                    .icon(icon.clone())
+                    .menu(&menu)
+                    .show_menu_on_left_click(false) // Left click shows window, right click shows menu
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window(MAIN_WINDOW_NAME) {
+                                if let Err(e) = window.unminimize() {
+                                    eprintln!("Failed to unminimize window: {}", e);
+                                }
+                                if let Err(e) = window.show() {
+                                    eprintln!("Failed to show window: {}", e);
+                                }
+                                if let Err(e) = window.set_focus() {
+                                    eprintln!("Failed to focus window: {}", e);
+                                }
                             }
                         }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window(MAIN_WINDOW_NAME) {
+                                // Explicitly check visibility state vs error state
+                                match window.is_visible() {
+                                    Ok(true) => {
+                                        if let Err(e) = window.hide() {
+                                            eprintln!("Failed to hide window: {}", e);
+                                        }
+                                    }
+                                    Ok(false) => {
+                                        if let Err(e) = window.unminimize() {
+                                            eprintln!("Failed to unminimize window: {}", e);
+                                        }
+                                        if let Err(e) = window.show() {
+                                            eprintln!("Failed to show window: {}", e);
+                                        }
+                                        if let Err(e) = window.set_focus() {
+                                            eprintln!("Failed to focus window: {}", e);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Failed to check window visibility: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                    })
+                    .build(app)
+                {
+                    Ok(_tray) => {
+                        println!("System tray icon created successfully");
                     }
-                })
-                .build(app)?;
+                    Err(e) => {
+                        eprintln!("Failed to create system tray icon: {}. App will continue without tray functionality.", e);
+                    }
+                }
+            } else {
+                eprintln!("No default window icon available. App will continue without tray functionality.");
+            }
 
             Ok(())
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
-                api.prevent_close();
+                // Hide window on close instead of quitting
+                match window.hide() {
+                    Ok(_) => {
+                        api.prevent_close();
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to hide window on close: {}. Preventing close anyway.", e);
+                        api.prevent_close();
+                    }
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
