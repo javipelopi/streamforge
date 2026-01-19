@@ -1,0 +1,379 @@
+# Story 3.2: Display XMLTV Channel List with Match Status
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As a user,
+I want to see all my XMLTV channels with their matched Xtream streams,
+So that I know which channels are properly configured for Plex.
+
+## Acceptance Criteria
+
+1. **Given** the Channels view
+   **When** it loads
+   **Then** I see a virtualized list of all XMLTV channels (TanStack Virtual for performance)
+   **And** each row shows:
+   - XMLTV channel name and logo (primary display)
+   - Source icon indicating this is an XMLTV channel
+   - Matched Xtream stream(s) with count badge (e.g., "3 streams")
+   - Primary stream name and confidence percentage
+   - Enabled/disabled status toggle
+   **And** I can expand a row to see all matched Xtream streams for that XMLTV channel
+
+2. **Given** an XMLTV channel has multiple matched Xtream streams
+   **When** I expand the channel row
+   **Then** I see all matched streams with:
+   - Stream name and quality tier (HD/SD/4K)
+   - Match confidence percentage
+   - Primary/backup indicator
+   - Option to change which stream is primary
+
+3. **Given** an XMLTV channel has no matched streams
+   **When** viewing the channel list
+   **Then** the channel shows "No stream matched" with warning indicator
+   **And** is disabled by default
+
+4. **Given** a large channel list (1000+ XMLTV channels)
+   **When** scrolling through the list
+   **Then** the UI remains responsive (<100ms, NFR5)
+
+## Tasks / Subtasks
+
+- [ ] Task 1: Create backend commands for XMLTV channel list with mappings (AC: #1, #2, #3)
+  - [ ] 1.1 Create `get_xmltv_channels_with_mappings()` command that joins xmltv_channels, channel_mappings, xmltv_channel_settings, and xtream_channels
+  - [ ] 1.2 Create `XmltvChannelWithMappings` response type containing:
+    - XMLTV channel info (id, channelId, displayName, icon, isSynthetic)
+    - Channel settings (isEnabled, plexDisplayOrder)
+    - List of matched Xtream streams with confidence, isPrimary, streamPriority
+    - Match count
+  - [ ] 1.3 Create `XtreamStreamMatch` type for matched stream info (id, name, streamIcon, qualities, matchConfidence, isPrimary, streamPriority)
+  - [ ] 1.4 Add command to get all XMLTV channels across all sources
+  - [ ] 1.5 Register new commands in lib.rs
+
+- [ ] Task 2: Create command for changing primary stream (AC: #2)
+  - [ ] 2.1 Create `set_primary_stream()` command that:
+    - Takes xmltv_channel_id and xtream_channel_id
+    - Sets `is_primary = false` for all other mappings of this XMLTV channel
+    - Sets `is_primary = true` for the specified mapping
+    - Updates stream_priority accordingly
+  - [ ] 2.2 Wrap in transaction for atomicity
+  - [ ] 2.3 Return updated mappings list
+
+- [ ] Task 3: Add TypeScript types and API functions (AC: #1, #2, #3)
+  - [ ] 3.1 Add `XmltvChannelWithMappings` interface to tauri.ts
+  - [ ] 3.2 Add `XtreamStreamMatch` interface
+  - [ ] 3.3 Add `getXmltvChannelsWithMappings()` function
+  - [ ] 3.4 Add `setPrimaryStream()` function
+  - [ ] 3.5 Add helper function `getMatchCountLabel(count: number)` → "1 stream", "3 streams", etc.
+
+- [ ] Task 4: Create XmltvChannelRow component (AC: #1, #2, #3)
+  - [ ] 4.1 Create `src/components/channels/XmltvChannelRow.tsx`
+  - [ ] 4.2 Display XMLTV channel name and logo
+  - [ ] 4.3 Display source type icon (XMLTV icon from Lucide or similar)
+  - [ ] 4.4 Display match count badge
+  - [ ] 4.5 Display primary stream name and confidence percentage (using `formatConfidence()` from tauri.ts)
+  - [ ] 4.6 Add enable/disable toggle (using Radix Switch)
+  - [ ] 4.7 Add expand/collapse button for matched streams
+  - [ ] 4.8 Style unmatched channels with warning indicator (amber/yellow background, warning icon)
+
+- [ ] Task 5: Create MatchedStreamsList component (AC: #2)
+  - [ ] 5.1 Create `src/components/channels/MatchedStreamsList.tsx`
+  - [ ] 5.2 Display list of matched Xtream streams when row is expanded
+  - [ ] 5.3 Show stream name, quality badges (reuse `getQualityBadgeClasses()` from existing ChannelsList)
+  - [ ] 5.4 Show match confidence percentage
+  - [ ] 5.5 Show primary/backup badge (green for primary, gray for backup)
+  - [ ] 5.6 Add "Make Primary" button for non-primary streams
+  - [ ] 5.7 Call `setPrimaryStream()` on button click
+
+- [ ] Task 6: Create XmltvChannelsList component (AC: #1, #4)
+  - [ ] 6.1 Create `src/components/channels/XmltvChannelsList.tsx`
+  - [ ] 6.2 Use TanStack Virtual for efficient rendering (already used in existing ChannelsList)
+  - [ ] 6.3 Manage expanded state for each row
+  - [ ] 6.4 Calculate variable row height (base height + expanded height when open)
+  - [ ] 6.5 Handle loading and empty states
+  - [ ] 6.6 Implement accessibility: keyboard navigation, ARIA attributes
+
+- [ ] Task 7: Update Channels page to show XMLTV-first view (AC: #1)
+  - [ ] 7.1 Identify existing Channels page/view (likely in `src/views/` or routed component)
+  - [ ] 7.2 Add XmltvChannelsList as primary channel display
+  - [ ] 7.3 Fetch data using TanStack Query (`useQuery` with `getXmltvChannelsWithMappings`)
+  - [ ] 7.4 Add loading state with skeleton or spinner
+  - [ ] 7.5 Add error state with retry option
+
+- [ ] Task 8: Testing and verification (AC: #1, #2, #3, #4)
+  - [ ] 8.1 Run `cargo check` - verify no Rust errors
+  - [ ] 8.2 Run `pnpm exec tsc --noEmit` - verify TypeScript compiles
+  - [ ] 8.3 Manual testing: verify XMLTV channels display correctly
+  - [ ] 8.4 Manual testing: verify expand/collapse works
+  - [ ] 8.5 Manual testing: verify "Make Primary" works
+  - [ ] 8.6 Manual testing: verify unmatched channels show warning
+  - [ ] 8.7 Performance test: scroll through 1000+ channels smoothly
+
+## Dev Notes
+
+### Architecture Compliance
+
+**CRITICAL DESIGN PRINCIPLE:** XMLTV channels are the PRIMARY channel list for Plex. This story displays the XMLTV channel list with their matched Xtream streams, NOT the other way around.
+
+**From PRD FR21:**
+> User can view all XMLTV channels with their matched Xtream stream status. The Channels view shows XMLTV channels as the primary list, with indicators showing which Xtream streams are matched to each
+
+[Source: _bmad-output/planning-artifacts/prd.md#Channel Management (XMLTV-First)]
+
+**From Architecture - Data Flow:**
+> Channel Hierarchy: XMLTV channels are the PRIMARY source for Plex lineup (names, IDs, icons, EPG). Xtream streams are matched TO XMLTV channels as video sources.
+
+[Source: _bmad-output/planning-artifacts/architecture.md#Data Flow]
+
+### Technology Stack Requirements
+
+**From Architecture - Frontend:**
+- React 18 + TypeScript
+- TanStack Virtual for performant list rendering (1000+ channels)
+- TanStack Query for data fetching with caching
+- Radix UI for accessible components (Switch for toggle)
+- Tailwind CSS for styling
+
+**Libraries already in use (from existing ChannelsList.tsx):**
+```typescript
+import { useVirtualizer } from '@tanstack/react-virtual';
+```
+
+### Database Schema Reference
+
+**From Story 3-1, these tables already exist:**
+
+```sql
+-- XMLTV channels (source of truth for Plex lineup)
+CREATE TABLE xmltv_channels (
+    id INTEGER PRIMARY KEY,
+    source_id INTEGER REFERENCES xmltv_sources(id) ON DELETE CASCADE,
+    channel_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    icon TEXT,
+    is_synthetic BOOLEAN DEFAULT FALSE
+);
+
+-- Channel mappings (XMLTV -> Xtream) - One XMLTV channel can have MULTIPLE Xtream streams
+CREATE TABLE channel_mappings (
+    id INTEGER PRIMARY KEY,
+    xmltv_channel_id INTEGER NOT NULL REFERENCES xmltv_channels(id) ON DELETE CASCADE,
+    xtream_channel_id INTEGER NOT NULL REFERENCES xtream_channels(id) ON DELETE CASCADE,
+    match_confidence REAL,
+    is_manual BOOLEAN DEFAULT FALSE,
+    is_primary BOOLEAN DEFAULT FALSE,
+    stream_priority INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- XMLTV channel settings for Plex lineup
+CREATE TABLE xmltv_channel_settings (
+    id INTEGER PRIMARY KEY,
+    xmltv_channel_id INTEGER NOT NULL UNIQUE REFERENCES xmltv_channels(id) ON DELETE CASCADE,
+    is_enabled BOOLEAN DEFAULT FALSE,
+    plex_display_order INTEGER
+);
+```
+
+[Source: _bmad-output/planning-artifacts/architecture.md#Database Schema]
+
+### SQL Query Pattern for Aggregated Data
+
+The backend command needs to join multiple tables efficiently:
+
+```sql
+SELECT
+    xc.id, xc.channel_id, xc.display_name, xc.icon, xc.is_synthetic,
+    xs.is_enabled, xs.plex_display_order,
+    COUNT(cm.id) as match_count
+FROM xmltv_channels xc
+LEFT JOIN xmltv_channel_settings xs ON xs.xmltv_channel_id = xc.id
+LEFT JOIN channel_mappings cm ON cm.xmltv_channel_id = xc.id
+GROUP BY xc.id
+ORDER BY xs.plex_display_order NULLS LAST, xc.display_name;
+```
+
+Then for each channel with matches, fetch the mapping details:
+
+```sql
+SELECT
+    cm.id, cm.match_confidence, cm.is_primary, cm.stream_priority,
+    ec.id as xtream_id, ec.name, ec.stream_icon, ec.qualities
+FROM channel_mappings cm
+JOIN xtream_channels ec ON ec.id = cm.xtream_channel_id
+WHERE cm.xmltv_channel_id = ?
+ORDER BY cm.stream_priority ASC;
+```
+
+### Frontend Component Architecture
+
+```
+src/components/channels/
+├── index.ts                  # Exports
+├── ChannelsList.tsx          # Existing Xtream channels list (keep for reference)
+├── XmltvChannelsList.tsx     # NEW: Main virtualized list of XMLTV channels
+├── XmltvChannelRow.tsx       # NEW: Single XMLTV channel row
+└── MatchedStreamsList.tsx    # NEW: Expanded view of matched streams
+```
+
+### Virtualization with Variable Row Heights
+
+TanStack Virtual supports variable row heights which is needed for expandable rows:
+
+```typescript
+const virtualizer = useVirtualizer({
+  count: channels.length,
+  getScrollElement: () => parentRef.current,
+  estimateSize: (index) => {
+    // Expanded rows need more height
+    return expandedRows.has(channels[index].id)
+      ? 72 + (channels[index].matchCount * 48) // base + streams
+      : 72; // collapsed height
+  },
+  overscan: 5,
+});
+```
+
+**Note:** When a row expands/collapses, call `virtualizer.measure()` to recalculate sizes.
+
+### UI Design Specifications
+
+**XMLTV Channel Row (collapsed):**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ [Logo] Channel Name    [XMLTV icon] [3 streams] [95%] [Toggle] │
+│        Category                     Primary: ESPN HD            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**XMLTV Channel Row (expanded):**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ [Logo] Channel Name    [XMLTV icon] [3 streams] [95%] [Toggle] │
+│        Category                     Primary: ESPN HD            │
+├─────────────────────────────────────────────────────────────────┤
+│   ├─ [Primary] ESPN HD      [HD]  95%                          │
+│   ├─ [Backup]  ESPN SD      [SD]  92%  [Make Primary]          │
+│   └─ [Backup]  ESPN 4K      [4K]  88%  [Make Primary]          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Unmatched Channel Row:**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ [Logo] Channel Name    [XMLTV icon] [⚠ No stream] [--] [Toggle]│
+│        Category                     Disabled                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Accessibility Requirements
+
+- **Keyboard navigation:** Arrow keys to move between rows, Enter/Space to expand
+- **ARIA attributes:**
+  - `role="listbox"` on container
+  - `role="option"` on rows
+  - `aria-expanded` on expandable rows
+  - `aria-selected` for selected state
+- **Focus management:** Focus should move to expanded content when opened
+- **Screen reader:** Announce match status and enabled state
+
+### Performance Targets (NFR5)
+
+- GUI responsiveness < 100ms for user interactions
+- Virtualization must handle 1000+ channels smoothly
+- Use `React.memo` for row components to prevent unnecessary re-renders
+- Consider debouncing toggle actions if needed
+
+### Previous Story Intelligence
+
+**From Story 3-1:**
+- `channel_mappings` and `xmltv_channel_settings` tables are created
+- Tauri commands for matching already exist in `src-tauri/src/commands/matcher.rs`
+- TypeScript types for `ChannelMapping` and `XmltvChannelSettings` already in `tauri.ts`
+- `formatConfidence()` helper function already exists
+
+**Key Files Created in 3-1:**
+- `src-tauri/src/matcher/persistence.rs` - Database operations for mappings
+- `src-tauri/src/commands/matcher.rs` - Matching commands
+- `src/lib/tauri.ts` - Already has channel matching types
+
+**Reusable Code from Story 2-3:**
+- `getQualityBadgeClasses()` function in `ChannelsList.tsx`
+- Virtualization pattern in `ChannelsList.tsx`
+
+### Error Handling
+
+- If XMLTV channels query fails, show error toast with retry button
+- If "Make Primary" fails, show error toast and revert optimistic update
+- Handle edge case: XMLTV channel with settings but no xmltv_channel record (orphan settings)
+
+### TypeScript Response Types
+
+```typescript
+/** XMLTV channel with all mapping info for display */
+export interface XmltvChannelWithMappings {
+  id: number;
+  sourceId: number;
+  channelId: string;
+  displayName: string;
+  icon: string | null;
+  isSynthetic: boolean;
+  // Settings
+  isEnabled: boolean;
+  plexDisplayOrder: number | null;
+  // Matches
+  matchCount: number;
+  matches: XtreamStreamMatch[];
+}
+
+/** Matched Xtream stream info */
+export interface XtreamStreamMatch {
+  id: number;
+  mappingId: number;
+  name: string;
+  streamIcon: string | null;
+  qualities: string[];
+  matchConfidence: number;
+  isPrimary: boolean;
+  streamPriority: number;
+}
+```
+
+### Project Structure Notes
+
+**Files to Create:**
+- `src-tauri/src/commands/xmltv_channels.rs` - New commands for XMLTV channel display
+- `src/components/channels/XmltvChannelsList.tsx`
+- `src/components/channels/XmltvChannelRow.tsx`
+- `src/components/channels/MatchedStreamsList.tsx`
+
+**Files to Modify:**
+- `src-tauri/src/commands/mod.rs` - Add xmltv_channels submodule
+- `src-tauri/src/lib.rs` - Register new commands
+- `src/lib/tauri.ts` - Add new types and functions
+- `src/components/channels/index.ts` - Export new components
+- Channels view/page file - Use new XmltvChannelsList
+
+### References
+
+- [Source: _bmad-output/planning-artifacts/architecture.md#Frontend Architecture]
+- [Source: _bmad-output/planning-artifacts/architecture.md#Data Architecture - Database Schema]
+- [Source: _bmad-output/planning-artifacts/prd.md#Channel Management (XMLTV-First)]
+- [Source: _bmad-output/planning-artifacts/epics.md#Epic 3 - Story 3.2]
+- [TanStack Virtual Documentation](https://tanstack.com/virtual/latest)
+- [Radix UI Switch](https://www.radix-ui.com/primitives/docs/components/switch)
+
+## Dev Agent Record
+
+### Agent Model Used
+
+{{agent_model_name_version}}
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
