@@ -44,6 +44,9 @@ sha2 = "0.10"
 reqwest = { version = "0.12", features = ["json"] }
 urlencoding = "2.1"
 
+# Quality detection
+regex = "1"
+
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-autostart = "2"
 

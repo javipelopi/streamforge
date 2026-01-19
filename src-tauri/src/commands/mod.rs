@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod channels;
 
 use diesel::prelude::*;
 use serde::Serialize;
@@ -8,6 +9,9 @@ use crate::db::{schema::settings, DbConnection, Setting};
 
 // Re-export account commands for convenient access
 pub use accounts::{add_account, delete_account, get_accounts, test_connection, update_account};
+
+// Re-export channel commands for convenient access
+pub use channels::{get_channel_count, get_channels, scan_channels};
 
 /// Response type for autostart status queries
 #[derive(Serialize)]

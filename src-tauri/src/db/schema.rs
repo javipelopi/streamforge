@@ -26,4 +26,24 @@ diesel::table! {
     }
 }
 
-diesel::allow_tables_to_appear_in_same_query!(accounts, settings,);
+diesel::table! {
+    xtream_channels (id) {
+        id -> Nullable<Integer>,
+        account_id -> Integer,
+        stream_id -> Integer,
+        name -> Text,
+        stream_icon -> Nullable<Text>,
+        category_id -> Nullable<Integer>,
+        category_name -> Nullable<Text>,
+        qualities -> Nullable<Text>,
+        epg_channel_id -> Nullable<Text>,
+        tv_archive -> Nullable<Integer>,
+        tv_archive_duration -> Nullable<Integer>,
+        added_at -> Nullable<Text>,
+        updated_at -> Nullable<Text>,
+    }
+}
+
+diesel::joinable!(xtream_channels -> accounts (account_id));
+
+diesel::allow_tables_to_appear_in_same_query!(accounts, settings, xtream_channels,);

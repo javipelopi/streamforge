@@ -4,12 +4,13 @@
 //! This module implements FR2 (API authentication) and FR7 (connection testing) from the PRD.
 
 pub mod client;
+pub mod quality;
 pub mod types;
 
 use thiserror::Error;
 
 pub use client::XtreamClient;
-pub use types::{AccountInfo, XtreamAuthResponse, UserInfo, ServerInfo};
+pub use types::{AccountInfo, ServerInfo, UserInfo, XtreamAuthResponse, XtreamCategory, XtreamLiveStream};
 
 /// Errors that can occur during Xtream API operations
 #[derive(Debug, Error)]
