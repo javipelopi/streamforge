@@ -122,9 +122,7 @@ pub fn match_channels(
 
         for (xtream_id, xtream_normalized, xtream_epg_id) in &xtream_normalized {
             // Check for EPG ID match (Xtream's epg_channel_id matches XMLTV's channel_id)
-            let epg_id_match = xtream_epg_id
-                .map(|epg_id| epg_id == xmltv_channel_id)
-                .unwrap_or(false);
+            let epg_id_match = epg_ids_match(*xtream_epg_id, xmltv_channel_id);
 
             // Check for exact normalized name match
             let exact_name_match = xmltv_normalized == *xtream_normalized;

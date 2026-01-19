@@ -339,10 +339,23 @@ pub struct ChannelMapping {
     pub xmltv_channel_id: i32,
     pub xtream_channel_id: i32,
     pub match_confidence: Option<f32>,
+    #[serde(serialize_with = "serialize_optional_bool")]
     pub is_manual: Option<i32>,
+    #[serde(serialize_with = "serialize_optional_bool")]
     pub is_primary: Option<i32>,
     pub stream_priority: Option<i32>,
     pub created_at: String,
+}
+
+/// Serialize SQLite INTEGER (0/1) to JSON boolean
+fn serialize_optional_bool<S>(value: &Option<i32>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match value {
+        Some(v) => serializer.serialize_bool(*v != 0),
+        None => serializer.serialize_none(),
+    }
 }
 
 /// New channel mapping for insertion

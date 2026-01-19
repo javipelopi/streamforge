@@ -1,6 +1,6 @@
 # Story 3.1: Implement Fuzzy Channel Matching Algorithm
 
-Status: complete
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -128,6 +128,18 @@ So that I don't have to manually match hundreds of channels.
   - [x] 9.5 Run `cargo check` - verify no errors
   - [x] 9.6 Run `pnpm exec tsc --noEmit` - verify TypeScript compiles
   - [ ] 9.7 Build verification: `pnpm tauri build --debug` (optional - app runs with dev build)
+
+## Review Follow-ups (Code Review 2026-01-19)
+
+- [x] [AI-Review][HIGH] Fixed confidence f64→f32 conversion validation (persistence.rs:50)
+- [x] [AI-Review][HIGH] Fixed boolean serialization for is_manual/is_primary fields (models.rs:342-345)
+- [x] [AI-Review][HIGH] Added error logging context to transaction operations (persistence.rs:44, 73)
+- [ ] [AI-Review][HIGH] Complete performance test task 9.4 (requires DB setup)
+- [ ] [AI-Review][HIGH] Complete build verification task 9.7 (optional but recommended)
+- [x] [AI-Review][MEDIUM] Fixed EPG ID matching to use helper function (fuzzy.rs:125)
+- [x] [AI-Review][MEDIUM] Added threshold validation warnings for impractical values (commands/matcher.rs:182)
+- [ ] [AI-Review][MEDIUM] Add event logging to run_channel_matching command (deferred to Story 6-3: Event Logging System)
+- [ ] [AI-Review][LOW] Add integration tests for edge cases (empty lists, missing IDs, large datasets)
 
 ## Dev Notes
 
@@ -488,6 +500,26 @@ N/A
    - Scoring algorithm (8 tests)
    - Configuration (3 tests)
    - Match results (4 tests)
+
+### Code Review Notes (2026-01-19)
+
+**Review Model:** Claude Opus 4.5 (claude-opus-4-5-20251101)
+
+**Issues Found:** 10 total (5 HIGH, 3 MEDIUM, 2 LOW)
+**Issues Fixed:** 6 (3 HIGH, 3 MEDIUM)
+**Issues Deferred:** 4 (2 HIGH - incomplete tasks, 1 MEDIUM - needs Story 6-3, 1 LOW - future enhancement)
+
+**Fixes Applied:**
+1. Added validation for f64→f32 confidence conversion to prevent data loss (persistence.rs)
+2. Added boolean serialization for is_manual/is_primary fields to convert SQLite INTEGER (0/1) → JSON boolean
+3. Added error logging context to transaction operations for better debugging
+4. Fixed EPG ID matching to use the dedicated helper function instead of inline duplication
+5. Added validation warnings for impractical threshold values (< 0.6 or > 0.95)
+
+**Outstanding Tasks:**
+- Task 9.4 and 9.7 must be completed before story can be marked "done"
+- Event logging will be added in Story 6-3 (Event Logging System)
+- Integration tests for edge cases recommended but not blocking
 
 ### File List
 

@@ -173,9 +173,16 @@ pub fn get_match_threshold(db: State<DbConnection>) -> Result<f64, String> {
 /// Set the matching threshold.
 #[tauri::command]
 pub fn set_match_threshold(db: State<DbConnection>, threshold: f64) -> Result<(), String> {
-    // Validate threshold
+    // Validate threshold range
     if !(0.0..=1.0).contains(&threshold) {
         return Err("Threshold must be between 0.0 and 1.0".to_string());
+    }
+
+    // Warn about impractical thresholds
+    if threshold < 0.6 {
+        eprintln!("[WARNING] Match threshold {} is very low - will match almost everything", threshold);
+    } else if threshold > 0.95 {
+        eprintln!("[WARNING] Match threshold {} is very high - will match almost nothing", threshold);
     }
 
     let mut conn = db
