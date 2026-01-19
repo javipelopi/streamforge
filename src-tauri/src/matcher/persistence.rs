@@ -40,16 +40,27 @@ pub fn save_channel_mappings(
     conn.transaction(|conn| {
         // Step 1: Delete existing auto-generated mappings (preserve manual ones)
         diesel::delete(channel_mappings::table.filter(channel_mappings::is_manual.eq(0)))
-            .execute(conn)?;
+            .execute(conn)
+            .map_err(|e| {
+                eprintln!("[save_channel_mappings] Failed to delete existing mappings: {}", e);
+                e
+            })?;
 
         // Step 2: Insert new mappings
         let new_mappings: Vec<NewChannelMapping> = matches
             .iter()
             .map(|m| {
+                // Convert f64 confidence to f32, ensuring it's within valid range
+                let confidence_f32 = if m.confidence.is_finite() {
+                    Some(m.confidence as f32)
+                } else {
+                    None // Invalid confidence (NaN or Infinite)
+                };
+
                 NewChannelMapping::new(
                     m.xmltv_channel_id,
                     m.xtream_channel_id,
-                    Some(m.confidence as f32),
+                    confidence_f32,
                     m.is_primary,
                     m.stream_priority,
                 )
@@ -58,7 +69,11 @@ pub fn save_channel_mappings(
 
         let inserted_count = diesel::insert_into(channel_mappings::table)
             .values(&new_mappings)
-            .execute(conn)?;
+            .execute(conn)
+            .map_err(|e| {
+                eprintln!("[save_channel_mappings] Failed to insert {} mappings: {}", new_mappings.len(), e);
+                e
+            })?;
 
         // Step 3: Create set of matched XMLTV channel IDs
         let matched_ids: std::collections::HashSet<i32> =
