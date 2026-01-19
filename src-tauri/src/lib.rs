@@ -8,6 +8,9 @@ use tauri::{
     Manager, RunEvent, WindowEvent,
 };
 
+#[cfg(desktop)]
+use tauri_plugin_autostart::MacosLauncher;
+
 // Constants
 const MAIN_WINDOW_NAME: &str = "main";
 
@@ -15,6 +18,10 @@ const MAIN_WINDOW_NAME: &str = "main";
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]),
+        ))
         .setup(|app| {
             // Initialize database
             let db_path = db::get_db_path(app)?;
@@ -121,6 +128,21 @@ pub fn run() {
                 eprintln!("No default window icon available. App will continue without tray functionality.");
             }
 
+            // Handle --minimized startup flag (used when autostart launches the app)
+            // When this flag is present, hide the window so only the tray icon is visible
+            let args: Vec<String> = std::env::args().collect();
+            let start_minimized = args.iter().any(|arg| arg == "--minimized");
+
+            if start_minimized {
+                if let Some(window) = app.get_webview_window(MAIN_WINDOW_NAME) {
+                    if let Err(e) = window.hide() {
+                        eprintln!("Failed to hide window on minimized start: {}", e);
+                    } else {
+                        println!("App started minimized (--minimized flag detected)");
+                    }
+                }
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -142,7 +164,9 @@ pub fn run() {
             commands::get_setting,
             commands::set_setting,
             commands::get_server_port,
-            commands::set_server_port
+            commands::set_server_port,
+            commands::get_autostart_enabled,
+            commands::set_autostart_enabled
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

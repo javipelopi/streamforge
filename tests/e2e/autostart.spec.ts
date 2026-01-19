@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { injectStatefulTauriMock } from '../support/mocks/tauri.mock';
 
 /**
  * E2E Tests for Auto-Start on Boot Capability
@@ -8,15 +9,16 @@ import { test, expect } from '@playwright/test';
  * Tests verify that users can enable/disable auto-start via Settings UI
  * and that the UI correctly reflects the current autostart state.
  *
- * RED Phase: These tests will fail until:
- * - Settings route is created
- * - Autostart toggle UI is implemented
- * - Tauri autostart commands are implemented
- * - tauri-plugin-autostart is initialized
+ * These tests use Tauri API mocks to run without the full Tauri backend.
+ * For full integration testing with actual OS autostart, use TAURI_DEV=true.
  */
 
 test.describe('Auto-Start on Boot', () => {
   test.beforeEach(async ({ page }) => {
+    // Inject Tauri mock before navigation
+    // This allows the Settings component to work without Tauri backend
+    await injectStatefulTauriMock(page, false);
+
     // GIVEN: User navigates to Settings page
     await page.goto('/settings');
     await page.waitForLoadState('networkidle');
@@ -27,11 +29,14 @@ test.describe('Auto-Start on Boot', () => {
     const toggle = page.locator('[data-testid="autostart-toggle"]');
     await expect(toggle).toBeVisible();
 
+    // Verify initial state is unchecked (autostart disabled)
+    await expect(toggle).not.toBeChecked();
+
     // WHEN: User clicks the autostart toggle to enable
-    const initialState = await toggle.isChecked();
-    if (!initialState) {
-      await toggle.click();
-    }
+    await toggle.click();
+
+    // Wait for the async operation to complete
+    await page.waitForTimeout(100);
 
     // THEN: Toggle should be checked (enabled state)
     await expect(toggle).toBeChecked();
@@ -42,15 +47,23 @@ test.describe('Auto-Start on Boot', () => {
   });
 
   test('should disable autostart when toggle is switched OFF', async ({ page }) => {
-    // GIVEN: User is on Settings page with autostart toggle visible
+    // Re-inject with autostart initially enabled
+    await injectStatefulTauriMock(page, true);
+    await page.goto('/settings');
+    await page.waitForLoadState('networkidle');
+
+    // GIVEN: User is on Settings page with autostart toggle visible and enabled
     const toggle = page.locator('[data-testid="autostart-toggle"]');
     await expect(toggle).toBeVisible();
 
+    // Verify initial state is checked (autostart enabled)
+    await expect(toggle).toBeChecked();
+
     // WHEN: User clicks the autostart toggle to disable
-    const initialState = await toggle.isChecked();
-    if (initialState) {
-      await toggle.click();
-    }
+    await toggle.click();
+
+    // Wait for the async operation to complete
+    await page.waitForTimeout(100);
 
     // THEN: Toggle should be unchecked (disabled state)
     await expect(toggle).not.toBeChecked();
@@ -120,5 +133,33 @@ test.describe('Auto-Start on Boot', () => {
     expect(errorExists).toBeGreaterThanOrEqual(0); // Element exists or doesn't yet
 
     // This test will pass once the UI is implemented with error handling
+  });
+
+  test('should persist autostart state across toggle operations', async ({ page }) => {
+    // GIVEN: User is on Settings page with autostart disabled
+    const toggle = page.locator('[data-testid="autostart-toggle"]');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).not.toBeChecked();
+
+    // WHEN: User enables autostart
+    await toggle.click();
+    await page.waitForTimeout(100);
+
+    // THEN: Toggle should be checked
+    await expect(toggle).toBeChecked();
+
+    // AND WHEN: User disables autostart again
+    await toggle.click();
+    await page.waitForTimeout(100);
+
+    // THEN: Toggle should be unchecked
+    await expect(toggle).not.toBeChecked();
+
+    // AND WHEN: User enables autostart once more
+    await toggle.click();
+    await page.waitForTimeout(100);
+
+    // THEN: Toggle should be checked
+    await expect(toggle).toBeChecked();
   });
 });

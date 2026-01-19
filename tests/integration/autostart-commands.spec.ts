@@ -8,14 +8,22 @@ import { test, expect } from '@playwright/test';
  * Tests verify that Tauri backend commands correctly interact with
  * the tauri-plugin-autostart to enable/disable auto-start functionality.
  *
- * RED Phase: These tests will fail until:
- * - tauri-plugin-autostart is initialized in lib.rs
- * - get_autostart_enabled command is implemented
- * - set_autostart_enabled command is implemented
- * - Commands are registered in Tauri app builder
+ * IMPORTANT: These tests require the FULL Tauri application to be running.
+ * Run with: TAURI_DEV=true pnpm test -- tests/integration/autostart-commands.spec.ts
+ *
+ * The tests invoke Tauri commands directly via the frontend, which requires:
+ * - tauri-plugin-autostart initialized in lib.rs
+ * - get_autostart_enabled command implemented and registered
+ * - set_autostart_enabled command implemented and registered
  */
 
+// Skip these tests when not running with full Tauri backend
+const isTauriDev = process.env.TAURI_DEV === 'true';
+
 test.describe('Autostart Tauri Commands', () => {
+  // Skip all tests in this describe block if not running with TAURI_DEV
+  test.skip(!isTauriDev, 'Requires TAURI_DEV=true to run with full Tauri backend');
+
   test('should return autostart status via get_autostart_enabled command', async ({ page }) => {
     // GIVEN: Tauri app is running with autostart commands registered
     await page.goto('/');
@@ -103,8 +111,9 @@ test.describe('Autostart Tauri Commands', () => {
         const { invoke } = await import('@tauri-apps/api/core');
         const response = await invoke<{ enabled: boolean }>('get_autostart_enabled');
         return { success: true, data: response };
-      } catch (error: any) {
-        return { success: false, error: error?.message || 'Unknown error' };
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        return { success: false, error: errorMessage };
       }
     });
 
@@ -121,8 +130,9 @@ test.describe('Autostart Tauri Commands', () => {
         const { invoke } = await import('@tauri-apps/api/core');
         await invoke('set_autostart_enabled', { enabled: false });
         return { success: true };
-      } catch (error: any) {
-        return { success: false, error: error?.message || 'Unknown error' };
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        return { success: false, error: errorMessage };
       }
     });
 
