@@ -111,6 +111,21 @@ pub async fn scan_channels(
     let client = XtreamClient::new(&account.server_url, &account.username, &password)
         .map_err(|e| e.user_message())?;
 
+    // Fetch account info to refresh tuner limits (FR6 requirement)
+    if let Ok(account_info) = client.authenticate().await {
+        use crate::db::AccountStatusUpdate;
+        let status_update = AccountStatusUpdate {
+            expiry_date: account_info.expiry_date.map(|dt| dt.to_rfc3339()),
+            max_connections_actual: Some(account_info.max_connections),
+            active_connections: Some(account_info.active_connections),
+            last_check: Some(chrono::Utc::now().to_rfc3339()),
+            connection_status: Some("Active".to_string()),
+        };
+        let _ = diesel::update(accounts::table.filter(accounts::id.eq(account_id)))
+            .set(&status_update)
+            .execute(&mut conn);
+    }
+
     // Fetch categories first (for category name lookup)
     let categories = match client.get_live_categories().await {
         Ok(cats) => cats,
@@ -165,6 +180,19 @@ pub async fn scan_channels(
 
     let mut new_channels = 0;
     let mut updated_channels = 0;
+
+    // Build set of current stream_ids from fetched streams
+    let current_stream_ids: std::collections::HashSet<i32> =
+        streams.iter().map(|s| s.stream_id).collect();
+
+    // Calculate removed channels (exist in DB but not in fetched streams)
+    let removed_stream_ids: Vec<i32> = existing_map
+        .keys()
+        .filter(|&stream_id| !current_stream_ids.contains(stream_id))
+        .copied()
+        .collect();
+
+    let removed_channels = removed_stream_ids.len() as i32;
 
     // Process streams in batches for performance
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -234,6 +262,16 @@ pub async fn scan_channels(
             }
         }
 
+        // Delete removed channels from database
+        if !removed_stream_ids.is_empty() {
+            diesel::delete(
+                xtream_channels::table
+                    .filter(xtream_channels::account_id.eq(account_id))
+                    .filter(xtream_channels::stream_id.eq_any(&removed_stream_ids)),
+            )
+            .execute(conn)?;
+        }
+
         Ok(())
     })
     .map_err(|e| format!("Database transaction error: {}", e))?;
@@ -245,7 +283,7 @@ pub async fn scan_channels(
         total_channels,
         new_channels,
         updated_channels,
-        removed_channels: 0,
+        removed_channels,
         scan_duration_ms,
         error_message: None,
     })

@@ -36,6 +36,7 @@ export function AccountStatus({
   const [testResult, setTestResult] = useState<TestConnectionResponse | null>(null);
   const [isScanLoading, setIsScanLoading] = useState(false);
   const [scanResult, setScanResult] = useState<ScanChannelsResponse | null>(null);
+  const [hasAutoScanned, setHasAutoScanned] = useState(false);
 
   // Use test result or initial values for display
   const status = testResult?.status ?? initialStatus;
@@ -51,6 +52,13 @@ export function AccountStatus({
     try {
       const result = await testConnection(accountId);
       setTestResult(result);
+
+      // AC #1: Auto-scan channels on first successful connection
+      if (result.success && !hasAutoScanned && !initialStatus) {
+        setHasAutoScanned(true);
+        // Trigger automatic channel scan after successful connection
+        handleScanChannels();
+      }
     } catch (error) {
       // Handle unexpected errors
       setTestResult({
