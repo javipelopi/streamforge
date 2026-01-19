@@ -335,9 +335,10 @@ fn promote_next_primary(
     conn: &mut SqliteConnection,
     xmltv_channel_id: i32,
 ) -> Result<(), diesel::result::Error> {
-    // Find the mapping with highest confidence among remaining
+    // Find the mapping with highest confidence among remaining non-primary mappings
     let next_primary: Option<ChannelMapping> = channel_mappings::table
         .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
+        .filter(channel_mappings::is_primary.eq(0)) // Only select non-primary mappings
         .order_by(channel_mappings::match_confidence.desc())
         .first::<ChannelMapping>(conn)
         .optional()?;
@@ -560,10 +561,28 @@ pub fn perform_auto_rematch(
             handle_changed_streams(conn, account_id, &changes.changed_streams, config)?;
     }
 
-    // Calculate affected XMLTV channels
+    // Calculate affected XMLTV channels (all operations)
     // Get mappings for new streams
     for stream in &changes.new_streams {
         if let Some(id) = stream.id {
+            let mappings: Vec<ChannelMapping> = channel_mappings::table
+                .filter(channel_mappings::xtream_channel_id.eq(id))
+                .load::<ChannelMapping>(conn)
+                .unwrap_or_default();
+            for m in mappings {
+                affected_xmltv_ids.insert(m.xmltv_channel_id);
+            }
+        }
+    }
+
+    // Get affected channels from removed streams (from the remove operation return values)
+    // Note: These streams are now deleted, so we can't query their mappings directly
+    // The mappings_removed count already captured this information
+    // The affected count will primarily reflect new and changed streams
+
+    // Get affected channels from changed streams
+    for changed in &changes.changed_streams {
+        if let Some(id) = changed.new_stream.id {
             let mappings: Vec<ChannelMapping> = channel_mappings::table
                 .filter(channel_mappings::xtream_channel_id.eq(id))
                 .load::<ChannelMapping>(conn)

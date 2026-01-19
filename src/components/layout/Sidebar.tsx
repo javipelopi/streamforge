@@ -6,7 +6,7 @@
  * Supports keyboard shortcuts: Alt+1-6 for navigation, Ctrl+B to toggle
  */
 import type { ComponentType } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   HomeIcon,
@@ -19,6 +19,7 @@ import {
 } from '@radix-ui/react-icons';
 import { useAppStore } from '../../stores/appStore';
 import { NAV_ITEMS } from '../../lib/routes';
+import { getUnreadEventCount } from '../../lib/tauri';
 
 const iconMap: Record<string, ComponentType<{ className?: string }>> = {
   dashboard: HomeIcon,
@@ -32,6 +33,27 @@ const iconMap: Record<string, ComponentType<{ className?: string }>> = {
 export function Sidebar() {
   const { sidebarOpen, toggleSidebar } = useAppStore();
   const navigate = useNavigate();
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  // Fetch unread count on mount and set up polling (Story 3-4: AC #5)
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      try {
+        const count = await getUnreadEventCount();
+        setUnreadCount(count);
+      } catch (error) {
+        console.error('Failed to fetch unread event count:', error);
+      }
+    };
+
+    // Fetch immediately
+    fetchUnreadCount();
+
+    // Poll every 10 seconds for updates
+    const interval = setInterval(fetchUnreadCount, 10000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -80,12 +102,15 @@ export function Sidebar() {
         <ul className="space-y-2">
           {NAV_ITEMS.map((item) => {
             const Icon = iconMap[item.icon] || HomeIcon;
+            const isLogsItem = item.path === '/logs';
+            const showBadge = isLogsItem && unreadCount > 0;
+
             return (
               <li key={item.path}>
                 <NavLink
                   to={item.path}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 px-4 py-2 rounded transition-colors ${
+                    `flex items-center gap-3 px-4 py-2 rounded transition-colors relative ${
                       isActive
                         ? 'bg-blue-600 active'
                         : 'hover:bg-gray-800'
@@ -94,6 +119,16 @@ export function Sidebar() {
                 >
                   <Icon className="w-5 h-5 flex-shrink-0" />
                   {sidebarOpen && <span>{item.label}</span>}
+                  {/* Notification badge for Logs (Story 3-4: AC #5) */}
+                  {showBadge && (
+                    <span
+                      data-testid="logs-unread-badge"
+                      className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full px-2 py-0.5 min-w-[1.25rem] text-center"
+                      title={`${unreadCount} unread event${unreadCount === 1 ? '' : 's'}`}
+                    >
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
                 </NavLink>
               </li>
             );

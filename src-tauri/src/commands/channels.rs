@@ -432,12 +432,18 @@ pub async fn scan_and_rematch(
     let categories = match client.get_live_categories().await {
         Ok(cats) => cats,
         Err(e) => {
-            // Log the error
+            // Log the error with details
+            let error_details = serde_json::json!({
+                "error": format!("{:?}", e),
+                "account_id": account_id,
+                "account_name": &account.name,
+                "operation": "fetch_categories"
+            });
             let _ = log_provider_event(
                 &mut conn,
                 "error",
                 &format!("Failed to fetch categories for account {}: {}", account.name, e.user_message()),
-                None,
+                Some(error_details),
             );
             return Ok(ScanAndRematchResponse {
                 success: false,
@@ -465,12 +471,18 @@ pub async fn scan_and_rematch(
     let streams = match client.get_live_streams().await {
         Ok(s) => s,
         Err(e) => {
-            // Log the error
+            // Log the error with details
+            let error_details = serde_json::json!({
+                "error": format!("{:?}", e),
+                "account_id": account_id,
+                "account_name": &account.name,
+                "operation": "fetch_streams"
+            });
             let _ = log_provider_event(
                 &mut conn,
                 "error",
                 &format!("Failed to fetch streams for account {}: {}", account.name, e.user_message()),
-                None,
+                Some(error_details),
             );
             return Ok(ScanAndRematchResponse {
                 success: false,
