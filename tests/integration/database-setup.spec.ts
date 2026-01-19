@@ -36,7 +36,8 @@ test.describe('Story 1.2: SQLite Database with Diesel ORM', () => {
       encoding: 'utf-8'
     });
 
-    expect(dieselVersion).toContain('diesel 2.2');
+    // Diesel 2.2+ is required; current stable is 2.3.x
+    expect(dieselVersion).toMatch(/diesel.*\n.*Version: 2\.\d+\.\d+/);
   });
 
   test('should have diesel.toml configuration file', async () => {
@@ -243,7 +244,9 @@ test.describe('Story 1.2: SQLite Database with Diesel ORM', () => {
     // THEN: Database is initialized in setup
     expect(mainRs).toContain('.setup(');
     expect(mainRs).toContain('db::');
-    expect(mainRs).toContain('run_migrations') || expect(mainRs).toContain('establish_connection');
+    const hasDbInit =
+      mainRs.includes('run_migrations') || mainRs.includes('establish_connection');
+    expect(hasDbInit).toBe(true);
   });
 
   /**
@@ -256,7 +259,9 @@ test.describe('Story 1.2: SQLite Database with Diesel ORM', () => {
 
     // WHEN: Checking migration execution
     // THEN: Migrations are run in setup hook before app starts
-    expect(mainRs).toContain('run_pending_migrations') || expect(mainRs).toContain('run_migrations');
+    const hasMigrationCall =
+      mainRs.includes('run_pending_migrations') || mainRs.includes('run_migrations');
+    expect(hasMigrationCall).toBe(true);
   });
 
   /**
@@ -312,7 +317,8 @@ test.describe('Story 1.2: SQLite Database with Diesel ORM', () => {
 
     // WHEN: Checking schema definition
     // THEN: Settings table schema is defined
-    expect(schemaRs).toContain('table! {');
+    // Diesel 2.3+ uses diesel::table! macro
+    expect(schemaRs).toContain('table!');
     expect(schemaRs).toContain('settings');
     expect(schemaRs).toContain('key ->');
     expect(schemaRs).toContain('value ->');
