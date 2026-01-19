@@ -754,6 +754,26 @@ pub fn toggle_xmltv_channel(
             .first::<XmltvChannelSettings>(conn)
             .optional()?;
 
+        // AC3: Determine if this is an enable operation and check for matches
+        let is_currently_disabled = existing_settings
+            .as_ref()
+            .map(|s| s.is_enabled.unwrap_or(0) == 0)
+            .unwrap_or(true); // No settings means disabled by default
+
+        // If trying to enable, check for matched streams
+        if is_currently_disabled {
+            let match_count: i64 = channel_mappings::table
+                .filter(channel_mappings::xmltv_channel_id.eq(channel_id))
+                .count()
+                .get_result(conn)?;
+
+            if match_count == 0 {
+                return Err(diesel::result::Error::QueryBuilderError(
+                    "Cannot enable channel: No stream source available. Match an Xtream stream first.".into()
+                ));
+            }
+        }
+
         let new_enabled = match existing_settings {
             Some(settings) => {
                 // Toggle the existing value
