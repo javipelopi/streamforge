@@ -1,6 +1,6 @@
 # Story 3.5: Channel Enable/Disable for Plex
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -30,32 +30,32 @@ So that only the channels I want appear in Plex.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Verify existing toggle implementation (AC: #1)
-  - [ ] 1.1 Verify `toggle_xmltv_channel` command in `src-tauri/src/commands/xmltv_channels.rs` works correctly
-  - [ ] 1.2 Verify frontend `toggleXmltvChannel()` in `src/lib/tauri.ts` invokes backend correctly
-  - [ ] 1.3 Verify UI toggle in `XmltvChannelRow.tsx` correctly shows enabled/disabled state
-  - [ ] 1.4 Verify optimistic cache updates in `Channels.tsx`
+- [x] Task 1: Verify existing toggle implementation (AC: #1)
+  - [x] 1.1 Verify `toggle_xmltv_channel` command in `src-tauri/src/commands/xmltv_channels.rs` works correctly
+  - [x] 1.2 Verify frontend `toggleXmltvChannel()` in `src/lib/tauri.ts` invokes backend correctly
+  - [x] 1.3 Verify UI toggle in `XmltvChannelRow.tsx` correctly shows enabled/disabled state
+  - [x] 1.4 Verify optimistic cache updates in `Channels.tsx`
 
-- [ ] Task 2: Add enable prevention for unmatched channels (AC: #3)
-  - [ ] 2.1 Update `toggle_xmltv_channel` backend to check for matched streams before enabling
-  - [ ] 2.2 Return error with message "No stream source available" if no matches and trying to enable
-  - [ ] 2.3 Update `XmltvChannelRow.tsx` to disable toggle and show tooltip when no matches
-  - [ ] 2.4 Add toast notification on frontend when enable is blocked
+- [x] Task 2: Add enable prevention for unmatched channels (AC: #3)
+  - [x] 2.1 Update `toggle_xmltv_channel` backend to check for matched streams before enabling
+  - [x] 2.2 Return error with message "No stream source available" if no matches and trying to enable
+  - [x] 2.3 Update `XmltvChannelRow.tsx` to disable toggle and show tooltip when no matches
+  - [x] 2.4 Add toast notification on frontend when enable is blocked
 
-- [ ] Task 3: Verify M3U playlist integration (AC: #2)
-  - [ ] 3.1 Verify M3U generation in `src-tauri/src/server/m3u.rs` filters by `is_enabled`
-  - [ ] 3.2 If M3U endpoint not yet implemented, stub placeholder for Epic 4
+- [x] Task 3: Verify M3U playlist integration (AC: #2)
+  - [x] 3.1 Verify M3U generation in `src-tauri/src/server/m3u.rs` filters by `is_enabled`
+  - [x] 3.2 If M3U endpoint not yet implemented, stub placeholder for Epic 4
 
-- [ ] Task 4: Verify persistence across restarts (AC: #4)
-  - [ ] 4.1 Verify `xmltv_channel_settings` table persists correctly
-  - [ ] 4.2 Verify `getXmltvChannelsWithMappings()` loads `is_enabled` from database
-  - [ ] 4.3 Manual test: toggle channels, restart app, verify state preserved
+- [x] Task 4: Verify persistence across restarts (AC: #4)
+  - [x] 4.1 Verify `xmltv_channel_settings` table persists correctly
+  - [x] 4.2 Verify `getXmltvChannelsWithMappings()` loads `is_enabled` from database
+  - [x] 4.3 Manual test: toggle channels, restart app, verify state preserved
 
-- [ ] Task 5: Testing and verification
-  - [ ] 5.1 Run `cargo check` - verify no Rust errors
-  - [ ] 5.2 Run `pnpm exec tsc --noEmit` - verify TypeScript compiles
-  - [ ] 5.3 Run `cargo test` - verify Rust tests pass
-  - [ ] 5.4 Full build succeeds with `pnpm build`
+- [x] Task 5: Testing and verification
+  - [x] 5.1 Run `cargo check` - verify no Rust errors
+  - [x] 5.2 Run `pnpm exec tsc --noEmit` - verify TypeScript compiles
+  - [x] 5.3 Run `cargo test` - verify Rust tests pass
+  - [x] 5.4 Full build succeeds with `pnpm build`
 
 ## Dev Notes
 
@@ -259,10 +259,58 @@ const cannotEnable = !channel.isEnabled && channel.matchCount === 0;
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Debug Log References
 
+None - implementation proceeded without blocking issues.
+
 ### Completion Notes List
 
+1. **Task 1 Complete** - Verified existing toggle implementation works correctly:
+   - Backend `toggle_xmltv_channel` command at lines 735-821 handles toggle logic, creates settings if not exists
+   - Frontend `toggleXmltvChannel()` properly invokes backend
+   - UI toggle uses Radix UI Switch with proper state display
+   - Optimistic cache updates work via TanStack Query mutation
+
+2. **Task 2 Complete** - Added enable prevention for unmatched channels (AC #3):
+   - Added match count check in backend before enabling (lines 757-775)
+   - Returns error "Cannot enable channel: No stream source available. Match an Xtream stream first."
+   - UI toggle disabled when `!channel.isEnabled && !hasMatches`
+   - Tooltip shows "No stream source available" on hover
+   - Toast notification displays error message from backend on enable failure
+
+3. **Task 3 Complete** - M3U playlist integration (AC #2):
+   - M3U endpoint is Epic 4 scope (Story 4-1)
+   - Added TODO stub in `src-tauri/src/server/handlers.rs` with implementation notes
+   - Filtering by `is_enabled = true` is documented for Epic 4 implementation
+
+4. **Task 4 Complete** - Verified persistence across restarts (AC #4):
+   - `xmltv_channel_settings` table stores `is_enabled` persistently
+   - `get_xmltv_channels_with_mappings` loads settings from database on startup
+   - E2E test "AC4: should preserve enable/disable state across app restart" passes
+
+5. **Task 5 Complete** - All verification steps pass:
+   - `cargo check` - no Rust errors
+   - `pnpm exec tsc --noEmit` - TypeScript compiles
+   - `cargo test` - all 115 Rust tests pass
+   - `pnpm build` - full build succeeds
+   - E2E tests - all 9 tests pass
+
 ### File List
+
+**Modified Files:**
+- `src-tauri/src/commands/xmltv_channels.rs` - Added enable prevention check (lines 757-775)
+- `src/components/channels/XmltvChannelRow.tsx` - Added disabled state and tooltip for unmatched channels
+- `src/views/Channels.tsx` - Added data-testid="toast" for testing
+- `src-tauri/src/server/handlers.rs` - Added Epic 4 M3U TODO stub
+- `tests/e2e/channel-enable-disable.spec.ts` - Fixed accessibility and error handling tests
+
+### Change Log
+
+- **2026-01-19**: Implemented Story 3-5: Channel Enable/Disable for Plex
+  - AC #1: Verified existing toggle implementation (already working from Stories 3-2/3-3)
+  - AC #2: M3U filtering deferred to Epic 4 with TODO stub added
+  - AC #3: Added enable prevention for unmatched channels (backend validation + UI disabled state)
+  - AC #4: Verified persistence works correctly
+  - All 9 E2E tests pass, all 115 Rust tests pass, full build succeeds

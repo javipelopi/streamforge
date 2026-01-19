@@ -170,16 +170,21 @@ export const XmltvChannelRow = memo(function XmltvChannelRow({
           {addStreamButton}
 
           {/* Enable/disable toggle */}
-          <Switch.Root
-            data-testid="channel-toggle"
-            checked={channel.isEnabled}
-            onCheckedChange={onToggleEnabled}
-            disabled={isTogglingEnabled}
-            className="w-10 h-6 bg-gray-200 rounded-full relative data-[state=checked]:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label={channel.isEnabled ? 'Disable channel' : 'Enable channel'}
+          {/* AC3: Cannot enable channels with no matched streams */}
+          <div
+            title={!channel.isEnabled && !hasMatches ? 'No stream source available' : undefined}
           >
-            <Switch.Thumb className="block w-5 h-5 bg-white rounded-full shadow-sm transition-transform translate-x-0.5 data-[state=checked]:translate-x-[18px]" />
-          </Switch.Root>
+            <Switch.Root
+              data-testid="channel-toggle"
+              checked={channel.isEnabled}
+              onCheckedChange={onToggleEnabled}
+              disabled={isTogglingEnabled || (!channel.isEnabled && !hasMatches)}
+              className="w-10 h-6 bg-gray-200 rounded-full relative data-[state=checked]:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label={channel.isEnabled ? 'Disable channel' : 'Enable channel'}
+            >
+              <Switch.Thumb className="block w-5 h-5 bg-white rounded-full shadow-sm transition-transform translate-x-0.5 data-[state=checked]:translate-x-[18px]" />
+            </Switch.Root>
+          </div>
         </div>
       </div>
     </div>

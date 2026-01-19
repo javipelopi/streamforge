@@ -299,6 +299,7 @@ export function Channels() {
       {/* Toast notification */}
       {toastMessage && (
         <div
+          data-testid="toast"
           className={`fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg max-w-md z-50 ${
             toastType === 'error'
               ? 'bg-red-600 text-white'
