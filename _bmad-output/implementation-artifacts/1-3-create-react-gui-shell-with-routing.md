@@ -1,6 +1,6 @@
 # Story 1.3: Create React GUI Shell with Routing
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -23,67 +23,67 @@ So that I can access different sections of the application.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Install required dependencies (AC: #1)
-  - [ ] 1.1 Install react-router-dom for client-side routing
-  - [ ] 1.2 Install zustand for state management
-  - [ ] 1.3 Install @tanstack/react-query for data fetching
-  - [ ] 1.4 Install @radix-ui/react-slot and essential Radix primitives (icons, separator)
-  - [ ] 1.5 Run `pnpm install` and verify dependencies resolve correctly
+- [x] Task 1: Install required dependencies (AC: #1)
+  - [x] 1.1 Install react-router-dom for client-side routing
+  - [x] 1.2 Install zustand for state management
+  - [x] 1.3 Install @tanstack/react-query for data fetching
+  - [x] 1.4 Install @radix-ui/react-slot and essential Radix primitives (icons, separator)
+  - [x] 1.5 Run `pnpm install` and verify dependencies resolve correctly
 
-- [ ] Task 2: Set up React Router configuration (AC: #1)
-  - [ ] 2.1 Create `src/router.tsx` with BrowserRouter/MemoryRouter setup (use MemoryRouter for Tauri)
-  - [ ] 2.2 Define routes for all navigation views: /, /channels, /epg, /accounts, /settings, /logs
-  - [ ] 2.3 Create route constants in `src/lib/routes.ts` for type-safe navigation
-  - [ ] 2.4 Update `src/main.tsx` to wrap App with RouterProvider
+- [x] Task 2: Set up React Router configuration (AC: #1)
+  - [x] 2.1 Create `src/router.tsx` with BrowserRouter/MemoryRouter setup (use MemoryRouter for Tauri)
+  - [x] 2.2 Define routes for all navigation views: /, /channels, /epg, /accounts, /settings, /logs
+  - [x] 2.3 Create route constants in `src/lib/routes.ts` for type-safe navigation
+  - [x] 2.4 Update `src/main.tsx` to wrap App with RouterProvider
 
-- [ ] Task 3: Create placeholder view components (AC: #1)
-  - [ ] 3.1 Create `src/views/Dashboard.tsx` with placeholder content
-  - [ ] 3.2 Create `src/views/Channels.tsx` with placeholder content
-  - [ ] 3.3 Create `src/views/EPG.tsx` with placeholder content
-  - [ ] 3.4 Create `src/views/Accounts.tsx` with placeholder content
-  - [ ] 3.5 Create `src/views/Settings.tsx` with placeholder content
-  - [ ] 3.6 Create `src/views/Logs.tsx` with placeholder content
-  - [ ] 3.7 Create `src/views/index.ts` barrel export
+- [x] Task 3: Create placeholder view components (AC: #1)
+  - [x] 3.1 Create `src/views/Dashboard.tsx` with placeholder content
+  - [x] 3.2 Create `src/views/Channels.tsx` with placeholder content
+  - [x] 3.3 Create `src/views/EPG.tsx` with placeholder content
+  - [x] 3.4 Create `src/views/Accounts.tsx` with placeholder content
+  - [x] 3.5 Create `src/views/Settings.tsx` with placeholder content
+  - [x] 3.6 Create `src/views/Logs.tsx` with placeholder content
+  - [x] 3.7 Create `src/views/index.ts` barrel export
 
-- [ ] Task 4: Create layout shell with sidebar navigation (AC: #1)
-  - [ ] 4.1 Create `src/components/layout/Sidebar.tsx` with navigation menu
-  - [ ] 4.2 Create `src/components/layout/Header.tsx` with app title and status indicator
-  - [ ] 4.3 Create `src/components/layout/MainLayout.tsx` as the shell component
-  - [ ] 4.4 Style sidebar with Tailwind: fixed width, full height, dark theme
-  - [ ] 4.5 Add active state styling for current route
-  - [ ] 4.6 Include icons for each navigation item (use Radix Icons or simple SVG)
+- [x] Task 4: Create layout shell with sidebar navigation (AC: #1)
+  - [x] 4.1 Create `src/components/layout/Sidebar.tsx` with navigation menu
+  - [x] 4.2 Create `src/components/layout/Header.tsx` with app title and status indicator
+  - [x] 4.3 Create `src/components/layout/MainLayout.tsx` as the shell component
+  - [x] 4.4 Style sidebar with Tailwind: fixed width, full height, dark theme
+  - [x] 4.5 Add active state styling for current route
+  - [x] 4.6 Include icons for each navigation item (use Radix Icons or simple SVG)
 
-- [ ] Task 5: Configure Zustand store (AC: #1)
-  - [ ] 5.1 Create `src/stores/appStore.ts` with AppState interface
-  - [ ] 5.2 Implement sidebarOpen, activeView, serverStatus state
-  - [ ] 5.3 Add toggleSidebar action
-  - [ ] 5.4 Add unreadLogCount state for future badge support
-  - [ ] 5.5 Export useAppStore hook
+- [x] Task 5: Configure Zustand store (AC: #1)
+  - [x] 5.1 Create `src/stores/appStore.ts` with AppState interface
+  - [x] 5.2 Implement sidebarOpen, activeView, serverStatus state
+  - [x] 5.3 Add toggleSidebar action
+  - [x] 5.4 Add unreadLogCount state for future badge support
+  - [x] 5.5 Export useAppStore hook
 
-- [ ] Task 6: Configure TanStack Query (AC: #1)
-  - [ ] 6.1 Create `src/lib/queryClient.ts` with QueryClient configuration
-  - [ ] 6.2 Configure default options (staleTime, gcTime, retry)
-  - [ ] 6.3 Wrap app with QueryClientProvider in main.tsx
-  - [ ] 6.4 Add ReactQueryDevtools for development (optional, disabled in production)
+- [x] Task 6: Configure TanStack Query (AC: #1)
+  - [x] 6.1 Create `src/lib/queryClient.ts` with QueryClient configuration
+  - [x] 6.2 Configure default options (staleTime, gcTime, retry)
+  - [x] 6.3 Wrap app with QueryClientProvider in main.tsx
+  - [x] 6.4 Add ReactQueryDevtools for development (optional, disabled in production)
 
-- [ ] Task 7: Integrate shell into App.tsx (AC: #1)
-  - [ ] 7.1 Replace current App.tsx content with MainLayout + Outlet
-  - [ ] 7.2 Ensure router renders views within the layout
-  - [ ] 7.3 Verify navigation between all views works correctly
-  - [ ] 7.4 Preserve responsive design for different window sizes
+- [x] Task 7: Integrate shell into App.tsx (AC: #1)
+  - [x] 7.1 Replace current App.tsx content with MainLayout + Outlet
+  - [x] 7.2 Ensure router renders views within the layout
+  - [x] 7.3 Verify navigation between all views works correctly
+  - [x] 7.4 Preserve responsive design for different window sizes
 
-- [ ] Task 8: Add status indicator functionality (AC: #1)
-  - [ ] 8.1 Add serverStatus to Zustand store (running/stopped/error)
-  - [ ] 8.2 Create `src/components/ui/StatusIndicator.tsx` with color-coded dot
-  - [ ] 8.3 Display status in header (green = running, red = error, gray = stopped)
-  - [ ] 8.4 Add tooltip showing status text on hover
+- [x] Task 8: Add status indicator functionality (AC: #1)
+  - [x] 8.1 Add serverStatus to Zustand store (running/stopped/error)
+  - [x] 8.2 Create `src/components/ui/StatusIndicator.tsx` with color-coded dot
+  - [x] 8.3 Display status in header (green = running, red = error, gray = stopped)
+  - [x] 8.4 Add tooltip showing status text on hover
 
-- [ ] Task 9: Build and verification (AC: #1)
-  - [ ] 9.1 Run ESLint: `pnpm lint` and fix any issues
-  - [ ] 9.2 Run TypeScript check: `pnpm exec tsc --noEmit`
-  - [ ] 9.3 Run `pnpm tauri dev` and verify all navigation works
-  - [ ] 9.4 Verify placeholder content displays for each route
-  - [ ] 9.5 Run `pnpm tauri build` and verify production build works
+- [x] Task 9: Build and verification (AC: #1)
+  - [x] 9.1 Run ESLint: `pnpm lint` and fix any issues
+  - [x] 9.2 Run TypeScript check: `pnpm exec tsc --noEmit`
+  - [x] 9.3 Run `pnpm tauri dev` and verify all navigation works
+  - [x] 9.4 Verify placeholder content displays for each route
+  - [x] 9.5 Run `pnpm tauri build` and verify production build works
 
 ## Dev Notes
 
@@ -281,11 +281,50 @@ Recent commit patterns:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Debug Log References
 
+- All 22 E2E tests pass (from react-gui-shell-routing.spec.ts)
+- All 41 total E2E tests pass (including previous story tests)
+- ESLint: 0 errors, 0 warnings
+- TypeScript: 0 errors
+- Tauri build: Success (.app bundle created)
+
 ### Completion Notes List
 
+- Installed react-router-dom@7.12.0, zustand@5.0.10, @tanstack/react-query@5.90.19, Radix UI packages
+- Created router with dynamic detection: BrowserRouter for dev, MemoryRouter for Tauri production
+- Created 6 placeholder view components with consistent structure
+- Implemented dark sidebar with Radix icons and NavLink active state styling
+- Implemented Zustand store with sidebarOpen, serverStatus, unreadLogCount state
+- Created StatusIndicator with Radix Tooltip showing running/stopped/error states
+- Fixed Radix Tooltip duplicate element issue by using aria-label instead of explicit role
+- Configured TanStack Query with desktop-optimized settings (refetchOnWindowFocus: false)
+- Updated playwright.config.ts with baseURL and webServer for E2E testing
+
 ### File List
+
+**New Files:**
+- src/router.tsx - React Router configuration with Tauri detection
+- src/lib/routes.ts - Route constants and navigation items
+- src/lib/queryClient.ts - TanStack Query client configuration
+- src/stores/appStore.ts - Zustand store with app state
+- src/components/layout/Sidebar.tsx - Navigation sidebar component
+- src/components/layout/Header.tsx - App header with title and status
+- src/components/layout/MainLayout.tsx - Shell layout component
+- src/components/ui/StatusIndicator.tsx - Server status indicator with tooltip
+- src/views/Dashboard.tsx - Dashboard placeholder view
+- src/views/Channels.tsx - Channels placeholder view
+- src/views/EPG.tsx - EPG placeholder view
+- src/views/Accounts.tsx - Accounts placeholder view
+- src/views/Settings.tsx - Settings placeholder view
+- src/views/Logs.tsx - Logs placeholder view
+- src/views/index.ts - Barrel export for views
+
+**Modified Files:**
+- src/main.tsx - Updated to use RouterProvider and QueryClientProvider
+- package.json - Added new dependencies
+- pnpm-lock.yaml - Updated lockfile
+- playwright.config.ts - Added baseURL and webServer configuration
 
