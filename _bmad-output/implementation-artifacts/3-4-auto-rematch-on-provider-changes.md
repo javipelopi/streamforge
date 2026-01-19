@@ -1,6 +1,6 @@
 # Story 3.4: Auto-Rematch on Provider Changes
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -366,6 +366,44 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
 8. Updated `src/components/accounts/AccountStatus.tsx` to use new scan function
 9. Created `src/views/Logs.tsx` for event log viewing
 
+### Code Review Fixes (Post-Implementation)
+
+**Date:** 2026-01-19
+**Reviewer:** Adversarial Code Review Agent (YOLO Mode)
+**Issues Found:** 6 (1 Critical, 3 Medium, 2 Low)
+**Issues Fixed:** 4 (all High and Medium severity)
+
+**Critical Fixes Applied:**
+1. **AC #5 INCOMPLETE - Added notification badge to Sidebar** (`src/components/layout/Sidebar.tsx`)
+   - Implemented unread event count polling (10s interval)
+   - Added red badge with count next to Logs navigation item
+   - Badge shows "99+" for counts over 99
+   - Completes AC #5 requirement: "notification badge appears in the UI"
+
+**Medium Fixes Applied:**
+2. **Race condition in `promote_next_primary`** (`src-tauri/src/matcher/auto_rematch.rs:339`)
+   - Added `.filter(channel_mappings::is_primary.eq(0))` to only select non-primary mappings
+   - Prevents edge case where already-primary mapping could be re-promoted
+
+3. **Incorrect `affected_xmltv_channels` count** (`src-tauri/src/matcher/auto_rematch.rs:564-591`)
+   - Extended tracking to include changed streams in affected count
+   - Added documentation about removed streams limitation
+   - Count now reflects new and changed operations accurately
+
+4. **Missing error details in event logs** (`src-tauri/src/commands/channels.rs:436, 469`)
+   - Added JSON error details for category fetch failures
+   - Added JSON error details for stream fetch failures
+   - Includes: error message, account_id, account_name, operation type
+
+**Low Issues Not Fixed (Acceptable):**
+5. `eprintln!` usage instead of `tracing` crate - acceptable for this sprint
+6. No upper bound validation on `clear_old_events` - edge case, low priority
+
+**Verification:**
+- ✅ Rust tests: 98 passed, 0 failed
+- ✅ TypeScript compiles with no errors
+- ✅ All ACs now fully implemented (5/5)
+
 ### File List
 
 **Created:**
@@ -379,9 +417,11 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
 - `src-tauri/src/db/models.rs` - Added EventLog, NewEventLog, EventLevel, EventCategory types
 - `src-tauri/src/db/mod.rs` - Added event log type exports
 - `src-tauri/src/commands/mod.rs` - Added logs module
-- `src-tauri/src/commands/channels.rs` - Added scan_and_rematch command
+- `src-tauri/src/commands/channels.rs` - Added scan_and_rematch command + error logging fixes
 - `src-tauri/src/commands/matcher.rs` - Added auto-rematch Tauri commands
 - `src-tauri/src/lib.rs` - Registered new commands
+- `src-tauri/src/matcher/auto_rematch.rs` - Primary promotion fix + affected channels tracking fix
 - `src/lib/tauri.ts` - Added TypeScript types and API functions
 - `src/components/accounts/AccountStatus.tsx` - Updated to use scanAndRematch
+- `src/components/layout/Sidebar.tsx` - Added notification badge for unread events (AC #5)
 - `src/views/Logs.tsx` - Complete rewrite with event log functionality
