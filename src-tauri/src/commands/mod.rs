@@ -2,6 +2,7 @@ pub mod accounts;
 pub mod channels;
 pub mod epg;
 pub mod matcher;
+pub mod xmltv_channels;
 
 use diesel::prelude::*;
 use serde::Serialize;
