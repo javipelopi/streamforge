@@ -20,7 +20,21 @@ export interface XtreamStreamMatch {
   qualities: string[];
   matchConfidence: number;
   isPrimary: boolean;
+  isManual: boolean;
   streamPriority: number;
+}
+
+/**
+ * Xtream stream for search dropdown (Story 3-3)
+ */
+export interface XtreamStreamSearchResult {
+  id: number;
+  streamId: number;
+  name: string;
+  streamIcon: string | null;
+  qualities: string[];
+  categoryName: string | null;
+  matchedToXmltvIds: number[];
 }
 
 export interface XmltvChannelWithMappings {
@@ -53,6 +67,7 @@ export const createXtreamStreamMatch = (overrides: Partial<XtreamStreamMatch> = 
     qualities: randomQualities,
     matchConfidence: faker.number.float({ min: 0.85, max: 1.0, fractionDigits: 2 }),
     isPrimary: false,
+    isManual: false,
     streamPriority: 1,
     ...overrides,
   };
@@ -107,6 +122,7 @@ export const createXmltvChannelWithMultipleMatches = (
       qualities: ['HD'],
       matchConfidence: 0.95,
       isPrimary: true,
+      isManual: false,
       streamPriority: 0,
     }),
     createXtreamStreamMatch({
@@ -114,6 +130,7 @@ export const createXmltvChannelWithMultipleMatches = (
       qualities: ['SD'],
       matchConfidence: 0.92,
       isPrimary: false,
+      isManual: false,
       streamPriority: 1,
     }),
     createXtreamStreamMatch({
@@ -121,6 +138,7 @@ export const createXmltvChannelWithMultipleMatches = (
       qualities: ['4K'],
       matchConfidence: 0.88,
       isPrimary: false,
+      isManual: false,
       streamPriority: 2,
     }),
   ];
@@ -200,6 +218,7 @@ export const createCNNChannelExample = (): XmltvChannelWithMappings => {
         qualities: ['HD'],
         matchConfidence: 0.98,
         isPrimary: true,
+        isManual: false,
         streamPriority: 0,
       }),
       createXtreamStreamMatch({
@@ -207,6 +226,7 @@ export const createCNNChannelExample = (): XmltvChannelWithMappings => {
         qualities: ['SD'],
         matchConfidence: 0.96,
         isPrimary: false,
+        isManual: false,
         streamPriority: 1,
       }),
     ],
@@ -245,4 +265,75 @@ export const createChannelsByMatchStatus = (matched: number, unmatched: number) 
   );
 
   return [...matchedChannels, ...unmatchedChannels];
+};
+
+// ============================================================================
+// Story 3-3: Manual Match Override via Search Dropdown
+// ============================================================================
+
+/**
+ * Create an Xtream stream for the search dropdown
+ */
+export const createXtreamStreamSearchResult = (
+  overrides: Partial<XtreamStreamSearchResult> = {}
+): XtreamStreamSearchResult => {
+  const qualityOptions = ['SD', 'HD', '4K', 'FHD'];
+  const randomQualities = faker.helpers.arrayElements(qualityOptions, { min: 1, max: 2 });
+
+  return {
+    id: faker.number.int({ min: 1, max: 100000 }),
+    streamId: faker.number.int({ min: 1, max: 100000 }),
+    name: faker.company.name() + ' ' + faker.helpers.arrayElement(['HD', 'SD', '4K', 'TV']),
+    streamIcon: faker.helpers.maybe(() => faker.image.url(), { probability: 0.7 }) ?? null,
+    qualities: randomQualities,
+    categoryName: faker.helpers.maybe(
+      () => faker.helpers.arrayElement(['Sports', 'News', 'Entertainment', 'Movies', 'Kids']),
+      { probability: 0.8 }
+    ) ?? null,
+    matchedToXmltvIds: [],
+    ...overrides,
+  };
+};
+
+/**
+ * Create a large list of Xtream streams for the search dropdown
+ */
+export const createLargeXtreamStreamList = (count: number): XtreamStreamSearchResult[] => {
+  return Array.from({ length: count }, (_, index) => {
+    return createXtreamStreamSearchResult({
+      id: index + 1,
+      streamId: index + 1,
+      name: `${faker.company.name()} ${index + 1}`,
+    });
+  });
+};
+
+/**
+ * Create a manual match (for testing manual match functionality)
+ */
+export const createManualMatch = (overrides: Partial<XtreamStreamMatch> = {}): XtreamStreamMatch => {
+  return createXtreamStreamMatch({
+    matchConfidence: 1.0, // Manual matches always have 100% confidence
+    isManual: true,
+    ...overrides,
+  });
+};
+
+/**
+ * Create an XMLTV channel with a manual match
+ */
+export const createXmltvChannelWithManualMatch = (
+  overrides: Partial<XmltvChannelWithMappings> = {}
+): XmltvChannelWithMappings => {
+  const manualMatch = createManualMatch({
+    isPrimary: true,
+    streamPriority: 0,
+  });
+
+  return createXmltvChannelWithMappings({
+    matchCount: 1,
+    matches: [manualMatch],
+    isEnabled: true,
+    ...overrides,
+  });
 };

@@ -642,6 +642,7 @@ export interface XtreamStreamMatch {
   qualities: string[];
   matchConfidence: number;
   isPrimary: boolean;
+  isManual: boolean;
   streamPriority: number;
 }
 
@@ -725,4 +726,58 @@ export function getQualityBadgeClasses(quality: string): string {
     default:
       return 'bg-gray-100 text-gray-800';
   }
+}
+
+// ============================================================================
+// Manual Stream Matching types and functions (Story 3-3)
+// ============================================================================
+
+/** Xtream stream for search dropdown */
+export interface XtreamStreamSearchResult {
+  id: number;
+  streamId: number;
+  name: string;
+  streamIcon: string | null;
+  qualities: string[];
+  categoryName: string | null;
+  /** List of XMLTV channel IDs this stream is already matched to */
+  matchedToXmltvIds: number[];
+}
+
+/**
+ * Get all Xtream streams for the search dropdown
+ * @returns List of Xtream streams with their current mappings
+ */
+export async function getAllXtreamStreams(): Promise<XtreamStreamSearchResult[]> {
+  return invoke<XtreamStreamSearchResult[]>('get_all_xtream_streams');
+}
+
+/**
+ * Add a manual stream mapping between an XMLTV channel and an Xtream stream
+ * @param xmltvChannelId - XMLTV channel ID
+ * @param xtreamChannelId - Xtream stream ID to map
+ * @param setAsPrimary - Whether to set this stream as primary
+ * @returns Updated list of matches for the XMLTV channel
+ */
+export async function addManualStreamMapping(
+  xmltvChannelId: number,
+  xtreamChannelId: number,
+  setAsPrimary: boolean
+): Promise<XtreamStreamMatch[]> {
+  return invoke<XtreamStreamMatch[]>('add_manual_stream_mapping', {
+    xmltvChannelId,
+    xtreamChannelId,
+    setAsPrimary,
+  });
+}
+
+/**
+ * Remove a stream mapping
+ * @param mappingId - Mapping ID to remove
+ * @returns Updated list of matches for the XMLTV channel
+ */
+export async function removeStreamMapping(
+  mappingId: number
+): Promise<XtreamStreamMatch[]> {
+  return invoke<XtreamStreamMatch[]>('remove_stream_mapping', { mappingId });
 }
