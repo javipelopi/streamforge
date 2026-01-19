@@ -1,0 +1,37 @@
+[package]
+name = "iptv"
+version = "0.1.0"
+description = "IPTV Plex Integration Desktop App"
+authors = ["Javier Sanchez"]
+license = ""
+repository = ""
+edition = "2021"
+
+[lib]
+name = "iptv_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+diesel = { version = "2.2.0", features = ["sqlite", "returning_clauses_for_sqlite_3_35", "r2d2"] }
+diesel_migrations = "2.2.0"
+dotenvy = "0.15"
+r2d2 = "0.8"
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-autostart = "2"
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+futures = "0.3"

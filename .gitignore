@@ -9,6 +9,10 @@
 !package.json
 !package-lock.json
 !tsconfig.json
+!tsconfig.node.json
+!tauri.conf.json
+!vite.config.ts
+!playwright.config.ts
 
 # Dependencies
 node_modules/
@@ -32,6 +36,10 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Test outputs
+playwright-report/
+test-results/
 
 # Tauri build artifacts (future)
 src-tauri/target/
