@@ -85,6 +85,7 @@ diesel::table! {
         icon -> Nullable<Text>,
         created_at -> Text,
         updated_at -> Text,
+        is_synthetic -> Nullable<Integer>,
     }
 }
 

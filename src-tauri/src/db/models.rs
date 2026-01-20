@@ -226,6 +226,8 @@ pub struct XmltvChannel {
     pub icon: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// True if this is a synthetic channel created from an orphan Xtream stream (Story 3-8)
+    pub is_synthetic: Option<i32>,
 }
 
 /// New XMLTV channel for insertion
@@ -237,6 +239,8 @@ pub struct NewXmltvChannel {
     pub channel_id: String,
     pub display_name: String,
     pub icon: Option<String>,
+    /// True (1) if this is a synthetic channel created from an orphan Xtream stream
+    pub is_synthetic: Option<i32>,
 }
 
 impl NewXmltvChannel {
@@ -251,6 +255,23 @@ impl NewXmltvChannel {
             channel_id: channel_id.into(),
             display_name: display_name.into(),
             icon,
+            is_synthetic: Some(0), // Default: not synthetic (real XMLTV channel)
+        }
+    }
+
+    /// Create a synthetic XMLTV channel (for orphan Xtream streams promoted to Plex)
+    pub fn synthetic(
+        source_id: i32,
+        channel_id: impl Into<String>,
+        display_name: impl Into<String>,
+        icon: Option<String>,
+    ) -> Self {
+        Self {
+            source_id,
+            channel_id: channel_id.into(),
+            display_name: display_name.into(),
+            icon,
+            is_synthetic: Some(1), // Synthetic channel
         }
     }
 }

@@ -68,7 +68,7 @@ development_status:
   3-5-channel-enable-disable-for-plex: done
   3-6-drag-and-drop-channel-reordering: done
   3-7-bulk-channel-operations: done
-  3-8-manage-orphan-xtream-channels: ready-for-dev
+  3-8-manage-orphan-xtream-channels: review
   epic-3-retrospective: optional
 
   # Epic 4: Plex Integration & Streaming

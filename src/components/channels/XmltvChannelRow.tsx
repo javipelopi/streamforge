@@ -1,6 +1,6 @@
 import { memo, type ReactNode } from 'react';
 import * as Switch from '@radix-ui/react-switch';
-import { ChevronDown, ChevronRight, AlertTriangle, FileText } from 'lucide-react';
+import { ChevronDown, ChevronRight, AlertTriangle, FileText, Pencil } from 'lucide-react';
 import type { XmltvChannelWithMappings } from '../../lib/tauri';
 import { formatConfidence, getMatchCountLabel } from '../../lib/tauri';
 
@@ -13,6 +13,8 @@ interface XmltvChannelRowProps {
   style?: React.CSSProperties;
   /** Slot for the AddStreamButton component */
   addStreamButton?: ReactNode;
+  /** Story 3-8: Handler for editing synthetic channels */
+  onEditSynthetic?: (channel: XmltvChannelWithMappings) => void;
 }
 
 /**
@@ -30,6 +32,7 @@ export const XmltvChannelRow = memo(function XmltvChannelRow({
   isTogglingEnabled = false,
   style,
   addStreamButton,
+  onEditSynthetic,
 }: XmltvChannelRowProps) {
   const hasMatches = channel.matchCount > 0;
   const primaryMatch = channel.matches.find(m => m.isPrimary);
@@ -102,6 +105,17 @@ export const XmltvChannelRow = memo(function XmltvChannelRow({
             >
               XMLTV
             </span>
+
+            {/* Story 3-8: Synthetic channel badge */}
+            {channel.isSynthetic && (
+              <span
+                data-testid={`synthetic-badge-${channel.id}`}
+                className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800"
+                title="Synthetic channel (created from orphan Xtream stream)"
+              >
+                Synthetic
+              </span>
+            )}
           </div>
 
           {/* Secondary info row */}
@@ -168,6 +182,19 @@ export const XmltvChannelRow = memo(function XmltvChannelRow({
 
           {/* Add Stream Button (Story 3-3) */}
           {addStreamButton}
+
+          {/* Story 3-8: Edit button for synthetic channels */}
+          {channel.isSynthetic && onEditSynthetic && (
+            <button
+              data-testid={`edit-synthetic-button-${channel.id}`}
+              onClick={() => onEditSynthetic(channel)}
+              className="p-1.5 rounded hover:bg-gray-200 text-gray-500 hover:text-gray-700 transition-colors"
+              title="Edit synthetic channel"
+              aria-label="Edit synthetic channel"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+          )}
 
           {/* Enable/disable toggle */}
           {/* AC3: Cannot enable channels with no matched streams */}

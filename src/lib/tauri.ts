@@ -1056,3 +1056,85 @@ export async function bulkToggleChannels(
 ): Promise<BulkToggleResult> {
   return invoke<BulkToggleResult>('bulk_toggle_channels', { channelIds, enabled });
 }
+
+// ============================================================================
+// Orphan Xtream Channels (Story 3-8)
+// ============================================================================
+
+/** Orphan Xtream stream info (streams not matched to any XMLTV channel) */
+export interface OrphanXtreamStream {
+  id: number;
+  streamId: number;
+  name: string;
+  streamIcon: string | null;
+  qualities: string[];
+  categoryName: string | null;
+}
+
+/**
+ * Get all Xtream streams that are NOT matched to any XMLTV channel.
+ *
+ * Story 3-8: AC #1 - Display unmatched Xtream streams section
+ *
+ * These are "orphan" streams that exist in the Xtream provider but have no
+ * corresponding XMLTV channel entry for EPG data. Users can "promote" these
+ * to create synthetic XMLTV channels with placeholder EPG.
+ *
+ * @returns List of Xtream streams not mapped to any XMLTV channel
+ */
+export async function getOrphanXtreamStreams(): Promise<OrphanXtreamStream[]> {
+  return invoke<OrphanXtreamStream[]>('get_orphan_xtream_streams');
+}
+
+/**
+ * Promote an orphan Xtream stream to a synthetic XMLTV channel for Plex.
+ *
+ * Story 3-8: AC #2, #3 - Promote orphan to Plex
+ *
+ * Creates:
+ * 1. A synthetic `xmltv_channels` entry with `is_synthetic = true`
+ * 2. A `channel_mappings` entry linking it to the Xtream stream
+ * 3. A `xmltv_channel_settings` entry with `is_enabled = 0`
+ * 4. Placeholder EPG data for the next 7 days
+ *
+ * @param xtreamChannelId - The Xtream stream ID to promote
+ * @param displayName - Display name for the synthetic channel
+ * @param iconUrl - Optional icon URL for the channel
+ * @returns The newly created XmltvChannelWithMappings
+ */
+export async function promoteOrphanToPlex(
+  xtreamChannelId: number,
+  displayName: string,
+  iconUrl: string | null
+): Promise<XmltvChannelWithMappings> {
+  return invoke<XmltvChannelWithMappings>('promote_orphan_to_plex', {
+    xtreamChannelId,
+    displayName,
+    iconUrl,
+  });
+}
+
+/**
+ * Update a synthetic channel's display name and icon.
+ *
+ * Story 3-8: AC #5 - Edit synthetic channel
+ *
+ * Only works for channels where `is_synthetic = true`.
+ * Also updates placeholder EPG program titles if name changed.
+ *
+ * @param channelId - The XMLTV channel ID (must be synthetic)
+ * @param displayName - New display name
+ * @param iconUrl - New icon URL (or null to remove)
+ * @returns Updated XmltvChannelWithMappings
+ */
+export async function updateSyntheticChannel(
+  channelId: number,
+  displayName: string,
+  iconUrl: string | null
+): Promise<XmltvChannelWithMappings> {
+  return invoke<XmltvChannelWithMappings>('update_synthetic_channel', {
+    channelId,
+    displayName,
+    iconUrl,
+  });
+}
