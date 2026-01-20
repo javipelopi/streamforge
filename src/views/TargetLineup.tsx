@@ -276,11 +276,10 @@ export function TargetLineup() {
           </div>
           <button
             data-testid="browse-sources-button"
-            onClick={() => navigate(ROUTES.ACCOUNTS)}
+            onClick={() => navigate(ROUTES.SOURCES)}
             aria-label="Browse Sources"
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
-            {/* TODO(story 3-10): Update to navigate to ROUTES.SOURCES when Sources view exists */}
             Browse Sources
           </button>
         </div>
@@ -302,11 +301,10 @@ export function TargetLineup() {
           </div>
           <button
             data-testid="browse-sources-button"
-            onClick={() => navigate(ROUTES.ACCOUNTS)}
+            onClick={() => navigate(ROUTES.SOURCES)}
             aria-label="Browse Sources"
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
-            {/* TODO(story 3-10): Update to navigate to ROUTES.SOURCES when Sources view exists */}
             Browse Sources
           </button>
         </div>

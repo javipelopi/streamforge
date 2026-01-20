@@ -2,9 +2,10 @@
  * Sidebar Navigation Component
  * Story 1.3: Create React GUI Shell with Routing
  * Story 3-9: Updated for Target Lineup navigation
+ * Story 3-10: Added Sources navigation item
  *
  * Dark-themed sidebar with navigation menu items
- * Supports keyboard shortcuts: Alt+1-6 for navigation, Ctrl+B to toggle
+ * Supports keyboard shortcuts: Alt+1-7 for navigation, Ctrl+B to toggle
  */
 import type { ComponentType } from 'react';
 import { useEffect, useState } from 'react';
@@ -17,7 +18,7 @@ import {
   FileTextIcon,
   HamburgerMenuIcon,
 } from '@radix-ui/react-icons';
-import { ListChecks } from 'lucide-react';
+import { ListChecks, Database } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { NAV_ITEMS } from '../../lib/routes';
 import { getUnreadEventCount } from '../../lib/tauri';
@@ -25,6 +26,7 @@ import { getUnreadEventCount } from '../../lib/tauri';
 const iconMap: Record<string, ComponentType<{ className?: string }>> = {
   dashboard: HomeIcon,
   listChecks: ListChecks,
+  database: Database,
   calendar: CalendarIcon,
   person: PersonIcon,
   gear: GearIcon,
@@ -59,8 +61,8 @@ export function Sidebar() {
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleKeyDown = (e: any) => {
-      // Alt+1-6 for navigation
-      if (e.altKey && e.key >= '1' && e.key <= '6') {
+      // Alt+1-7 for navigation
+      if (e.altKey && e.key >= '1' && e.key <= '7') {
         e.preventDefault();
         const index = parseInt(e.key) - 1;
         if (NAV_ITEMS[index]) {

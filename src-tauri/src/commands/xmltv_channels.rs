@@ -1535,6 +1535,116 @@ pub fn get_target_lineup_channels(
     Ok(result)
 }
 
+// ============================================================================
+// Story 3-10: XMLTV Source Channel Display
+// ============================================================================
+
+/// XMLTV channel with mapping info for Sources view
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct XmltvSourceChannel {
+    pub id: i32,
+    pub source_id: i32,
+    pub channel_id: String,
+    pub display_name: String,
+    pub icon: Option<String>,
+    pub is_synthetic: bool,
+    /// Whether channel is in the Plex lineup
+    pub is_enabled: bool,
+    /// Number of Xtream streams mapped to this channel
+    pub match_count: i32,
+}
+
+/// Get all XMLTV channels for a specific source.
+///
+/// Story 3-10: AC #2 - Get channels for source
+///
+/// Returns channels with enabled status and match counts for display
+/// in the Sources view accordion.
+///
+/// # Arguments
+///
+/// * `source_id` - Source ID to get channels for
+///
+/// # Returns
+///
+/// List of XMLTV channels for the source
+#[tauri::command]
+pub fn get_xmltv_channels_for_source(
+    db: State<DbConnection>,
+    source_id: i32,
+) -> Result<Vec<XmltvSourceChannel>, String> {
+    // Validate input
+    if source_id <= 0 {
+        return Err("Invalid source ID".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    // Load channels for this source
+    let channels: Vec<XmltvChannel> = xmltv_channels::table
+        .filter(xmltv_channels::source_id.eq(source_id))
+        .order_by(xmltv_channels::display_name.asc())
+        .load::<XmltvChannel>(&mut conn)
+        .map_err(|e| format!("Failed to load XMLTV channels: {}", e))?;
+
+    // Load settings for all channels
+    let channel_ids: Vec<i32> = channels.iter().filter_map(|c| c.id).collect();
+
+    let settings: Vec<XmltvChannelSettings> = xmltv_channel_settings::table
+        .filter(xmltv_channel_settings::xmltv_channel_id.eq_any(&channel_ids))
+        .load::<XmltvChannelSettings>(&mut conn)
+        .map_err(|e| format!("Failed to load channel settings: {}", e))?;
+
+    let settings_map: std::collections::HashMap<i32, XmltvChannelSettings> = settings
+        .into_iter()
+        .map(|s| (s.xmltv_channel_id, s))
+        .collect();
+
+    // Load mapping counts for all channels
+    let mapping_counts: Vec<(i32, i64)> = channel_mappings::table
+        .filter(channel_mappings::xmltv_channel_id.eq_any(&channel_ids))
+        .group_by(channel_mappings::xmltv_channel_id)
+        .select((
+            channel_mappings::xmltv_channel_id,
+            diesel::dsl::count(channel_mappings::id),
+        ))
+        .load::<(i32, i64)>(&mut conn)
+        .map_err(|e| format!("Failed to load mapping counts: {}", e))?;
+
+    let counts_map: std::collections::HashMap<i32, i32> = mapping_counts
+        .into_iter()
+        .map(|(id, count)| (id, count as i32))
+        .collect();
+
+    // Build result
+    let result: Vec<XmltvSourceChannel> = channels
+        .into_iter()
+        .filter_map(|channel| {
+            let channel_id = channel.id?;
+            let settings = settings_map.get(&channel_id);
+            let match_count = counts_map.get(&channel_id).copied().unwrap_or(0);
+
+            Some(XmltvSourceChannel {
+                id: channel_id,
+                source_id: channel.source_id,
+                channel_id: channel.channel_id,
+                display_name: channel.display_name,
+                icon: channel.icon,
+                is_synthetic: channel.is_synthetic.unwrap_or(0) != 0,
+                is_enabled: settings
+                    .map(|s| s.is_enabled.unwrap_or(0) != 0)
+                    .unwrap_or(false),
+                match_count,
+            })
+        })
+        .collect();
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

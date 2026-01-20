@@ -1169,3 +1169,36 @@ export interface TargetLineupChannel {
 export async function getTargetLineupChannels(): Promise<TargetLineupChannel[]> {
   return invoke<TargetLineupChannel[]>('get_target_lineup_channels');
 }
+
+// ============================================================================
+// XMLTV Source Channel Display (Story 3-10)
+// ============================================================================
+
+/** XMLTV channel with mapping info for Sources view */
+export interface XmltvSourceChannel {
+  id: number;
+  sourceId: number;
+  channelId: string;
+  displayName: string;
+  icon: string | null;
+  isSynthetic: boolean;
+  /** Whether channel is in the Plex lineup */
+  isEnabled: boolean;
+  /** Number of Xtream streams mapped to this channel */
+  matchCount: number;
+}
+
+/**
+ * Get all XMLTV channels for a specific source.
+ *
+ * Story 3-10: AC #2 - Get channels for source
+ *
+ * Returns channels with enabled status and match counts for display
+ * in the Sources view accordion.
+ *
+ * @param sourceId - Source ID to get channels for
+ * @returns List of XMLTV channels for the source
+ */
+export async function getXmltvChannelsForSource(sourceId: number): Promise<XmltvSourceChannel[]> {
+  return invoke<XmltvSourceChannel[]>('get_xmltv_channels_for_source', { sourceId });
+}
