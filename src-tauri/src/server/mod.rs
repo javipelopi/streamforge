@@ -1,5 +1,6 @@
 pub mod epg;
 pub mod handlers;
+pub mod hdhr;
 pub mod m3u;
 pub mod routes;
 pub mod state;

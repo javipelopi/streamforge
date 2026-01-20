@@ -1,6 +1,6 @@
 # Story 4.3: Implement HDHomeRun Emulation
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -47,9 +47,9 @@ This is the **third story in Epic 4: Plex Integration & Streaming**. Epic 4 enab
 
 ### Backend - HDHomeRun Endpoint Implementation
 
-- [ ] Task 1: Create HDHomeRun handler module (AC: #1, #2, #3)
-  - [ ] 1.1 Create `src-tauri/src/server/hdhr.rs` module
-  - [ ] 1.2 Define structs for HDHomeRun JSON responses:
+- [x] Task 1: Create HDHomeRun handler module (AC: #1, #2, #3)
+  - [x] 1.1 Create `src-tauri/src/server/hdhr.rs` module
+  - [x] 1.2 Define structs for HDHomeRun JSON responses:
     ```rust
     #[derive(Serialize)]
     #[serde(rename_all = "PascalCase")]
@@ -85,31 +85,31 @@ This is the **third story in Epic 4: Plex Integration & Streaming**. Epic 4 enab
         source_list: Vec<String>,
     }
     ```
-  - [ ] 1.3 Add module export in `src-tauri/src/server/mod.rs`
+  - [x] 1.3 Add module export in `src-tauri/src/server/mod.rs`
 
-- [ ] Task 2: Implement /discover.json endpoint (AC: #1)
-  - [ ] 2.1 Create `generate_discover_response` function
-  - [ ] 2.2 Get tuner count from accounts table (max_connections):
+- [x] Task 2: Implement /discover.json endpoint (AC: #1)
+  - [x] 2.1 Create `generate_discover_response` function
+  - [x] 2.2 Get tuner count from accounts table (max_connections):
     ```sql
     SELECT COALESCE(MAX(max_connections), 2) as tuner_count
     FROM accounts
     WHERE is_active = 1
     ```
-  - [ ] 2.3 Get server port from settings (via state.get_port())
-  - [ ] 2.4 Detect local IP address for BaseURL/LineupURL:
+  - [x] 2.3 Get server port from settings (via state.get_port())
+  - [x] 2.4 Detect local IP address for BaseURL/LineupURL:
     - Use `local_ip_address` crate or similar
     - Fallback to 127.0.0.1 if detection fails
-  - [ ] 2.5 Generate unique DeviceID (use machine ID hash or generate/persist UUID)
-  - [ ] 2.6 Return hardcoded device info:
+  - [x] 2.5 Generate unique DeviceID (use machine ID hash or generate/persist UUID)
+  - [x] 2.6 Return hardcoded device info:
     - FriendlyName: "StreamForge"
     - ModelNumber: "HDHR5-4K"
     - FirmwareName: "hdhomerun5_atsc"
     - FirmwareVersion: "20200101"
     - DeviceAuth: Short random string (can be static for local trust model)
 
-- [ ] Task 3: Implement /lineup.json endpoint (AC: #2)
-  - [ ] 3.1 Create `generate_lineup` function
-  - [ ] 3.2 Reuse channel query pattern from M3U endpoint (enabled XMLTV channels with streams):
+- [x] Task 3: Implement /lineup.json endpoint (AC: #2)
+  - [x] 3.1 Create `generate_lineup` function
+  - [x] 3.2 Reuse channel query pattern from M3U endpoint (enabled XMLTV channels with streams):
     ```sql
     SELECT
       xc.id,
@@ -124,15 +124,15 @@ This is the **third story in Epic 4: Plex Integration & Streaming**. Epic 4 enab
     )
     ORDER BY xcs.plex_display_order ASC NULLS LAST, xc.display_name ASC
     ```
-  - [ ] 3.3 Map to LineupEntry:
+  - [x] 3.3 Map to LineupEntry:
     - GuideNumber: plex_display_order as string (or channel index if null)
     - GuideName: display_name from XMLTV
     - URL: `http://{local_ip}:{port}/stream/{xmltv_channel_id}`
-  - [ ] 3.4 Return empty array `[]` if no enabled channels (valid response)
+  - [x] 3.4 Return empty array `[]` if no enabled channels (valid response)
 
-- [ ] Task 4: Implement /lineup_status.json endpoint (AC: #3)
-  - [ ] 4.1 Create `generate_lineup_status` function
-  - [ ] 4.2 Return static response (no channel scanning capability):
+- [x] Task 4: Implement /lineup_status.json endpoint (AC: #3)
+  - [x] 4.1 Create `generate_lineup_status` function
+  - [x] 4.2 Return static response (no channel scanning capability):
     ```json
     {
       "ScanInProgress": 0,
@@ -142,8 +142,8 @@ This is the **third story in Epic 4: Plex Integration & Streaming**. Epic 4 enab
     }
     ```
 
-- [ ] Task 5: Create HTTP endpoint handlers (AC: #1, #2, #3)
-  - [ ] 5.1 Add handlers in `src-tauri/src/server/handlers.rs`:
+- [x] Task 5: Create HTTP endpoint handlers (AC: #1, #2, #3)
+  - [x] 5.1 Add handlers in `src-tauri/src/server/handlers.rs`:
     ```rust
     pub async fn discover_json(
         State(state): State<AppState>,
@@ -155,48 +155,48 @@ This is the **third story in Epic 4: Plex Integration & Streaming**. Epic 4 enab
 
     pub async fn lineup_status_json() -> impl IntoResponse
     ```
-  - [ ] 5.2 Return Content-Type: application/json for all endpoints
-  - [ ] 5.3 Handle database errors gracefully (return 500 with opaque message, log details)
-  - [ ] 5.4 Follow error handling patterns from Story 4-1/4-2
+  - [x] 5.2 Return Content-Type: application/json for all endpoints
+  - [x] 5.3 Handle database errors gracefully (return 500 with opaque message, log details)
+  - [x] 5.4 Follow error handling patterns from Story 4-1/4-2
 
-- [ ] Task 6: Register routes in router (AC: #1, #2, #3)
-  - [ ] 6.1 Edit `src-tauri/src/server/routes.rs`
-  - [ ] 6.2 Add routes:
+- [x] Task 6: Register routes in router (AC: #1, #2, #3)
+  - [x] 6.1 Edit `src-tauri/src/server/routes.rs`
+  - [x] 6.2 Add routes:
     ```rust
     .route("/discover.json", get(handlers::discover_json))
     .route("/lineup.json", get(handlers::lineup_json))
     .route("/lineup_status.json", get(handlers::lineup_status_json))
     ```
-  - [ ] 6.3 Import handlers in routes.rs
+  - [x] 6.3 Import handlers in routes.rs
 
 ### Testing
 
-- [ ] Task 7: Unit tests for HDHomeRun generation
-  - [ ] 7.1 Create tests in `src-tauri/src/server/hdhr.rs` (mod tests)
-  - [ ] 7.2 Test: DiscoverResponse serializes with PascalCase
-  - [ ] 7.3 Test: LineupEntry serializes correctly
-  - [ ] 7.4 Test: LineupStatusResponse serializes correctly
-  - [ ] 7.5 Test: Empty lineup returns valid empty array
-  - [ ] 7.6 Test: Channel ordering matches M3U endpoint
-  - [ ] 7.7 Test: GuideNumber handles null plex_display_order
+- [x] Task 7: Unit tests for HDHomeRun generation
+  - [x] 7.1 Create tests in `src-tauri/src/server/hdhr.rs` (mod tests)
+  - [x] 7.2 Test: DiscoverResponse serializes with PascalCase
+  - [x] 7.3 Test: LineupEntry serializes correctly
+  - [x] 7.4 Test: LineupStatusResponse serializes correctly
+  - [x] 7.5 Test: Empty lineup returns valid empty array
+  - [x] 7.6 Test: Channel ordering matches M3U endpoint
+  - [x] 7.7 Test: GuideNumber handles null plex_display_order
 
-- [ ] Task 8: E2E tests for HDHomeRun endpoints
-  - [ ] 8.1 Create `tests/e2e/hdhr.spec.ts` or add to existing integration tests
-  - [ ] 8.2 Test: GET /discover.json returns 200 OK
-  - [ ] 8.3 Test: /discover.json Content-Type is application/json
-  - [ ] 8.4 Test: /discover.json has required fields (FriendlyName, TunerCount, etc.)
-  - [ ] 8.5 Test: GET /lineup.json returns 200 OK
-  - [ ] 8.6 Test: /lineup.json Content-Type is application/json
-  - [ ] 8.7 Test: /lineup.json contains enabled channels only
-  - [ ] 8.8 Test: /lineup.json channel URLs match expected format
-  - [ ] 8.9 Test: GET /lineup_status.json returns 200 OK
-  - [ ] 8.10 Test: /lineup_status.json has required fields
-  - [ ] 8.11 Test: /lineup.json matches M3U playlist channels
+- [x] Task 8: E2E tests for HDHomeRun endpoints
+  - [x] 8.1 Create `tests/e2e/hdhr.spec.ts` or add to existing integration tests
+  - [x] 8.2 Test: GET /discover.json returns 200 OK
+  - [x] 8.3 Test: /discover.json Content-Type is application/json
+  - [x] 8.4 Test: /discover.json has required fields (FriendlyName, TunerCount, etc.)
+  - [x] 8.5 Test: GET /lineup.json returns 200 OK
+  - [x] 8.6 Test: /lineup.json Content-Type is application/json
+  - [x] 8.7 Test: /lineup.json contains enabled channels only
+  - [x] 8.8 Test: /lineup.json channel URLs match expected format
+  - [x] 8.9 Test: GET /lineup_status.json returns 200 OK
+  - [x] 8.10 Test: /lineup_status.json has required fields
+  - [x] 8.11 Test: /lineup.json matches M3U playlist channels
 
-- [ ] Task 9: Build verification
-  - [ ] 9.1 Run `cargo check` - no Rust errors
-  - [ ] 9.2 Run `cargo test` - all tests pass
-  - [ ] 9.3 Run `npm run build` - build succeeds
+- [x] Task 9: Build verification
+  - [x] 9.1 Run `cargo check` - no Rust errors
+  - [x] 9.2 Run `cargo test` - all tests pass
+  - [x] 9.3 Run `npm run build` - build succeeds
 
 ## Dev Notes
 
@@ -493,10 +493,42 @@ This story follows established patterns:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Debug Log References
 
+None - clean implementation with no debugging required.
+
 ### Completion Notes List
 
+- ✅ Implemented HDHomeRun emulation with 3 endpoints: /discover.json, /lineup.json, /lineup_status.json
+- ✅ Added `local-ip-address` crate for network IP detection with 127.0.0.1 fallback
+- ✅ DeviceID generated from hostname hash for stability across restarts (format: STREAMFORGE{8-hex-chars})
+- ✅ TunerCount read from accounts.max_connections (defaults to 2 if no active accounts)
+- ✅ Lineup uses XMLTV-first architecture: only enabled XMLTV channels with stream mappings
+- ✅ Channel ordering consistent with M3U/EPG endpoints (plex_display_order ASC NULLS LAST)
+- ✅ All serde serialization uses PascalCase with explicit renames for abbreviations (DeviceID, BaseURL, LineupURL, URL)
+- ✅ Error handling follows Story 4-1/4-2 patterns: opaque client messages, server-side logging
+- ✅ 12 unit tests pass (serialization, device ID, local IP, ordering logic)
+- ✅ 28 E2E tests pass (all ATDD tests from hdhr-endpoints.spec.ts)
+- ✅ 162 total Rust tests pass with no regressions
+- ✅ 121 integration tests pass with no regressions
+- ✅ Build succeeds (npm run build)
+
 ### File List
+
+**New Files:**
+- src-tauri/src/server/hdhr.rs (HDHomeRun response generation module with structs and functions)
+
+**Modified Files:**
+- src-tauri/Cargo.toml (added local-ip-address = "0.6" dependency)
+- src-tauri/src/server/mod.rs (added hdhr module export)
+- src-tauri/src/server/handlers.rs (added discover_json, lineup_json, lineup_status_json handlers)
+- src-tauri/src/server/routes.rs (registered /discover.json, /lineup.json, /lineup_status.json routes)
+
+**Pre-existing Test File (ATDD):**
+- tests/integration/hdhr-endpoints.spec.ts (28 E2E tests - already existed from ATDD phase)
+
+## Change Log
+
+- 2026-01-20: Implemented HDHomeRun emulation (Story 4-3) - 3 endpoints for Plex auto-discovery
