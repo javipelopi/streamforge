@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "iptv",
+  "productName": "StreamForge",
   "version": "0.1.0",
-  "identifier": "com.iptv.app",
+  "identifier": "com.streamforge.app",
   "build": {
     "beforeDevCommand": "pnpm dev:vite",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "IPTV Plex Integration",
+        "title": "StreamForge",
         "width": 1200,
         "height": 800,
         "resizable": true,
@@ -28,11 +28,25 @@
     "active": true,
     "targets": "all",
     "icon": [
+      "icons/16x16.png",
+      "icons/24x24.png",
       "icons/32x32.png",
+      "icons/48x48.png",
+      "icons/64x64.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
+      "icons/512x512.png",
+      "icons/icon-1024.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "resources": [
+      "icons/tray-icon.png",
+      "icons/tray-icon@2x.png",
+      "icons/tray-icon-16.png",
+      "icons/tray-icon-24.png",
+      "icons/tray-iconTemplate.png",
+      "icons/tray-iconTemplate@2x.png"
     ]
   }
 }

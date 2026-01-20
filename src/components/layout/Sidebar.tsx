@@ -89,7 +89,7 @@ export function Sidebar() {
     >
       {/* Logo/Title */}
       <div className="p-4 border-b border-gray-800 flex items-center justify-between">
-        {sidebarOpen && <h1 className="text-xl font-bold">iptv</h1>}
+        {sidebarOpen && <h1 className="text-xl font-bold">StreamForge</h1>}
         <button
           data-testid="sidebar-toggle"
           onClick={toggleSidebar}

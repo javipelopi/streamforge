@@ -42,7 +42,7 @@ static MULTI_SPACE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").
 /// # Examples
 ///
 /// ```
-/// use iptv_lib::matcher::normalize_channel_name;
+/// use streamforge_lib::matcher::normalize_channel_name;
 ///
 /// assert_eq!(normalize_channel_name("ESPN HD"), "espn");
 /// assert_eq!(normalize_channel_name("ESPN FHD"), "espn");

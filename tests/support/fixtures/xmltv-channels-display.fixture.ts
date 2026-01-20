@@ -48,7 +48,7 @@ export const test = base.extend<XmltvChannelsDisplayFixtures>({
           };
 
           const mockCommands = {
-            greet: (args) => \`Hello, \${args.name}! Welcome to iptv.\`,
+            greet: (args) => \`Hello, \${args.name}! Welcome to StreamForge.\`,
             get_setting: () => null,
             set_setting: () => undefined,
 

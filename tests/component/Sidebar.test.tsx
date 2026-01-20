@@ -54,7 +54,7 @@ test.describe('Sidebar Component', () => {
 
     // WHEN: Component renders
     // THEN: App logo/title is visible
-    await expect(component.getByText('iptv')).toBeVisible();
+    await expect(component.getByText('StreamForge')).toBeVisible();
   });
 
   test('should render navigation items with icons', async ({ mount }) => {
