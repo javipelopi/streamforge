@@ -5,13 +5,13 @@
  * Displays a single channel with badges for lineup status and match count.
  * Includes action menu for add/remove from lineup.
  */
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import * as Popover from '@radix-ui/react-popover';
 import { MoreVertical, AlertTriangle, Radio } from 'lucide-react';
 import { toggleXmltvChannel, type XmltvSourceChannel } from '../../lib/tauri';
-
-// Toast notification duration in milliseconds
-const TOAST_DURATION_MS = 3000;
+import { XmltvLinkStreamsDialog } from './XmltvLinkStreamsDialog';
+import { TOAST_DURATION_MS } from '../../lib/constants';
 
 interface XmltvSourceChannelRowProps {
   channel: XmltvSourceChannel;
@@ -21,23 +21,39 @@ interface XmltvSourceChannelRowProps {
 export function XmltvSourceChannelRow({ channel, sourceId }: XmltvSourceChannelRowProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [iconError, setIconError] = useState(false);
+  const [showLinkDialog, setShowLinkDialog] = useState(false);
   const [toast, setToast] = useState<{ show: boolean; message: string; type: 'success' | 'error' }>({
     show: false,
     message: '',
     type: 'success',
   });
   const queryClient = useQueryClient();
-  const menuRef = useRef<HTMLDivElement>(null);
+  // Store toast timeout to prevent memory leak
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Handle icon load error - show fallback
   const handleIconError = useCallback(() => {
     setIconError(true);
   }, []);
 
-  // Show toast notification
+  // Show toast notification - clears previous timeout to prevent memory leak
   const showToast = useCallback((message: string, type: 'success' | 'error') => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
     setToast({ show: true, message, type });
-    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), TOAST_DURATION_MS);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast({ show: false, message: '', type: 'success' });
+    }, TOAST_DURATION_MS);
+  }, []);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
   }, []);
 
   // State to track if we're adding or removing for the toast message
@@ -84,24 +100,9 @@ export function XmltvSourceChannelRow({ channel, sourceId }: XmltvSourceChannelR
   };
 
   const handleViewStreams = () => {
-    // TODO: Open modal or navigate to stream detail view
-    console.log('View streams for channel:', channel.id);
     setMenuOpen(false);
+    setShowLinkDialog(true);
   };
-
-  // Close menu when clicking outside
-  useEffect(() => {
-    if (!menuOpen) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [menuOpen]);
 
   return (
     <div
@@ -116,7 +117,7 @@ export function XmltvSourceChannelRow({ channel, sourceId }: XmltvSourceChannelR
             data-testid={`xmltv-channel-icon-${channel.id}`}
             src={channel.icon}
             alt=""
-            className="w-8 h-8 rounded object-cover flex-shrink-0"
+            className="w-8 h-8 rounded object-contain flex-shrink-0"
             onError={handleIconError}
           />
         ) : (
@@ -180,25 +181,24 @@ export function XmltvSourceChannelRow({ channel, sourceId }: XmltvSourceChannelR
       </div>
 
       {/* Action Menu */}
-      <div ref={menuRef} className="relative ml-2">
-        <button
-          data-testid={`xmltv-channel-actions-${channel.id}`}
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setMenuOpen(!menuOpen);
-          }}
-          className="p-1 rounded hover:bg-gray-200 transition-colors"
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-        >
-          <MoreVertical className="w-4 h-4 text-gray-500" />
-        </button>
+      <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
+        <Popover.Trigger asChild>
+          <button
+            data-testid={`xmltv-channel-actions-${channel.id}`}
+            type="button"
+            onClick={(e) => e.stopPropagation()}
+            className="p-1 rounded hover:bg-gray-200 transition-colors ml-2"
+            aria-haspopup="menu"
+          >
+            <MoreVertical className="w-4 h-4 text-gray-500" />
+          </button>
+        </Popover.Trigger>
 
-        {/* Dropdown Menu */}
-        {menuOpen && (
-          <div
-            className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border z-10"
+        <Popover.Portal>
+          <Popover.Content
+            align="end"
+            sideOffset={4}
+            className="w-48 bg-white rounded-md shadow-lg border z-50"
             role="menu"
           >
             {channel.isEnabled ? (
@@ -209,7 +209,7 @@ export function XmltvSourceChannelRow({ channel, sourceId }: XmltvSourceChannelR
                   e.stopPropagation();
                   handleRemoveFromLineup();
                 }}
-                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-t-md"
                 role="menuitem"
                 disabled={toggleMutation.isPending}
               >
@@ -223,7 +223,7 @@ export function XmltvSourceChannelRow({ channel, sourceId }: XmltvSourceChannelR
                   e.stopPropagation();
                   handleAddToLineup();
                 }}
-                className={`w-full text-left px-4 py-2 text-sm ${
+                className={`w-full text-left px-4 py-2 text-sm rounded-t-md ${
                   channel.matchCount === 0
                     ? 'text-gray-400 cursor-not-allowed'
                     : 'text-gray-700 hover:bg-gray-100'
@@ -242,14 +242,14 @@ export function XmltvSourceChannelRow({ channel, sourceId }: XmltvSourceChannelR
                 e.stopPropagation();
                 handleViewStreams();
               }}
-              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 border-t"
+              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 border-t rounded-b-md"
               role="menuitem"
             >
-              View Matched Streams
+              Matched Streams
             </button>
-          </div>
-        )}
-      </div>
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
 
       {/* Toast notification */}
       {toast.show && (
@@ -262,6 +262,15 @@ export function XmltvSourceChannelRow({ channel, sourceId }: XmltvSourceChannelR
         >
           {toast.message}
         </div>
+      )}
+
+      {/* Link Streams Dialog */}
+      {showLinkDialog && (
+        <XmltvLinkStreamsDialog
+          channel={channel}
+          sourceId={sourceId}
+          onClose={() => setShowLinkDialog(false)}
+        />
       )}
     </div>
   );

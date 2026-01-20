@@ -6,15 +6,20 @@
  * Lazy-loads streams only when expanded.
  * Shows stream counts and orphan counts in header.
  */
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Search, X } from 'lucide-react';
 import {
   getXtreamStreamsForAccount,
   getAccountStreamStats,
   type Account,
 } from '../../lib/tauri';
 import { XtreamStreamRow } from './XtreamStreamRow';
+import {
+  PaginationControls,
+  PAGE_SIZE_OPTIONS,
+  type PageSize,
+} from '../ui/PaginationControls';
 
 interface XtreamAccountAccordionProps {
   account: Account;
@@ -22,6 +27,9 @@ interface XtreamAccountAccordionProps {
 
 export function XtreamAccountAccordion({ account }: XtreamAccountAccordionProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(PAGE_SIZE_OPTIONS[1]); // Default: 50
+  const [searchQuery, setSearchQuery] = useState('');
   const contentId = `xtream-account-streams-${account.id}`;
   const queryClient = useQueryClient();
 
@@ -49,6 +57,29 @@ export function XtreamAccountAccordion({ account }: XtreamAccountAccordionProps)
     enabled: isExpanded,
     staleTime: 30000, // 30 seconds
   });
+
+  // Filter streams based on search query
+  const filteredStreams = useMemo(() => {
+    if (!searchQuery.trim()) return streams;
+    const query = searchQuery.toLowerCase();
+    return streams.filter(
+      (stream) =>
+        stream.name.toLowerCase().includes(query) ||
+        (stream.categoryName && stream.categoryName.toLowerCase().includes(query))
+    );
+  }, [streams, searchQuery]);
+
+  // Paginate filtered streams
+  const paginatedStreams = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredStreams.slice(startIndex, startIndex + pageSize);
+  }, [filteredStreams, currentPage, pageSize]);
+
+  // Reset to page 1 when search changes
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setCurrentPage(1);
+  };
 
   const toggleExpanded = () => {
     setIsExpanded(!isExpanded);
@@ -161,18 +192,65 @@ export function XtreamAccountAccordion({ account }: XtreamAccountAccordionProps)
             </div>
           )}
 
-          {/* Streams list */}
+          {/* Streams list with search and pagination */}
           {!streamsLoading && !streamsError && streams.length > 0 && (
-            <div className="divide-y divide-gray-100">
-              {streams.map((stream) => (
-                <XtreamStreamRow
-                  key={stream.id}
-                  stream={stream}
-                  accountId={account.id}
-                  onUpdate={handleStreamUpdate}
-                />
-              ))}
-            </div>
+            <>
+              {/* Search input */}
+              <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search streams..."
+                    value={searchQuery}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    className="w-full pl-10 pr-8 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => handleSearchChange('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <PaginationControls
+                currentPage={currentPage}
+                pageSize={pageSize}
+                totalItems={filteredStreams.length}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={setPageSize}
+              />
+
+              {/* No search results */}
+              {filteredStreams.length === 0 && searchQuery && (
+                <div className="p-4 text-center text-gray-500">
+                  No streams match "{searchQuery}"
+                </div>
+              )}
+
+              {/* Stream rows */}
+              {filteredStreams.length > 0 && (
+                <div className="divide-y divide-gray-100">
+                  {paginatedStreams.map((stream) => (
+                    <XtreamStreamRow
+                      key={stream.id}
+                      stream={stream}
+                      accountId={account.id}
+                      onUpdate={handleStreamUpdate}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
           {/* Empty streams */}

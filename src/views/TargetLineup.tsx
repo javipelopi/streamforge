@@ -3,7 +3,7 @@
  * Story 3-9: Implement Target Lineup View
  *
  * Displays the list of ENABLED channels for the Plex lineup.
- * Users can reorder channels via drag-drop and toggle enabled state.
+ * Users can reorder channels via position input and toggle enabled state.
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -26,10 +26,6 @@ export function TargetLineup() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const parentRef = useRef<HTMLDivElement>(null);
-
-  // State for drag-drop
-  const [draggedId, setDraggedId] = useState<number | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<number | null>(null);
 
   // State for undo toast
   const [undoToast, setUndoToast] = useState<{
@@ -61,15 +57,36 @@ export function TargetLineup() {
   // Filter out temporarily removed channels for display
   const displayChannels = channels.filter((c) => !removedChannels.has(c.id));
 
-  // Mutation for updating channel order
+  // Mutation for updating channel order with optimistic update
   const updateOrderMutation = useMutation({
     mutationFn: (channelIds: number[]) => updateChannelOrder(channelIds),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['targetLineupChannels'] });
+    onMutate: async (newOrder: number[]) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['targetLineupChannels'] });
+
+      // Snapshot the previous value
+      const previousChannels = queryClient.getQueryData<TargetLineupChannel[]>(['targetLineupChannels']);
+
+      // Optimistically update to the new order
+      if (previousChannels) {
+        const channelMap = new Map(previousChannels.map((c) => [c.id, c]));
+        const newChannels = newOrder
+          .map((id) => channelMap.get(id))
+          .filter((c): c is TargetLineupChannel => c !== undefined);
+        queryClient.setQueryData(['targetLineupChannels'], newChannels);
+      }
+
+      return { previousChannels };
     },
-    onError: (error) => {
+    onError: (error, _newOrder, context) => {
       console.error('Failed to update channel order:', error);
-      // Revert optimistic update by refetching
+      // Revert to previous state on error
+      if (context?.previousChannels) {
+        queryClient.setQueryData(['targetLineupChannels'], context.previousChannels);
+      }
+    },
+    onSettled: () => {
+      // Refetch to ensure server state consistency
       queryClient.invalidateQueries({ queryKey: ['targetLineupChannels'] });
     },
   });
@@ -96,60 +113,44 @@ export function TargetLineup() {
     overscan: 5,
   });
 
-  // Drag handlers
-  const handleDragStart = useCallback((channelId: number) => {
-    setDraggedId(channelId);
-  }, []);
-
-  const handleDragOver = useCallback((channelId: number) => {
-    setDropTargetId(channelId);
-  }, []);
-
-  const handleDragEnd = useCallback(() => {
-    setDraggedId(null);
-    setDropTargetId(null);
-  }, []);
-
-  const handleDrop = useCallback(
-    (targetChannelId: number) => {
-      if (draggedId === null || draggedId === targetChannelId) {
-        handleDragEnd();
-        return;
-      }
-
+  // Handle moving a channel to a new position
+  const handleMoveToPosition = useCallback(
+    (channelId: number, newPosition: number) => {
       // Validate displayChannels is not empty
       if (displayChannels.length === 0) {
-        handleDragEnd();
         return;
       }
 
-      // Find indices
-      const sourceIndex = displayChannels.findIndex((c) => c.id === draggedId);
-      const targetIndex = displayChannels.findIndex((c) => c.id === targetChannelId);
+      // Convert 1-indexed position to 0-indexed
+      const targetIndex = newPosition - 1;
 
-      if (sourceIndex === -1 || targetIndex === -1) {
-        handleDragEnd();
+      // Find current index
+      const currentIndex = displayChannels.findIndex((c) => c.id === channelId);
+
+      if (currentIndex === -1) {
         return;
       }
 
-      // Additional validation: ensure indices are within bounds
-      if (sourceIndex >= displayChannels.length || targetIndex >= displayChannels.length) {
-        handleDragEnd();
+      // Validate target index
+      if (targetIndex < 0 || targetIndex >= displayChannels.length) {
         return;
       }
 
-      // Reorder channels
+      // No change needed if same position
+      if (currentIndex === targetIndex) {
+        return;
+      }
+
+      // Reorder: remove from current position, insert at new position
       const newOrder = [...displayChannels];
-      const [removed] = newOrder.splice(sourceIndex, 1);
+      const [removed] = newOrder.splice(currentIndex, 1);
       newOrder.splice(targetIndex, 0, removed);
 
       // Update order in backend
       const channelIds = newOrder.map((c) => c.id);
       updateOrderMutation.mutate(channelIds);
-
-      handleDragEnd();
     },
-    [draggedId, displayChannels, updateOrderMutation, handleDragEnd]
+    [displayChannels, updateOrderMutation]
   );
 
   // Toggle handler with optimistic UI and undo
@@ -365,17 +366,25 @@ export function TargetLineup() {
                   key={channel.id}
                   channel={channel}
                   virtualItem={virtualItem}
-                  isDragging={draggedId === channel.id}
-                  isDropTarget={dropTargetId === channel.id}
-                  onDragStart={handleDragStart}
-                  onDragOver={handleDragOver}
-                  onDragEnd={handleDragEnd}
-                  onDrop={handleDrop}
+                  totalChannels={displayChannels.length}
+                  onMoveToPosition={handleMoveToPosition}
                   onToggleEnabled={() => handleToggleEnabled(channel)}
                 />
               );
             })}
           </div>
+        </div>
+
+        {/* Helper text */}
+        <div className="mt-3 text-center text-sm text-gray-500">
+          Looking to add more channels?{' '}
+          <button
+            type="button"
+            onClick={() => navigate(ROUTES.SOURCES)}
+            className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+          >
+            Browse Sources
+          </button>
         </div>
 
         {/* Undo Toast */}

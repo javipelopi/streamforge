@@ -420,6 +420,16 @@ impl NewChannelMapping {
             stream_priority: 0,
         }
     }
+
+    pub fn with_primary(mut self, is_primary: bool) -> Self {
+        self.is_primary = if is_primary { 1 } else { 0 };
+        self
+    }
+
+    pub fn with_priority(mut self, priority: i32) -> Self {
+        self.stream_priority = priority;
+        self
+    }
 }
 
 // ============================================================================
@@ -465,6 +475,11 @@ impl NewXmltvChannelSettings {
 
     pub fn enabled(xmltv_channel_id: i32) -> Self {
         Self::new(xmltv_channel_id, true)
+    }
+
+    pub fn with_display_order(mut self, order: i32) -> Self {
+        self.plex_display_order = Some(order);
+        self
     }
 }
 
