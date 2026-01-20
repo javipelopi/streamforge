@@ -1324,3 +1324,37 @@ export function getLinkStatusLabel(status: LinkStatus): string {
       return 'Unknown';
   }
 }
+
+// ============================================================================
+// Plex Configuration (Story 4-6)
+// ============================================================================
+
+/** Plex configuration response type */
+export interface PlexConfig {
+  /** Whether the HTTP server is running and accepting connections */
+  server_running: boolean;
+  /** Local network IP address */
+  local_ip: string;
+  /** Server port (default 5004) */
+  port: number;
+  /** M3U Playlist URL for Plex tuner configuration */
+  m3u_url: string;
+  /** EPG/XMLTV URL for Plex guide data */
+  epg_url: string;
+  /** HDHomeRun base URL for manual tuner setup */
+  hdhr_url: string;
+  /** Maximum concurrent streams (tuner count) from active accounts */
+  tuner_count: number;
+}
+
+/**
+ * Get Plex configuration URLs for display in Dashboard
+ *
+ * Story 4-6: Display Plex Configuration URLs
+ *
+ * Returns all URLs needed to configure Plex tuner plus server status.
+ * @returns PlexConfig with URLs and server status
+ */
+export async function getPlexConfig(): Promise<PlexConfig> {
+  return invoke<PlexConfig>('get_plex_config');
+}
