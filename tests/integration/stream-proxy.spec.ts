@@ -8,12 +8,55 @@ import { test, expect } from '@playwright/test';
  * Xtream providers and serves them to Plex with automatic quality selection.
  * Uses XMLTV-first architecture where stream requests use XMLTV channel IDs.
  *
- * RED PHASE: These tests will FAIL until the stream proxy is implemented.
+ * REQUIREMENTS:
+ * - Tests must be run with TAURI_DEV=true and IPTV_TEST_MODE=1
+ * - Test data is seeded via POST /test/seed?clear=true endpoint
+ *
+ * Test Data Configuration (seeded by /test/seed):
+ * - Channel 1: Enabled with primary mapping to active account
+ * - Channel 2: Disabled (is_enabled = 0)
+ * - Channel 3: Enabled but NO primary mapping (is_primary = 0)
+ * - Channel 4: Enabled with 4K quality stream
+ * - Channel 5: Enabled with HD quality only (no 4K)
+ * - Channel 6: Enabled with SD quality only
+ * - Channel 7: Enabled with NULL qualities
+ * - Channel 8: Enabled with FHD quality
+ * - Channel 9: Enabled but account server unreachable (192.0.2.1:9999)
+ * - Channel 10: Enabled but account is inactive (is_active = 0)
  */
 
+const DEFAULT_PORT = 5004;
+const BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}`;
+
+// Seed test data before all tests
+test.beforeAll(async ({ request }) => {
+  // Seed test data via HTTP endpoint (only works with IPTV_TEST_MODE=1)
+  const seedResponse = await request.post(`${BASE_URL}/test/seed?clear=true`);
+
+  if (seedResponse.status() === 403) {
+    console.warn('Test seeding requires IPTV_TEST_MODE=1 environment variable');
+    throw new Error('IPTV_TEST_MODE=1 must be set to run these tests');
+  }
+
+  if (!seedResponse.ok()) {
+    const body = await seedResponse.text();
+    throw new Error(`Failed to seed test data: ${body}`);
+  }
+
+  const result = await seedResponse.json();
+  console.log(`Test data seeded: ${result.message}`);
+});
+
+// Clean up test data after all tests
+test.afterAll(async ({ request }) => {
+  // Clean up is optional - data will be cleared on next test run
+  const clearResponse = await request.delete(`${BASE_URL}/test/seed`);
+  if (clearResponse.ok()) {
+    console.log('Test data cleared');
+  }
+});
+
 test.describe('Stream Proxy - Basic Functionality', () => {
-  const DEFAULT_PORT = 5004;
-  const BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}`;
 
   test('should respond to GET /stream/{valid_channel_id} with 200 OK', async ({ request }) => {
     // GIVEN: HTTP server is running
@@ -74,9 +117,7 @@ test.describe('Stream Proxy - Basic Functionality', () => {
 });
 
 test.describe('Stream Proxy - Quality Selection', () => {
-  const DEFAULT_PORT = 5004;
-  const BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}`;
-
+  
   test('should select highest available quality (4K over HD over SD)', async ({ request }) => {
     // GIVEN: XMLTV channel has Xtream stream with qualities: ["4K", "HD", "SD"]
     const channelId = 4; // Assumes test data with multiple qualities
@@ -136,9 +177,7 @@ test.describe('Stream Proxy - Quality Selection', () => {
 });
 
 test.describe('Stream Proxy - Connection Limit', () => {
-  const DEFAULT_PORT = 5004;
-  const BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}`;
-
+  
   test('should return 503 when tuner limit reached', async ({ request }) => {
     // GIVEN: Active account has max_connections = 2
     // AND: Two streams are already active
@@ -214,9 +253,7 @@ test.describe('Stream Proxy - Connection Limit', () => {
 });
 
 test.describe('Stream Proxy - Streaming Performance', () => {
-  const DEFAULT_PORT = 5004;
-  const BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}`;
-
+  
   test('should start streaming within 3 seconds (NFR1)', async ({ request }) => {
     // GIVEN: HTTP server is running with valid channel
     const channelId = 1;
@@ -278,9 +315,7 @@ test.describe('Stream Proxy - Streaming Performance', () => {
 });
 
 test.describe('Stream Proxy - Error Handling', () => {
-  const DEFAULT_PORT = 5004;
-  const BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}`;
-
+  
   test('should return 503 when Xtream server is unreachable', async ({ request }) => {
     // GIVEN: XMLTV channel has Xtream mapping
     // AND: Xtream server is down or unreachable
@@ -359,9 +394,7 @@ test.describe('Stream Proxy - Error Handling', () => {
 });
 
 test.describe('Stream Proxy - XMLTV-First Architecture', () => {
-  const DEFAULT_PORT = 5004;
-  const BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}`;
-
+  
   test('should use XMLTV channel ID in stream URL', async ({ request }) => {
     // GIVEN: M3U playlist contains stream URLs
     const m3uResponse = await request.get(`${BASE_URL}/playlist.m3u`);
@@ -409,9 +442,7 @@ test.describe('Stream Proxy - XMLTV-First Architecture', () => {
 });
 
 test.describe('Stream Proxy - URL Format and Parameters', () => {
-  const DEFAULT_PORT = 5004;
-  const BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}`;
-
+  
   test('should construct valid Xtream stream URL', async ({ request }) => {
     // GIVEN: XMLTV channel has Xtream mapping
     // AND: Account has server_url, username, password
@@ -466,9 +497,7 @@ test.describe('Stream Proxy - URL Format and Parameters', () => {
 });
 
 test.describe('Stream Proxy - Password Decryption', () => {
-  const DEFAULT_PORT = 5004;
-  const BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}`;
-
+  
   test('should decrypt account password before streaming', async ({ request }) => {
     // GIVEN: XMLTV channel has Xtream account
     // AND: Account password is encrypted in database
@@ -506,9 +535,7 @@ test.describe('Stream Proxy - Password Decryption', () => {
 });
 
 test.describe('Stream Proxy - Session Tracking', () => {
-  const DEFAULT_PORT = 5004;
-  const BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}`;
-
+  
   test('should create session when stream starts', async ({ request }) => {
     // GIVEN: HTTP server is running
     const channelId = 1;

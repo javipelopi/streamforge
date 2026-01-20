@@ -3,6 +3,7 @@ pub mod channels;
 pub mod epg;
 pub mod logs;
 pub mod matcher;
+pub mod test_data;
 pub mod xmltv_channels;
 pub mod xtream_sources;
 
@@ -20,6 +21,9 @@ pub use channels::{get_channel_count, get_channels, scan_channels};
 
 // Re-export EPG source commands for convenient access
 pub use epg::{add_xmltv_source, delete_xmltv_source, get_xmltv_sources, toggle_xmltv_source, update_xmltv_source};
+
+// Re-export test data commands (only available in test mode)
+pub use test_data::{seed_stream_proxy_test_data, clear_stream_proxy_test_data};
 
 /// Response type for autostart status queries
 #[derive(Serialize)]

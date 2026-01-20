@@ -58,6 +58,16 @@ strsim = "0.11"
 # Local IP detection for HDHomeRun emulation
 local-ip-address = "0.6"
 
+# Platform directories for app data fallback
+dirs = "5"
+
+# Concurrent HashMap for stream session tracking
+dashmap = "6"
+
+# Async stream utilities for stream proxy
+futures-util = "0.3"
+tokio-util = { version = "0.7", features = ["io"] }
+
 # Scheduling
 tokio-cron-scheduler = "0.13"
 uuid = { version = "1.0", features = ["v4"] }

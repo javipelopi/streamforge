@@ -4,8 +4,10 @@ pub mod hdhr;
 pub mod m3u;
 pub mod routes;
 pub mod state;
+pub mod stream;
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 
 use crate::db::DbPool;
 
@@ -48,6 +50,16 @@ pub async fn start_server(state: AppState) -> Result<(), ServerError> {
 }
 
 /// Create AppState from database pool for server initialization
+///
+/// Uses default app data directory. For production, prefer `create_app_state_with_dir`.
 pub fn create_app_state(pool: DbPool) -> AppState {
     AppState::new(pool)
+}
+
+/// Create AppState with explicit app data directory
+///
+/// This is the preferred constructor for production use as it ensures
+/// the stream proxy can properly decrypt credentials stored in keyring/AES.
+pub fn create_app_state_with_dir(pool: DbPool, app_data_dir: PathBuf) -> AppState {
+    AppState::with_app_data_dir(pool, app_data_dir)
 }
