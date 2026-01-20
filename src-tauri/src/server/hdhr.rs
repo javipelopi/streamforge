@@ -127,9 +127,10 @@ pub fn get_local_ip() -> String {
 /// - If Account A has 2 connections and Account B has 3, Plex can use up to 3
 ///   concurrent streams total (limited by the single account constraint)
 pub fn get_tuner_count(conn: &mut DbPooledConnection) -> Result<u32, diesel::result::Error> {
+    // Use max_connections_actual (from API) if available, otherwise fall back to max_connections
     let result = diesel::sql_query(
         r#"
-        SELECT COALESCE(MAX(max_connections), 2) as tuner_count
+        SELECT COALESCE(MAX(COALESCE(max_connections_actual, max_connections)), 2) as tuner_count
         FROM accounts
         WHERE is_active = 1
         "#,
