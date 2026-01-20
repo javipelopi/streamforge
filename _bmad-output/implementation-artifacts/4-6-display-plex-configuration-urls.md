@@ -1,6 +1,6 @@
 # Story 4.6: Display Plex Configuration URLs
 
-Status: review
+Status: done
 
 ## Story
 
@@ -416,6 +416,60 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 N/A - Clean implementation with no blocking issues.
 
+### Code Review Record
+
+**Review Date:** 2026-01-20
+**Reviewer:** Code Review Agent (Adversarial Mode)
+**Review Status:** 8 issues found and fixed
+
+**Issues Found and Fixed:**
+
+1. **[HIGH] Security Issue: Server Health Check Uses Wrong Host** (src-tauri/src/commands/mod.rs:281)
+   - Problem: Health check used hardcoded `127.0.0.1` instead of actual `local_ip`, causing mismatch between displayed URLs and health check target
+   - Fix: Updated `check_server_health()` to accept `local_ip` parameter and use it for health check URL
+   - Impact: Server status now accurately reflects the network IP that users will configure in Plex
+
+2. **[HIGH] Missing Error Context in Health Check** (src-tauri/src/commands/mod.rs:278-287)
+   - Problem: Health check failures were silent with no logging, making debugging impossible
+   - Fix: Added `eprintln!` logging for all health check failures with context
+   - Impact: Developers can now diagnose server connectivity issues
+
+3. **[HIGH] Potential Race Condition in Health Check** (src-tauri/src/commands/mod.rs:228)
+   - Problem: Health check happened AFTER URL construction, risking inconsistent data if server state changed
+   - Fix: Moved health check to execute FIRST before building response
+   - Impact: Ensures data consistency between server status and URLs
+
+4. **[MEDIUM] Overly Aggressive Timeout on Health Check** (src-tauri/src/commands/mod.rs:283)
+   - Problem: No explicit timeout, using default 30s timeout would freeze UI violating NFR5
+   - Fix: Added explicit 2-second timeout using `reqwest::Client::builder().timeout()`
+   - Impact: UI remains responsive even when server is not responding
+
+5. **[MEDIUM] Toast Positioning May Overlap Content** (src/components/dashboard/PlexConfigSection.tsx:292-299)
+   - Problem: Toast used `z-50` which could be overlapped by other UI elements
+   - Fix: Changed to `z-[9999]` and added `pointer-events-none` for proper stacking
+   - Impact: Toast notifications are always visible and don't block interactions
+
+6. **[MEDIUM] Missing TypeScript Strict Null Checks** (src/components/dashboard/PlexConfigSection.tsx:191+)
+   - Problem: No validation of config structure from backend, risking runtime errors on malformed data
+   - Fix: Added comprehensive type guards with `hasValidConfig` check and error state rendering
+   - Impact: Gracefully handles invalid backend responses instead of crashing
+
+7. **[LOW] Added Unit Test for IP Parameter Usage**
+   - Added test `test_check_server_health_uses_provided_ip()` to verify health check uses correct IP
+   - Ensures regression protection for the localhost bug fix
+
+8. **[INFO] Verified reqwest Dependency**
+   - Confirmed `reqwest = { version = "0.12", features = ["json", "stream"] }` in Cargo.toml
+   - No changes needed, dependency already properly configured
+
+**Post-Review Verification:**
+- ✅ `cargo check` passes
+- ✅ `cargo test` - all 24 command tests pass (added 1 new test)
+- ✅ `npx tsc --noEmit` - TypeScript compiles cleanly
+- ✅ No compilation warnings or errors
+
+**Review Outcome:** All HIGH and MEDIUM issues fixed. Story implementation is now production-ready.
+
 ### Completion Notes List
 
 1. **Backend Implementation:**
@@ -448,11 +502,13 @@ N/A - Clean implementation with no blocking issues.
 - `src/components/dashboard/PlexConfigSection.tsx` - Main component with URL display and copy functionality
 
 **Modified:**
-- `src-tauri/src/commands/mod.rs` - Added PlexConfig struct, get_plex_config command, and unit tests
+- `src-tauri/src/commands/mod.rs` - Added PlexConfig struct, get_plex_config command, unit tests, and check_server_health helper (Code Review: Fixed health check to use network IP, added timeout and logging)
 - `src-tauri/src/lib.rs` - Registered get_plex_config command
 - `src/lib/tauri.ts` - Added PlexConfig interface and getPlexConfig function
 - `src/views/Dashboard.tsx` - Integrated PlexConfigSection component
+- `src/components/dashboard/PlexConfigSection.tsx` - (Code Review: Added type guards, improved toast z-index, added validation for malformed data)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` - Updated status to in-progress then dev-complete
+- `_bmad-output/implementation-artifacts/4-6-display-plex-configuration-urls.md` - Added code review record
 
 **Tests (pre-existing ATDD):**
 - `tests/e2e/plex-config-display.spec.ts` - E2E tests for Plex config display

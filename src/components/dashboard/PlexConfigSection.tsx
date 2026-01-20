@@ -188,7 +188,37 @@ export function PlexConfigSection() {
     );
   }
 
+  // Validate config data structure with proper type guards
   const serverRunning = config?.server_running ?? false;
+  const hasValidConfig = config &&
+    typeof config.local_ip === 'string' &&
+    typeof config.port === 'number' &&
+    typeof config.m3u_url === 'string' &&
+    typeof config.epg_url === 'string' &&
+    typeof config.hdhr_url === 'string' &&
+    typeof config.tuner_count === 'number';
+
+  // If config is invalid/malformed, treat as error state
+  if (config && !hasValidConfig) {
+    console.error('Invalid PlexConfig structure received from backend:', config);
+    return (
+      <div
+        data-testid="plex-config-section"
+        className="bg-white rounded-lg shadow p-6"
+      >
+        <h2
+          data-testid="plex-config-title"
+          className="text-lg font-semibold mb-4"
+        >
+          Plex Integration
+        </h2>
+        <div className="bg-red-50 border border-red-200 rounded p-3 text-red-700 text-sm flex items-center gap-2">
+          <AlertCircle className="w-4 h-4" />
+          <span>Invalid configuration data received. Please try reloading.</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -288,11 +318,11 @@ export function PlexConfigSection() {
         </div>
       </div>
 
-      {/* Toast notification */}
+      {/* Toast notification with proper z-index stacking */}
       {toast && (
         <div
           data-testid="toast-notification"
-          className="fixed bottom-4 right-4 bg-gray-900 text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-in fade-in slide-in-from-bottom-2"
+          className="fixed bottom-4 right-4 bg-gray-900 text-white px-4 py-2 rounded-lg shadow-lg z-[9999] animate-in fade-in slide-in-from-bottom-2 pointer-events-none"
         >
           <span data-testid="toast-message">{toast}</span>
         </div>
