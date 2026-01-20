@@ -1,6 +1,6 @@
 # Story 4.5: Automatic Stream Failover
 
-Status: in-progress
+Status: done
 
 ## Story
 

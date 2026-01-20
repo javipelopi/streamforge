@@ -82,7 +82,7 @@ development_status:
   4-2-serve-xmltv-epg-endpoint: done
   4-3-implement-hdhomerun-emulation: done
   4-4-stream-proxy-with-quality-selection: done
-  4-5-automatic-stream-failover: in-progress
+  4-5-automatic-stream-failover: done
   4-6-display-plex-configuration-urls: backlog
   epic-4-retrospective: optional
 
