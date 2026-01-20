@@ -336,7 +336,29 @@ pub async fn stream_proxy(
     Path(channel_id): Path<i32>,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    // Step 1: Get database connection
+    // Step 1: Check connection limit FIRST (before expensive DB/crypto operations)
+    // CODE REVIEW FIX: Moved from Step 4 to Step 1 for performance
+    let stream_manager = state.stream_manager();
+    if !stream_manager.can_start_stream() {
+        eprintln!(
+            "Stream proxy error - tuner limit reached ({}/{}) for channel {}",
+            stream_manager.active_count(),
+            stream_manager.max_connections(),
+            channel_id
+        );
+
+        // Log tuner limit event (requires DB connection)
+        if let Ok(mut conn) = state.get_connection() {
+            log_tuner_limit_event(&mut conn, channel_id);
+        }
+
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Tuner limit reached".to_string(),
+        ));
+    }
+
+    // Step 2: Get database connection
     let mut conn = state.get_connection().map_err(|e| {
         eprintln!("Stream proxy error - database connection failed: {}", e);
         (
@@ -345,7 +367,7 @@ pub async fn stream_proxy(
         )
     })?;
 
-    // Step 2: Look up primary Xtream stream for XMLTV channel
+    // Step 3: Look up primary Xtream stream for XMLTV channel
     let stream_info = get_primary_stream_for_channel(&mut conn, channel_id).map_err(|e| {
         eprintln!(
             "Stream proxy error - channel lookup failed for channel {}: {}",
@@ -354,7 +376,7 @@ pub async fn stream_proxy(
         e
     })?;
 
-    // Step 3: Verify account is active
+    // Step 4: Verify account is active
     if stream_info.account_is_active != 1 {
         eprintln!(
             "Stream proxy error - account {} is inactive for channel {}",
@@ -363,23 +385,6 @@ pub async fn stream_proxy(
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
             "Stream unavailable".to_string(),
-        ));
-    }
-
-    // Step 4: Check connection limit
-    let stream_manager = state.stream_manager();
-    if !stream_manager.can_start_stream() {
-        // Log tuner limit event
-        log_tuner_limit_event(&mut conn, channel_id);
-        eprintln!(
-            "Stream proxy error - tuner limit reached ({}/{}) for channel {}",
-            stream_manager.active_count(),
-            stream_manager.max_connections(),
-            channel_id
-        );
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Tuner limit reached".to_string(),
         ));
     }
 
@@ -430,8 +435,10 @@ pub async fn stream_proxy(
     })?;
 
     // Step 9: Fetch stream from Xtream provider
+    // CODE REVIEW FIX: Added timeout to prevent indefinite connections
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(300)) // 5-minute max stream connection timeout
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         .build()
         .map_err(|e| {
