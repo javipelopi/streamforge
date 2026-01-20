@@ -10,6 +10,7 @@
 //! Security note: All endpoints are bound to 127.0.0.1 only (NFR21).
 
 use dashmap::DashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 use uuid::Uuid;
 
@@ -52,8 +53,8 @@ impl StreamSession {
 pub struct StreamManager {
     /// Active streaming sessions, keyed by session ID
     active_sessions: DashMap<String, StreamSession>,
-    /// Maximum allowed concurrent connections
-    max_connections: u32,
+    /// Maximum allowed concurrent connections (using AtomicU32 for thread-safe updates)
+    max_connections: AtomicU32,
 }
 
 impl StreamManager {
@@ -61,13 +62,13 @@ impl StreamManager {
     pub fn new(max_connections: u32) -> Self {
         Self {
             active_sessions: DashMap::new(),
-            max_connections,
+            max_connections: AtomicU32::new(max_connections),
         }
     }
 
     /// Check if a new stream can be started (connection limit not reached)
     pub fn can_start_stream(&self) -> bool {
-        self.active_sessions.len() < self.max_connections as usize
+        self.active_sessions.len() < self.max_connections.load(Ordering::Relaxed) as usize
     }
 
     /// Start a new streaming session
@@ -95,12 +96,15 @@ impl StreamManager {
 
     /// Get the maximum connection limit
     pub fn max_connections(&self) -> u32 {
-        self.max_connections
+        self.max_connections.load(Ordering::Relaxed)
     }
 
-    /// Update the maximum connection limit
-    pub fn set_max_connections(&mut self, max: u32) {
-        self.max_connections = max;
+    /// Update the maximum connection limit (thread-safe)
+    ///
+    /// This allows updating the connection limit at runtime without requiring
+    /// a mutable reference, making it safe to call from multiple threads.
+    pub fn set_max_connections(&self, max: u32) {
+        self.max_connections.store(max, Ordering::Relaxed);
     }
 }
 
@@ -124,17 +128,30 @@ impl Default for StreamManager {
 pub fn select_best_quality(qualities_json: Option<&str>) -> String {
     let qualities = match qualities_json {
         Some(json) if !json.is_empty() => qualities_from_json(json),
-        _ => return "SD".to_string(),
+        _ => {
+            // CODE REVIEW FIX: Added logging for observability
+            eprintln!("Quality selection - no quality info available, defaulting to SD");
+            return "SD".to_string();
+        }
     };
 
     // Return first matching quality in priority order
     for quality in QUALITY_PRIORITY.iter() {
         if qualities.iter().any(|q| q.eq_ignore_ascii_case(quality)) {
+            // CODE REVIEW FIX: Log selected quality for debugging
+            eprintln!(
+                "Quality selection - selected {} from available qualities: {:?}",
+                quality, qualities
+            );
             return quality.to_string();
         }
     }
 
     // Default to SD if no recognized quality found
+    eprintln!(
+        "Quality selection - no recognized qualities in {:?}, defaulting to SD",
+        qualities
+    );
     "SD".to_string()
 }
 

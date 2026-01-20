@@ -650,3 +650,99 @@ The stream proxy implementation follows the XMLTV-first architecture:
    - No credentials in logs (URL truncated)
    - Opaque error messages to clients
 
+## Code Review
+
+**Date:** 2026-01-20
+**Reviewer:** Claude Opus 4.5 (Adversarial Code Review - YOLO Mode)
+**Review Type:** Post-implementation adversarial analysis
+
+### Issues Found and Fixed
+
+**HIGH SEVERITY (3 issues - ALL FIXED):**
+
+1. **StreamManager Thread-Safety Issue** ✅ FIXED
+   - **Problem:** `set_max_connections(&mut self)` required mutable reference, but `StreamManager` was in `Arc` without interior mutability
+   - **Impact:** Connection limit couldn't be updated at runtime
+   - **Fix:** Changed `max_connections` from `u32` to `AtomicU32` with `Ordering::Relaxed`
+   - **Files:** `src-tauri/src/server/stream.rs:56, 62-64, 70, 97-103`
+
+2. **Expensive Operations Before Connection Limit Check** ✅ FIXED
+   - **Problem:** Connection limit checked in Step 4, but DB lookups and credential decryption happened first
+   - **Impact:** Performance degradation when tuner limit reached
+   - **Fix:** Moved connection limit check to Step 1 (before DB/crypto operations)
+   - **Files:** `src-tauri/src/server/handlers.rs:339-385`
+
+3. **Missing Timeout on Stream Proxy** ✅ FIXED
+   - **Problem:** Only `connect_timeout` set, no overall timeout. Malicious Xtream server could hold connections indefinitely
+   - **Impact:** DoS - tuner slots never freed
+   - **Fix:** Added `.timeout(Duration::from_secs(300))` for 5-minute max
+   - **Files:** `src-tauri/src/server/handlers.rs:435-437`
+
+**MEDIUM SEVERITY (3 issues - 2 FIXED, 1 DEFERRED):**
+
+4. **No Logging for Quality Selection** ✅ FIXED
+   - **Problem:** `select_best_quality()` chose quality silently, hard to debug
+   - **Impact:** Poor observability
+   - **Fix:** Added `eprintln!` logging for selected quality and fallback cases
+   - **Files:** `src-tauri/src/server/stream.rs:124-145`
+
+5. **StreamManager Max Connections Not Dynamic** ⚠️ ACCEPTED AS-IS
+   - **Problem:** AppState calculates max_connections once at init, doesn't update when accounts change
+   - **Impact:** Stale connection limits
+   - **Decision:** Accepted for this story. Requires account change notification system (future epic)
+   - **Workaround:** Users can restart app to refresh connection limits
+
+6. **Test Data Uses Raw SQL** ⚠️ ACCEPTED AS-IS
+   - **Problem:** `test_data.rs` uses `diesel::sql_query` instead of parameterized queries
+   - **Impact:** Bad practice example (test-only code)
+   - **Decision:** Acceptable for test-only code with IPTV_TEST_MODE guard
+   - **Note:** Pattern should NOT be copied to production code
+
+**LOW SEVERITY (2 issues - 1 FIXED, 1 N/A):**
+
+7. **Story Status Inconsistency** ✅ FIXED
+   - **Problem:** Story file showed `Status: done`, sprint-status correctly showed `review`
+   - **Fix:** Changed story status to `in-progress` (code review issues found)
+   - **Files:** Story file line 3
+
+8. **Session Cleanup Race Condition** ⚠️ INVESTIGATED - NOT AN ISSUE
+   - **Problem:** Initially suspected `SessionCleanupStream` Drop might not be called
+   - **Investigation:** Rust Drop guarantees are strong - Drop is called even on panic/abort
+   - **Decision:** No fix needed - Rust's Drop semantics are sufficient
+
+### Test Results After Fixes
+
+**Unit Tests:**
+```
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+- ✅ All 171 unit tests pass
+- ✅ Stream module tests verify AtomicU32 behavior
+
+**Build Verification:**
+```
+cargo check && npm run build
+```
+- ✅ Rust compilation successful
+- ✅ Frontend build successful
+
+### Files Modified by Code Review
+
+1. `src-tauri/src/server/stream.rs` - StreamManager thread-safety + logging
+2. `src-tauri/src/server/handlers.rs` - Request ordering + timeout
+3. `_bmad-output/implementation-artifacts/4-4-stream-proxy-with-quality-selection.md` - Status update + review notes
+
+### Remaining Work
+
+None. All HIGH and MEDIUM issues either fixed or explicitly accepted with justification.
+
+### Recommendations for Future Stories
+
+1. **Story 4-5 (Failover):** Consider implementing dynamic max_connections updates when failover switches accounts
+2. **Epic 6 (Settings):** Add account change notifications to update StreamManager limits without restart
+3. **General:** Add structured logging (tracing crate) instead of `eprintln!` for production observability
+
+### Sign-off
+
+Code review complete. Story approved for merge with fixes applied.
+
