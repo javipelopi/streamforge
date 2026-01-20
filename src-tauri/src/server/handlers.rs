@@ -9,6 +9,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use super::epg;
+use super::hdhr;
 use super::m3u;
 use super::state::AppState;
 
@@ -203,4 +204,97 @@ pub async fn epg_xml(
     );
 
     Ok((StatusCode::OK, response_headers, xml_content))
+}
+
+/// HDHomeRun discovery endpoint handler (Story 4-3)
+///
+/// Returns HDHomeRun-compatible device discovery information:
+/// - FriendlyName: "StreamForge"
+/// - ModelNumber: "HDHR5-4K"
+/// - TunerCount from active Xtream accounts
+/// - BaseURL and LineupURL with local IP and port
+///
+/// Plex uses this to auto-discover the tuner on the network.
+pub async fn discover_json(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let mut conn = state.get_connection().map_err(|e| {
+        eprintln!("HDHR discover error - database connection failed: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server error".to_string(),
+        )
+    })?;
+
+    let port = state.get_port();
+    let response = hdhr::generate_discover_response(&mut conn, port).map_err(|e| {
+        eprintln!("HDHR discover error - generation failed: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server error".to_string(),
+        )
+    })?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+
+    Ok((headers, Json(response)))
+}
+
+/// HDHomeRun lineup endpoint handler (Story 4-3)
+///
+/// Returns channel lineup for HDHomeRun/Plex integration:
+/// - Only enabled XMLTV channels with Xtream stream mappings
+/// - GuideName from XMLTV display_name
+/// - GuideNumber from plex_display_order
+/// - URL pointing to /stream/{xmltv_channel_id}
+///
+/// Lineup is consistent with M3U playlist and EPG endpoints.
+pub async fn lineup_json(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let mut conn = state.get_connection().map_err(|e| {
+        eprintln!("HDHR lineup error - database connection failed: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server error".to_string(),
+        )
+    })?;
+
+    let port = state.get_port();
+    let lineup = hdhr::generate_lineup(&mut conn, port).map_err(|e| {
+        eprintln!("HDHR lineup error - generation failed: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server error".to_string(),
+        )
+    })?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+
+    Ok((headers, Json(lineup)))
+}
+
+/// HDHomeRun lineup status endpoint handler (Story 4-3)
+///
+/// Returns static status indicating no scan in progress.
+/// HDHomeRun protocol requires this endpoint, but StreamForge
+/// doesn't support channel scanning (IPTV sources are pre-configured).
+pub async fn lineup_status_json() -> impl IntoResponse {
+    let status = hdhr::generate_lineup_status();
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+
+    (headers, Json(status))
 }
