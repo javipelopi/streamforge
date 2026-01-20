@@ -1,12 +1,13 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { XmltvChannelsList } from '../components/channels';
+import { DraggableXmltvChannelsList } from '../components/channels/DraggableXmltvChannelsList';
 import {
   getXmltvChannelsWithMappings,
   toggleXmltvChannel,
   setPrimaryStream,
   addManualStreamMapping,
   removeStreamMapping,
+  updateChannelOrder,
   type XmltvChannelWithMappings,
   type XtreamStreamMatch,
 } from '../lib/tauri';
@@ -16,6 +17,7 @@ import {
  *
  * Story 3-2: Display XMLTV Channel List with Match Status
  * Story 3-3: Manual Match Override via Search Dropdown
+ * Story 3-6: Drag-and-Drop Channel Reordering
  *
  * CRITICAL DESIGN PRINCIPLE: XMLTV channels are the PRIMARY channel list for Plex.
  * This view shows XMLTV channels as the primary list, with their matched Xtream streams.
@@ -24,6 +26,8 @@ export function Channels() {
   const queryClient = useQueryClient();
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<'error' | 'success'>('error');
+  // Store previous order for rollback on error
+  const previousOrderRef = useRef<XmltvChannelWithMappings[] | null>(null);
 
   const showToast = useCallback((message: string, type: 'error' | 'success' = 'error') => {
     setToastMessage(message);
@@ -219,6 +223,64 @@ export function Channels() {
     [removeMappingMutation]
   );
 
+  // Reorder mutation (Story 3-6)
+  const reorderMutation = useMutation({
+    mutationFn: (channelIds: number[]) => updateChannelOrder(channelIds),
+    onMutate: async (newChannelIds) => {
+      // Store previous order for potential rollback
+      const previousChannels = queryClient.getQueryData<XmltvChannelWithMappings[]>([
+        'xmltv-channels-with-mappings',
+      ]);
+      previousOrderRef.current = previousChannels || null;
+
+      // Optimistically update to the new order
+      if (previousChannels) {
+        const channelMap = new Map(previousChannels.map((ch) => [ch.id, ch]));
+        const reorderedChannels: XmltvChannelWithMappings[] = [];
+
+        newChannelIds.forEach((id, index) => {
+          const channel = channelMap.get(id);
+          if (channel) {
+            reorderedChannels.push({
+              ...channel,
+              plexDisplayOrder: index as number | null
+            });
+          }
+        });
+
+        queryClient.setQueryData<XmltvChannelWithMappings[]>(
+          ['xmltv-channels-with-mappings'],
+          reorderedChannels
+        );
+      }
+
+      return { previousChannels };
+    },
+    onError: (err, _newChannelIds, context) => {
+      console.error('Failed to reorder channels:', err);
+      // Rollback to previous order
+      if (context?.previousChannels) {
+        queryClient.setQueryData<XmltvChannelWithMappings[]>(
+          ['xmltv-channels-with-mappings'],
+          context.previousChannels
+        );
+      }
+      showToast(`Failed to reorder channels: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+    },
+    onSettled: () => {
+      // Clear the previous order reference
+      previousOrderRef.current = null;
+    },
+  });
+
+  // Handle reorder (Story 3-6)
+  const handleReorder = useCallback(
+    (channelIds: number[]) => {
+      reorderMutation.mutate(channelIds);
+    },
+    [reorderMutation]
+  );
+
   // Calculate stats for header
   const totalChannels = channels.length;
   const enabledChannels = channels.filter((ch) => ch.isEnabled).length;
@@ -286,13 +348,14 @@ export function Channels() {
 
       {/* Main content */}
       <div className="bg-white border border-gray-200 rounded-lg">
-        <XmltvChannelsList
+        <DraggableXmltvChannelsList
           channels={channels}
           isLoading={isLoading}
           onToggleChannel={handleToggleChannel}
           onSetPrimaryStream={handleSetPrimaryStream}
           onAddManualMapping={handleAddManualMapping}
           onRemoveMapping={handleRemoveMapping}
+          onReorder={handleReorder}
         />
       </div>
 

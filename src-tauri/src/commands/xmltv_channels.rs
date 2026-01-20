@@ -194,6 +194,17 @@ pub fn get_xmltv_channels_with_mappings(
         })
         .collect();
 
+    // Story 3-6: Sort by plex_display_order (nulls last), then by display_name as fallback
+    let mut result = result;
+    result.sort_by(|a, b| {
+        match (a.plex_display_order, b.plex_display_order) {
+            (Some(a_order), Some(b_order)) => a_order.cmp(&b_order),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.display_name.cmp(&b.display_name),
+        }
+    });
+
     Ok(result)
 }
 
@@ -720,6 +731,76 @@ pub fn remove_stream_mapping(
         Ok(result)
     })
     .map_err(|e: diesel::result::Error| format!("Failed to remove stream mapping: {}", e))
+}
+
+/// Update the display order of XMLTV channels for Plex lineup.
+/// Story 3-6: Drag-and-Drop Channel Reordering
+///
+/// # Arguments
+///
+/// * `channel_ids` - Array of XMLTV channel IDs in new display order
+///
+/// # Returns
+///
+/// Empty result on success
+#[tauri::command]
+pub fn update_channel_order(
+    db: State<DbConnection>,
+    channel_ids: Vec<i32>,
+) -> Result<(), String> {
+    use crate::db::models::NewXmltvChannelSettings;
+
+    // Validate input - empty array is a no-op
+    if channel_ids.is_empty() {
+        return Ok(());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    conn.transaction::<_, diesel::result::Error, _>(|conn| {
+        for (position, channel_id) in channel_ids.iter().enumerate() {
+            // Check if settings exist for this channel
+            let existing: Option<XmltvChannelSettings> = xmltv_channel_settings::table
+                .filter(xmltv_channel_settings::xmltv_channel_id.eq(channel_id))
+                .first::<XmltvChannelSettings>(conn)
+                .optional()?;
+
+            if existing.is_some() {
+                // Update existing settings
+                diesel::update(
+                    xmltv_channel_settings::table
+                        .filter(xmltv_channel_settings::xmltv_channel_id.eq(channel_id)),
+                )
+                .set((
+                    xmltv_channel_settings::plex_display_order.eq(position as i32),
+                    xmltv_channel_settings::updated_at.eq(chrono::Utc::now().to_rfc3339()),
+                ))
+                .execute(conn)?;
+            } else {
+                // Create new settings record with display order
+                let new_settings = NewXmltvChannelSettings {
+                    xmltv_channel_id: *channel_id,
+                    is_enabled: 0, // Default to disabled
+                    plex_display_order: Some(position as i32),
+                };
+                diesel::insert_into(xmltv_channel_settings::table)
+                    .values(&new_settings)
+                    .execute(conn)?;
+            }
+        }
+        Ok(())
+    })
+    .map_err(|e| format!("Failed to update channel order: {}", e))?;
+
+    // Log the reorder event
+    eprintln!(
+        "[INFO] Channel order updated: {} channels reordered",
+        channel_ids.len()
+    );
+
+    Ok(())
 }
 
 /// Toggle the enabled status of an XMLTV channel.
