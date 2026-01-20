@@ -1,6 +1,7 @@
 /**
  * Sidebar Navigation Component
  * Story 1.3: Create React GUI Shell with Routing
+ * Story 3-9: Updated for Target Lineup navigation
  *
  * Dark-themed sidebar with navigation menu items
  * Supports keyboard shortcuts: Alt+1-6 for navigation, Ctrl+B to toggle
@@ -10,20 +11,20 @@ import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   HomeIcon,
-  VideoIcon,
   CalendarIcon,
   PersonIcon,
   GearIcon,
   FileTextIcon,
   HamburgerMenuIcon,
 } from '@radix-ui/react-icons';
+import { ListChecks } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { NAV_ITEMS } from '../../lib/routes';
 import { getUnreadEventCount } from '../../lib/tauri';
 
 const iconMap: Record<string, ComponentType<{ className?: string }>> = {
   dashboard: HomeIcon,
-  tv: VideoIcon,
+  listChecks: ListChecks,
   calendar: CalendarIcon,
   person: PersonIcon,
   gear: GearIcon,
@@ -109,6 +110,8 @@ export function Sidebar() {
               <li key={item.path}>
                 <NavLink
                   to={item.path}
+                  data-testid={item.testId}
+                  aria-label={item.ariaLabel}
                   className={({ isActive }) =>
                     `flex items-center gap-3 px-4 py-2 rounded transition-colors relative ${
                       isActive

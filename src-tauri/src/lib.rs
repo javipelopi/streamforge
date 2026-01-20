@@ -296,6 +296,7 @@ pub fn run() {
             commands::xmltv_channels::get_orphan_xtream_streams,
             commands::xmltv_channels::promote_orphan_to_plex,
             commands::xmltv_channels::update_synthetic_channel,
+            commands::xmltv_channels::get_target_lineup_channels,
             commands::logs::log_event,
             commands::logs::get_events,
             commands::logs::get_unread_event_count,
