@@ -32,6 +32,8 @@ interface DraggableXmltvChannelsListProps {
   // Story 3-7: Selection props for bulk operations
   selectedChannelIds?: Set<number>;
   onToggleSelection?: (channelId: number) => void;
+  // Story 3-8: Handler for editing synthetic channels
+  onEditSynthetic?: (channel: XmltvChannelWithMappings) => void;
 }
 
 // Row heights for virtualization
@@ -55,6 +57,7 @@ export function DraggableXmltvChannelsList({
   onReorder,
   selectedChannelIds,
   onToggleSelection,
+  onEditSynthetic,
 }: DraggableXmltvChannelsListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
@@ -442,6 +445,7 @@ export function DraggableXmltvChannelsList({
                 isKeyboardPicked={keyboardPickedId === channel.id}
                 isSelected={selectedChannelIds?.has(channel.id) ?? false}
                 onToggleSelection={onToggleSelection}
+                onEditSynthetic={onEditSynthetic}
               />
             );
           })}

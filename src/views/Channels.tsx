@@ -2,6 +2,8 @@ import { useCallback, useState, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DraggableXmltvChannelsList } from '../components/channels/DraggableXmltvChannelsList';
 import { BulkActionToolbar } from '../components/channels/BulkActionToolbar';
+import { OrphanXtreamSection } from '../components/channels/OrphanXtreamSection';
+import { EditSyntheticChannelDialog } from '../components/channels/EditSyntheticChannelDialog';
 import {
   getXmltvChannelsWithMappings,
   toggleXmltvChannel,
@@ -10,6 +12,7 @@ import {
   removeStreamMapping,
   updateChannelOrder,
   bulkToggleChannels,
+  updateSyntheticChannel,
   type XmltvChannelWithMappings,
   type XtreamStreamMatch,
 } from '../lib/tauri';
@@ -35,6 +38,9 @@ export function Channels() {
   const [selectedChannelIds, setSelectedChannelIds] = useState<Set<number>>(new Set());
   // Category filter state for AC #5
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+
+  // Story 3-8: Edit synthetic channel dialog state
+  const [editingSyntheticChannel, setEditingSyntheticChannel] = useState<XmltvChannelWithMappings | null>(null);
 
   const showToast = useCallback((message: string, type: 'error' | 'success' = 'error') => {
     setToastMessage(message);
@@ -437,6 +443,57 @@ export function Channels() {
     bulkToggleMutation.mutate({ channelIds: Array.from(selectedChannelIds), enabled: false });
   }, [selectedChannelIds, bulkToggleMutation]);
 
+  // Story 3-8: Update synthetic channel mutation
+  const updateSyntheticMutation = useMutation({
+    mutationFn: ({
+      channelId,
+      displayName,
+      iconUrl,
+    }: {
+      channelId: number;
+      displayName: string;
+      iconUrl: string | null;
+    }) => updateSyntheticChannel(channelId, displayName, iconUrl),
+    onSuccess: (updatedChannel) => {
+      // Update cache with updated channel
+      queryClient.setQueryData<XmltvChannelWithMappings[]>(
+        ['xmltv-channels-with-mappings'],
+        (old) =>
+          old?.map((ch) =>
+            ch.id === updatedChannel.id ? updatedChannel : ch
+          )
+      );
+      showToast(`"${updatedChannel.displayName}" updated successfully`, 'success');
+      setEditingSyntheticChannel(null);
+    },
+    onError: (err) => {
+      showToast(`Failed to update channel: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+    },
+  });
+
+  // Story 3-8: Handler to open edit synthetic dialog
+  const handleEditSynthetic = useCallback((channel: XmltvChannelWithMappings) => {
+    setEditingSyntheticChannel(channel);
+  }, []);
+
+  // Story 3-8: Handler for edit synthetic save
+  const handleSaveSynthetic = useCallback(
+    (displayName: string, iconUrl: string | null) => {
+      if (!editingSyntheticChannel) return;
+      updateSyntheticMutation.mutate({
+        channelId: editingSyntheticChannel.id,
+        displayName,
+        iconUrl,
+      });
+    },
+    [editingSyntheticChannel, updateSyntheticMutation]
+  );
+
+  // Story 3-8: Handler for edit synthetic cancel
+  const handleCancelEditSynthetic = useCallback(() => {
+    setEditingSyntheticChannel(null);
+  }, []);
+
   // Calculate stats for header
   const totalChannels = channels.length;
   const enabledChannels = channels.filter((ch) => ch.isEnabled).length;
@@ -544,6 +601,17 @@ export function Channels() {
         </div>
       )}
 
+      {/* Story 3-8: Orphan Xtream Streams Section */}
+      <OrphanXtreamSection
+        onPromoteSuccess={() => {
+          // Refresh channels list when a stream is promoted
+          refetch();
+        }}
+        onError={(message) => {
+          showToast(message, 'error');
+        }}
+      />
+
       {/* Main content */}
       <div className="bg-white border border-gray-200 rounded-lg relative">
         <DraggableXmltvChannelsList
@@ -556,6 +624,7 @@ export function Channels() {
           onReorder={handleReorder}
           selectedChannelIds={selectedChannelIds}
           onToggleSelection={toggleChannelSelection}
+          onEditSynthetic={handleEditSynthetic}
         />
 
         {/* Story 3-7: Bulk Action Toolbar */}
@@ -601,6 +670,17 @@ export function Channels() {
       >
         {toastMessage}
       </div>
+
+      {/* Story 3-8: Edit Synthetic Channel Dialog */}
+      {editingSyntheticChannel && (
+        <EditSyntheticChannelDialog
+          channel={editingSyntheticChannel}
+          isOpen={true}
+          onSave={handleSaveSynthetic}
+          onCancel={handleCancelEditSynthetic}
+          isLoading={updateSyntheticMutation.isPending}
+        />
+      )}
     </div>
   );
 }

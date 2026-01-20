@@ -2,7 +2,9 @@
 //!
 //! Tauri commands for displaying XMLTV channels with their matched Xtream streams.
 //! Story 3-2: Display XMLTV Channel List with Match Status
+//! Story 3-8: Manage Orphan Xtream Channels
 
+use chrono::Timelike;
 use diesel::prelude::*;
 use serde::Serialize;
 use tauri::State;
@@ -184,8 +186,8 @@ pub fn get_xmltv_channels_with_mappings(
                 channel_id: channel.channel_id,
                 display_name: channel.display_name,
                 icon: channel.icon,
-                // TODO: is_synthetic field not in DB schema yet - defaults to false
-                is_synthetic: false,
+                // Story 3-8: Read is_synthetic from DB (NULL/0 = false, 1 = true)
+                is_synthetic: channel.is_synthetic.unwrap_or(0) != 0,
                 is_enabled,
                 plex_display_order,
                 match_count: matches.len() as i32,
@@ -1070,6 +1072,366 @@ pub fn bulk_toggle_channels(
         })
     })
     .map_err(|e| format!("Failed to bulk toggle channels: {}", e))
+}
+
+// ============================================================================
+// Story 3-8: Manage Orphan Xtream Channels
+// ============================================================================
+
+/// Orphan Xtream stream info for display (streams not matched to any XMLTV channel)
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct OrphanXtreamStream {
+    pub id: i32,
+    pub stream_id: i32,
+    pub name: String,
+    pub stream_icon: Option<String>,
+    pub qualities: Vec<String>,
+    pub category_name: Option<String>,
+}
+
+/// Get all Xtream streams that are NOT matched to any XMLTV channel.
+///
+/// These are "orphan" streams that exist in the Xtream provider but have no
+/// corresponding XMLTV channel entry for EPG data. Users can "promote" these
+/// to create synthetic XMLTV channels with placeholder EPG.
+///
+/// Story 3-8: AC #1 - Display unmatched Xtream streams section
+///
+/// # Returns
+///
+/// List of Xtream streams not mapped to any XMLTV channel
+#[tauri::command]
+pub fn get_orphan_xtream_streams(
+    db: State<DbConnection>,
+) -> Result<Vec<OrphanXtreamStream>, String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    // Get all Xtream channel IDs that ARE mapped
+    let mapped_ids: Vec<i32> = channel_mappings::table
+        .select(channel_mappings::xtream_channel_id)
+        .distinct()
+        .load::<i32>(&mut conn)
+        .map_err(|e| format!("Failed to load mapped channel IDs: {}", e))?;
+
+    // Load all Xtream channels NOT in the mapped set
+    let orphans: Vec<XtreamChannel> = xtream_channels::table
+        .filter(xtream_channels::id.ne_all(&mapped_ids))
+        .order_by(xtream_channels::name.asc())
+        .load::<XtreamChannel>(&mut conn)
+        .map_err(|e| format!("Failed to load orphan streams: {}", e))?;
+
+    let result: Vec<OrphanXtreamStream> = orphans
+        .into_iter()
+        .filter_map(|stream| {
+            Some(OrphanXtreamStream {
+                id: stream.id?,
+                stream_id: stream.stream_id,
+                name: stream.name,
+                stream_icon: stream.stream_icon,
+                qualities: parse_qualities(&stream.qualities),
+                category_name: stream.category_name,
+            })
+        })
+        .collect();
+
+    Ok(result)
+}
+
+/// Promote an orphan Xtream stream to a synthetic XMLTV channel for Plex.
+///
+/// Creates:
+/// 1. A synthetic `xmltv_channels` entry with `is_synthetic = true`
+/// 2. A `channel_mappings` entry linking it to the Xtream stream
+/// 3. A `xmltv_channel_settings` entry with `is_enabled = 0`
+/// 4. Placeholder EPG data for the next 7 days
+///
+/// Story 3-8: AC #2, #3 - Promote orphan to Plex
+///
+/// # Arguments
+///
+/// * `xtream_channel_id` - The Xtream stream ID to promote
+/// * `display_name` - Display name for the synthetic channel
+/// * `icon_url` - Optional icon URL for the channel
+///
+/// # Returns
+///
+/// The newly created XmltvChannelWithMappings
+#[tauri::command]
+pub fn promote_orphan_to_plex(
+    db: State<DbConnection>,
+    xtream_channel_id: i32,
+    display_name: String,
+    icon_url: Option<String>,
+) -> Result<XmltvChannelWithMappings, String> {
+    use crate::db::models::{NewChannelMapping, NewXmltvChannel, NewXmltvChannelSettings};
+    use crate::db::schema::programs;
+
+    // Validate inputs
+    if xtream_channel_id <= 0 {
+        return Err("Invalid Xtream channel ID".to_string());
+    }
+    if display_name.trim().is_empty() {
+        return Err("Display name cannot be empty".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    conn.transaction::<XmltvChannelWithMappings, diesel::result::Error, _>(|conn| {
+        // Verify the Xtream stream exists
+        let xtream_stream: XtreamChannel = xtream_channels::table
+            .filter(xtream_channels::id.eq(xtream_channel_id))
+            .first::<XtreamChannel>(conn)?;
+
+        // Check if this stream is already mapped (prevent duplicate promotions)
+        let existing_mapping: Option<ChannelMapping> = channel_mappings::table
+            .filter(channel_mappings::xtream_channel_id.eq(xtream_channel_id))
+            .first::<ChannelMapping>(conn)
+            .optional()?;
+
+        if existing_mapping.is_some() {
+            return Err(diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::UniqueViolation,
+                Box::new("Stream is already mapped to a channel".to_string()),
+            ));
+        }
+
+        // Get or create synthetic source (source_id for synthetic channels)
+        // We use source_id = -1 as a special marker for synthetic channels
+        // (Alternative: create a dedicated "Synthetic" source in xmltv_sources)
+        let synthetic_source_id = -1;
+
+        // Generate unique channel ID for synthetic channel
+        let synthetic_channel_id = format!("synthetic-{}", xtream_channel_id);
+
+        // Create synthetic XMLTV channel
+        let new_channel = NewXmltvChannel::synthetic(
+            synthetic_source_id,
+            &synthetic_channel_id,
+            display_name.trim(),
+            icon_url.clone(),
+        );
+
+        diesel::insert_into(xmltv_channels::table)
+            .values(&new_channel)
+            .execute(conn)?;
+
+        // Get the newly created channel
+        let created_channel: XmltvChannel = xmltv_channels::table
+            .filter(xmltv_channels::channel_id.eq(&synthetic_channel_id))
+            .first::<XmltvChannel>(conn)?;
+
+        let created_channel_id = created_channel.id.ok_or(diesel::result::Error::NotFound)?;
+
+        // Create channel mapping
+        let new_mapping = NewChannelMapping {
+            xmltv_channel_id: created_channel_id,
+            xtream_channel_id,
+            match_confidence: Some(1.0), // Manual promotion = 100% confidence
+            is_manual: 1,
+            is_primary: 1,
+            stream_priority: 0,
+        };
+
+        diesel::insert_into(channel_mappings::table)
+            .values(&new_mapping)
+            .execute(conn)?;
+
+        // Create channel settings (disabled by default, user enables manually)
+        let new_settings = NewXmltvChannelSettings::disabled(created_channel_id);
+        diesel::insert_into(xmltv_channel_settings::table)
+            .values(&new_settings)
+            .execute(conn)?;
+
+        // Generate placeholder EPG (7 days of 2-hour blocks)
+        let channel_name = display_name.trim();
+        let now = chrono::Utc::now();
+        // Start at the beginning of the current hour
+        let start_of_hour = now
+            .with_minute(0)
+            .and_then(|t| t.with_second(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .unwrap_or(now);
+
+        // Generate 7 days * 12 blocks/day = 84 programs
+        let programs_to_insert: Vec<crate::db::models::NewProgram> = (0..(7 * 12))
+            .map(|block| {
+                let start = start_of_hour + chrono::Duration::hours(block * 2);
+                let end = start + chrono::Duration::hours(2);
+                crate::db::models::NewProgram::new(
+                    created_channel_id,
+                    format!("{} - Live Programming", channel_name),
+                    start.to_rfc3339(),
+                    end.to_rfc3339(),
+                )
+                .with_category("Live")
+            })
+            .collect();
+
+        diesel::insert_into(programs::table)
+            .values(&programs_to_insert)
+            .execute(conn)?;
+
+        // Load the mapping we just created
+        let mapping: ChannelMapping = channel_mappings::table
+            .filter(channel_mappings::xmltv_channel_id.eq(created_channel_id))
+            .first::<ChannelMapping>(conn)?;
+
+        // Build the response
+        let stream_match = build_stream_match(&mapping, &xtream_stream)
+            .ok_or(diesel::result::Error::NotFound)?;
+
+        Ok(XmltvChannelWithMappings {
+            id: created_channel_id,
+            source_id: synthetic_source_id,
+            channel_id: synthetic_channel_id,
+            display_name: created_channel.display_name,
+            icon: created_channel.icon,
+            is_synthetic: true,
+            is_enabled: false, // Disabled by default
+            plex_display_order: None,
+            match_count: 1,
+            matches: vec![stream_match],
+        })
+    })
+    .map_err(|e| {
+        match e {
+            diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::UniqueViolation,
+                _,
+            ) => "This stream has already been promoted to a channel".to_string(),
+            diesel::result::Error::NotFound => "Xtream stream not found".to_string(),
+            _ => format!("Failed to promote orphan to Plex: {}", e),
+        }
+    })
+}
+
+/// Update a synthetic channel's display name and icon.
+///
+/// Only works for channels where `is_synthetic = true`.
+/// Also updates placeholder EPG program titles if name changed.
+///
+/// Story 3-8: AC #5 - Edit synthetic channel
+///
+/// # Arguments
+///
+/// * `channel_id` - The XMLTV channel ID (must be synthetic)
+/// * `display_name` - New display name
+/// * `icon_url` - New icon URL (or None to remove)
+///
+/// # Returns
+///
+/// Updated XmltvChannelWithMappings
+#[tauri::command]
+pub fn update_synthetic_channel(
+    db: State<DbConnection>,
+    channel_id: i32,
+    display_name: String,
+    icon_url: Option<String>,
+) -> Result<XmltvChannelWithMappings, String> {
+    use crate::db::schema::programs;
+
+    // Validate inputs
+    if channel_id <= 0 {
+        return Err("Invalid channel ID".to_string());
+    }
+    if display_name.trim().is_empty() {
+        return Err("Display name cannot be empty".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    conn.transaction::<XmltvChannelWithMappings, diesel::result::Error, _>(|conn| {
+        // Load the channel and verify it's synthetic
+        let channel: XmltvChannel = xmltv_channels::table
+            .filter(xmltv_channels::id.eq(channel_id))
+            .first::<XmltvChannel>(conn)?;
+
+        let is_synthetic = channel.is_synthetic.unwrap_or(0) != 0;
+        if !is_synthetic {
+            return Err(diesel::result::Error::QueryBuilderError(
+                "Cannot edit non-synthetic channel".into(),
+            ));
+        }
+
+        let old_name = channel.display_name.clone();
+        let new_name = display_name.trim();
+
+        // Update the channel
+        diesel::update(xmltv_channels::table.filter(xmltv_channels::id.eq(channel_id)))
+            .set((
+                xmltv_channels::display_name.eq(new_name),
+                xmltv_channels::icon.eq(&icon_url),
+                xmltv_channels::updated_at.eq(chrono::Utc::now().to_rfc3339()),
+            ))
+            .execute(conn)?;
+
+        // If name changed, update placeholder EPG program titles
+        if old_name != new_name {
+            let old_title = format!("{} - Live Programming", old_name);
+            let new_title = format!("{} - Live Programming", new_name);
+
+            diesel::update(
+                programs::table
+                    .filter(programs::xmltv_channel_id.eq(channel_id))
+                    .filter(programs::title.eq(&old_title)),
+            )
+            .set(programs::title.eq(&new_title))
+            .execute(conn)?;
+        }
+
+        // Load updated channel
+        let updated_channel: XmltvChannel = xmltv_channels::table
+            .filter(xmltv_channels::id.eq(channel_id))
+            .first::<XmltvChannel>(conn)?;
+
+        // Load settings
+        let settings: Option<XmltvChannelSettings> = xmltv_channel_settings::table
+            .filter(xmltv_channel_settings::xmltv_channel_id.eq(channel_id))
+            .first::<XmltvChannelSettings>(conn)
+            .optional()?;
+
+        // Load mappings
+        let mappings: Vec<(ChannelMapping, XtreamChannel)> = channel_mappings::table
+            .inner_join(xtream_channels::table)
+            .filter(channel_mappings::xmltv_channel_id.eq(channel_id))
+            .order_by(channel_mappings::stream_priority.asc())
+            .load::<(ChannelMapping, XtreamChannel)>(conn)?;
+
+        let matches: Vec<XtreamStreamMatch> = mappings
+            .iter()
+            .filter_map(|(mapping, stream)| build_stream_match(mapping, stream))
+            .collect();
+
+        Ok(XmltvChannelWithMappings {
+            id: channel_id,
+            source_id: updated_channel.source_id,
+            channel_id: updated_channel.channel_id,
+            display_name: updated_channel.display_name,
+            icon: updated_channel.icon,
+            is_synthetic: true,
+            is_enabled: settings
+                .as_ref()
+                .map(|s| s.is_enabled.unwrap_or(0) != 0)
+                .unwrap_or(false),
+            plex_display_order: settings.and_then(|s| s.plex_display_order),
+            match_count: matches.len() as i32,
+            matches,
+        })
+    })
+    .map_err(|e| {
+        match e {
+            diesel::result::Error::NotFound => "Channel not found".to_string(),
+            diesel::result::Error::QueryBuilderError(msg) => msg.to_string(),
+            _ => format!("Failed to update synthetic channel: {}", e),
+        }
+    })
 }
 
 #[cfg(test)]

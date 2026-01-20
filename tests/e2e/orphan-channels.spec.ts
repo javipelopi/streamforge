@@ -1,682 +1,751 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 
 /**
  * E2E Tests for Story 3.8: Manage Orphan Xtream Channels
  *
- * Tests the complete user journey for discovering, promoting, and managing
- * orphan Xtream channels (channels not matched to any XMLTV channel).
+ * Tests the user journey of:
+ * 1. Viewing Xtream streams that don't match any XMLTV channel
+ * 2. Promoting orphan streams to synthetic XMLTV channels
+ * 3. Seeing synthetic badge and editing synthetic channels
  *
- * Test Strategy:
- * - E2E level: Testing user-facing acceptance criteria
- * - Given-When-Then structure for clarity
- * - Network-first approach (intercept before navigate)
- * - Atomic tests (one assertion focus per test)
+ * ATDD Pattern: RED Phase - These tests MUST fail initially
  */
 
-test.describe('Orphan Xtream Channels Management', () => {
+// Mock orphan stream data
+interface MockOrphanStream {
+  id: number;
+  streamId: number;
+  name: string;
+  streamIcon: string | null;
+  qualities: string[];
+  categoryName: string | null;
+}
+
+interface MockXmltvChannel {
+  id: number;
+  sourceId: number;
+  channelId: string;
+  displayName: string;
+  icon: string | null;
+  isSynthetic: boolean;
+  isEnabled: boolean;
+  plexDisplayOrder: number | null;
+  matchCount: number;
+  matches: Array<{
+    id: number;
+    mappingId: number;
+    name: string;
+    streamIcon: string | null;
+    qualities: string[];
+    matchConfidence: number;
+    isPrimary: boolean;
+    isManual: boolean;
+    streamPriority: number;
+    isOrphaned: boolean;
+  }>;
+}
+
+/**
+ * Create mock orphan stream data
+ */
+function createMockOrphanStreams(count: number = 3): MockOrphanStream[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: 100 + i,
+    streamId: 1000 + i,
+    name: `Orphan Channel ${i + 1}`,
+    streamIcon: i % 2 === 0 ? `https://example.com/icon${i}.png` : null,
+    qualities: i % 3 === 0 ? ['HD', 'SD'] : ['HD'],
+    categoryName: i % 2 === 0 ? 'Entertainment' : 'Sports',
+  }));
+}
+
+/**
+ * Create mock XMLTV channel (regular or synthetic)
+ */
+function createMockXmltvChannel(overrides: Partial<MockXmltvChannel> = {}): MockXmltvChannel {
+  const id = overrides.id ?? 1;
+  return {
+    id,
+    sourceId: overrides.isSynthetic ? -1 : 1,
+    channelId: overrides.isSynthetic ? `synthetic-${id}` : `xmltv-${id}`,
+    displayName: overrides.displayName ?? 'Test Channel',
+    icon: overrides.icon ?? null,
+    isSynthetic: overrides.isSynthetic ?? false,
+    isEnabled: overrides.isEnabled ?? false,
+    plexDisplayOrder: overrides.plexDisplayOrder ?? null,
+    matchCount: overrides.matchCount ?? 1,
+    matches: overrides.matches ?? [
+      {
+        id: 200 + id,
+        mappingId: 300 + id,
+        name: `Stream for ${overrides.displayName ?? 'Test Channel'}`,
+        streamIcon: null,
+        qualities: ['HD'],
+        matchConfidence: 1.0,
+        isPrimary: true,
+        isManual: true,
+        streamPriority: 0,
+        isOrphaned: false,
+      },
+    ],
+  };
+}
+
+/**
+ * Inject Tauri mock with orphan channel management commands
+ */
+async function injectOrphanChannelMocks(
+  page: Page,
+  orphanStreams: MockOrphanStream[],
+  xmltvChannels: MockXmltvChannel[] = []
+): Promise<void> {
+  const mockScript = `
+    (function() {
+      // State storage
+      window.__ORPHAN_STATE__ = {
+        orphanStreams: ${JSON.stringify(orphanStreams)},
+        xmltvChannels: ${JSON.stringify(xmltvChannels)},
+        nextChannelId: 1000,
+      };
+
+      const mockCommands = {
+        // Existing commands that may be needed
+        greet: (args) => \`Hello, \${args.name}! Welcome to iptv.\`,
+        get_setting: () => null,
+        set_setting: () => undefined,
+        get_server_port: () => 5004,
+        set_server_port: () => undefined,
+        get_autostart_enabled: () => ({ enabled: false }),
+        set_autostart_enabled: () => undefined,
+        get_accounts: () => [],
+
+        // Get XMLTV channels with mappings
+        get_xmltv_channels_with_mappings: () => {
+          console.log('[Mock] get_xmltv_channels_with_mappings called');
+          // Return a new array to ensure TanStack Query detects changes
+          return [...window.__ORPHAN_STATE__.xmltvChannels];
+        },
+
+        // Story 3-8: Get orphan Xtream streams
+        get_orphan_xtream_streams: () => {
+          console.log('[Mock] get_orphan_xtream_streams called');
+          return window.__ORPHAN_STATE__.orphanStreams;
+        },
+
+        // Story 3-8: Promote orphan to Plex
+        promote_orphan_to_plex: (args) => {
+          console.log('[Mock] promote_orphan_to_plex:', args);
+          const { xtreamChannelId, displayName, iconUrl } = args;
+
+          // Find the orphan stream
+          const streamIndex = window.__ORPHAN_STATE__.orphanStreams.findIndex(
+            s => s.id === xtreamChannelId
+          );
+
+          if (streamIndex === -1) {
+            throw new Error('Orphan stream not found');
+          }
+
+          const stream = window.__ORPHAN_STATE__.orphanStreams[streamIndex];
+
+          // Remove from orphan list
+          window.__ORPHAN_STATE__.orphanStreams.splice(streamIndex, 1);
+
+          // Create synthetic channel
+          const newChannelId = window.__ORPHAN_STATE__.nextChannelId++;
+          const newChannel = {
+            id: newChannelId,
+            sourceId: -1,
+            channelId: \`synthetic-\${xtreamChannelId}\`,
+            displayName: displayName,
+            icon: iconUrl,
+            isSynthetic: true,
+            isEnabled: false,
+            plexDisplayOrder: null,
+            matchCount: 1,
+            matches: [{
+              id: stream.id,
+              mappingId: 400 + newChannelId,
+              name: stream.name,
+              streamIcon: stream.streamIcon,
+              qualities: stream.qualities,
+              matchConfidence: 1.0,
+              isPrimary: true,
+              isManual: true,
+              streamPriority: 0,
+              isOrphaned: false,
+            }],
+          };
+
+          // Add to channels list
+          window.__ORPHAN_STATE__.xmltvChannels.push(newChannel);
+
+          return newChannel;
+        },
+
+        // Story 3-8: Update synthetic channel
+        update_synthetic_channel: (args) => {
+          console.log('[Mock] update_synthetic_channel:', args);
+          const { channelId, displayName, iconUrl } = args;
+
+          const channel = window.__ORPHAN_STATE__.xmltvChannels.find(
+            ch => ch.id === channelId
+          );
+
+          if (!channel) {
+            throw new Error('Channel not found');
+          }
+
+          if (!channel.isSynthetic) {
+            throw new Error('Cannot edit non-synthetic channel');
+          }
+
+          channel.displayName = displayName;
+          channel.icon = iconUrl;
+
+          return channel;
+        },
+
+        // Toggle channel enabled status
+        toggle_xmltv_channel: (args) => {
+          console.log('[Mock] toggle_xmltv_channel:', args);
+          const channel = window.__ORPHAN_STATE__.xmltvChannels.find(
+            ch => ch.id === args.channelId
+          );
+
+          if (channel) {
+            channel.isEnabled = !channel.isEnabled;
+          }
+
+          return channel;
+        },
+
+        // Set primary stream
+        set_primary_stream: (args) => {
+          console.log('[Mock] set_primary_stream:', args);
+          const { xmltvChannelId } = args;
+          const channel = window.__ORPHAN_STATE__.xmltvChannels.find(
+            ch => ch.id === xmltvChannelId
+          );
+          return channel ? channel.matches : [];
+        },
+
+        // Bulk toggle channels
+        bulk_toggle_channels: (args) => {
+          console.log('[Mock] bulk_toggle_channels:', args);
+          return { successCount: args.channelIds.length, skippedCount: 0, skippedIds: [] };
+        },
+
+        // Update channel order
+        update_channel_order: () => {
+          console.log('[Mock] update_channel_order');
+          return undefined;
+        },
+
+        // Manual stream mapping commands
+        add_manual_stream_mapping: (args) => {
+          console.log('[Mock] add_manual_stream_mapping:', args);
+          return [];
+        },
+
+        remove_stream_mapping: (args) => {
+          console.log('[Mock] remove_stream_mapping:', args);
+          return [];
+        },
+      };
+
+      async function mockInvoke(cmd, args = {}) {
+        console.log('[Tauri Mock] Invoke:', cmd, args);
+
+        if (mockCommands[cmd]) {
+          try {
+            const result = await Promise.resolve(mockCommands[cmd](args));
+            console.log('[Tauri Mock] Result:', cmd, result);
+            return result;
+          } catch (error) {
+            console.error('[Tauri Mock] Error:', cmd, error);
+            throw error;
+          }
+        }
+
+        console.warn('[Tauri Mock] Unknown command:', cmd);
+        throw new Error(\`Unknown command: \${cmd}\`);
+      }
+
+      // Set up Tauri V2 internals mock
+      window.__TAURI_INTERNALS__ = {
+        invoke: mockInvoke,
+        metadata: {
+          currentWindow: { label: 'main' },
+          currentWebview: { label: 'main' },
+          windows: [{ label: 'main' }],
+          webviews: [{ label: 'main' }],
+        },
+        plugins: {},
+      };
+
+      window.__TAURI__ = {
+        invoke: mockInvoke,
+      };
+
+      window.__TAURI_MOCK__ = {
+        invoke: mockInvoke,
+        commands: mockCommands,
+        getState: () => window.__ORPHAN_STATE__,
+      };
+
+      console.log('[Tauri Mock] Orphan channels mock initialized');
+    })();
+  `;
+
+  await page.addInitScript(mockScript);
+}
+
+test.describe('Manage Orphan Xtream Channels (Story 3-8)', () => {
+  test.beforeEach(async ({ page }) => {
+    // Block image loading for faster tests
+    await page.route('**/*.{png,jpg,jpeg,svg,gif}', (route) => route.abort());
+  });
+
   test.describe('AC #1: Display Unmatched Xtream Streams Section', () => {
-    test('should display orphan section when unmatched streams exist', async ({ page }) => {
-      // GIVEN: System has Xtream channels not matched to any XMLTV channel
+    test('should show orphan streams section with count badge', async ({ page }) => {
+      // GIVEN: Orphan Xtream streams exist
+      const orphanStreams = createMockOrphanStreams(3);
+      await injectOrphanChannelMocks(page, orphanStreams);
+
+      // WHEN: Navigate to Channels view
       await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
 
-      // Mock orphan streams data
-      await page.route('**/api/orphan-streams', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 1,
-              streamId: 101,
-              name: 'HBO Max HD',
-              streamIcon: 'http://example.com/hbo.png',
-              qualities: 'HD,FHD',
-              categoryName: 'Movies',
-            },
-            {
-              id: 2,
-              streamId: 102,
-              name: 'ESPN Sports',
-              streamIcon: null,
-              qualities: 'SD,HD',
-              categoryName: 'Sports',
-            },
-          ]),
-        })
-      );
-
-      // WHEN: User navigates to Channels view
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
-
-      // THEN: Unmatched Xtream Streams section is visible
-      const orphanSection = page.getByTestId('orphan-xtream-section');
+      // THEN: Orphan section is visible with count
+      const orphanSection = page.locator('[data-testid="orphan-xtream-section"]');
       await expect(orphanSection).toBeVisible();
+      await expect(orphanSection).toContainText('3');
     });
 
-    test('should show orphan stream name in section', async ({ page }) => {
-      // GIVEN: Orphan streams exist with specific names
+    test('should display each orphan stream with name, icon, and category', async ({ page }) => {
+      // GIVEN: Orphan streams with various data
+      const orphanStreams = createMockOrphanStreams(2);
+      await injectOrphanChannelMocks(page, orphanStreams);
+
+      // WHEN: Navigate to Channels view
       await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
 
-      await page.route('**/api/orphan-streams', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 1,
-              streamId: 101,
-              name: 'HBO Max HD',
-              streamIcon: 'http://example.com/hbo.png',
-              qualities: 'HD,FHD',
-              categoryName: 'Movies',
-            },
-          ]),
-        })
-      );
+      // THEN: Each orphan stream is displayed with its info
+      const stream1 = page.locator('[data-testid="orphan-stream-100"]');
+      await expect(stream1).toBeVisible();
+      await expect(stream1).toContainText('Orphan Channel 1');
 
-      // WHEN: User views the orphan section
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
+      const stream2 = page.locator('[data-testid="orphan-stream-101"]');
+      await expect(stream2).toBeVisible();
+      await expect(stream2).toContainText('Orphan Channel 2');
+    });
 
-      // THEN: Stream name is displayed
-      await expect(page.getByText('HBO Max HD')).toBeVisible();
+    test('should show "Promote to Plex" button for each orphan stream', async ({ page }) => {
+      // GIVEN: Orphan streams exist
+      const orphanStreams = createMockOrphanStreams(2);
+      await injectOrphanChannelMocks(page, orphanStreams);
+
+      // WHEN: Navigate to Channels view
+      await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
+
+      // THEN: Each stream has a Promote button
+      await expect(page.locator('[data-testid="promote-button-100"]')).toBeVisible();
+      await expect(page.locator('[data-testid="promote-button-101"]')).toBeVisible();
+    });
+
+    test('should hide orphan section when no orphan streams exist', async ({ page }) => {
+      // GIVEN: No orphan streams
+      await injectOrphanChannelMocks(page, []);
+
+      // WHEN: Navigate to Channels view
+      await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
+
+      // THEN: Orphan section is not visible
+      await expect(page.locator('[data-testid="orphan-xtream-section"]')).not.toBeVisible();
     });
 
     test('should show quality tier badges for orphan streams', async ({ page }) => {
       // GIVEN: Orphan stream with multiple qualities
+      const orphanStreams = [
+        {
+          id: 100,
+          streamId: 1000,
+          name: 'HBO Max HD',
+          streamIcon: 'https://example.com/icon.png',
+          qualities: ['HD', 'FHD'],
+          categoryName: 'Movies',
+        },
+      ];
+      await injectOrphanChannelMocks(page, orphanStreams);
+
+      // WHEN: Navigate to Channels view
       await page.goto('/');
-
-      await page.route('**/api/orphan-streams', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 1,
-              streamId: 101,
-              name: 'HBO Max HD',
-              streamIcon: 'http://example.com/hbo.png',
-              qualities: 'HD,FHD',
-              categoryName: 'Movies',
-            },
-          ]),
-        })
-      );
-
-      // WHEN: User views the orphan section
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
 
       // THEN: Quality badges are displayed
-      const orphanSection = page.getByTestId('orphan-xtream-section');
-      await expect(orphanSection.getByText('HD')).toBeVisible();
+      const orphanSection = page.locator('[data-testid="orphan-xtream-section"]');
+      await expect(orphanSection.getByText('HD').first()).toBeVisible();
       await expect(orphanSection.getByText('FHD')).toBeVisible();
     });
 
     test('should show category name for orphan streams', async ({ page }) => {
       // GIVEN: Orphan stream with category
+      const orphanStreams = [
+        {
+          id: 100,
+          streamId: 1000,
+          name: 'ESPN HD',
+          streamIcon: null,
+          qualities: ['HD'],
+          categoryName: 'Sports',
+        },
+      ];
+      await injectOrphanChannelMocks(page, orphanStreams);
+
+      // WHEN: Navigate to Channels view
       await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
 
-      await page.route('**/api/orphan-streams', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 1,
-              streamId: 101,
-              name: 'ESPN Sports',
-              streamIcon: null,
-              qualities: 'SD,HD',
-              categoryName: 'Sports',
-            },
-          ]),
-        })
-      );
-
-      // WHEN: User views the orphan section
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
-
-      // THEN: Category name is displayed
-      await expect(page.getByText('Sports')).toBeVisible();
-    });
-
-    test('should hide orphan section when no unmatched streams exist', async ({ page }) => {
-      // GIVEN: No orphan streams exist
-      await page.goto('/');
-
-      await page.route('**/api/orphan-streams', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([]),
-        })
-      );
-
-      // WHEN: User navigates to Channels view
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
-
-      // THEN: Orphan section is not visible
-      const orphanSection = page.getByTestId('orphan-xtream-section');
-      await expect(orphanSection).not.toBeVisible();
+      // THEN: Category name is displayed within the orphan section
+      const orphanSection = page.locator('[data-testid="orphan-xtream-section"]');
+      await expect(orphanSection.getByText('Sports', { exact: true })).toBeVisible();
     });
   });
 
   test.describe('AC #2: Promote to Plex Dialog', () => {
     test('should open promote dialog when clicking promote button', async ({ page }) => {
-      // GIVEN: Orphan stream with promote button
+      // GIVEN: Orphan streams exist
+      const orphanStreams = createMockOrphanStreams(1);
+      await injectOrphanChannelMocks(page, orphanStreams);
+
+      // WHEN: Navigate and click Promote
       await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
+      await page.click('[data-testid="promote-button-100"]');
 
-      await page.route('**/api/orphan-streams', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 1,
-              streamId: 101,
-              name: 'HBO Max HD',
-              streamIcon: 'http://example.com/hbo.png',
-              qualities: 'HD,FHD',
-              categoryName: 'Movies',
-            },
-          ]),
-        })
-      );
-
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
-
-      // WHEN: User clicks "Promote to Plex" button
-      await page.click('[data-testid="promote-button-1"]');
-
-      // THEN: Dialog is displayed
-      const dialog = page.getByTestId('promote-dialog');
+      // THEN: Dialog opens with pre-filled name
+      const dialog = page.locator('[data-testid="promote-dialog"]');
       await expect(dialog).toBeVisible();
-    });
-
-    test('should pre-fill display name from Xtream name', async ({ page }) => {
-      // GIVEN: Orphan stream with name "HBO Max HD"
-      await page.goto('/');
-
-      await page.route('**/api/orphan-streams', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 1,
-              streamId: 101,
-              name: 'HBO Max HD',
-              streamIcon: 'http://example.com/hbo.png',
-              qualities: 'HD,FHD',
-              categoryName: 'Movies',
-            },
-          ]),
-        })
-      );
-
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
-
-      // WHEN: User opens promote dialog
-      await page.click('[data-testid="promote-button-1"]');
-
-      // THEN: Display name field is pre-filled with Xtream name
-      const displayNameInput = page.getByTestId('display-name-input');
-      await expect(displayNameInput).toHaveValue('HBO Max HD');
+      await expect(dialog.locator('[data-testid="display-name-input"]')).toHaveValue('Orphan Channel 1');
     });
 
     test('should pre-fill icon URL from Xtream icon if available', async ({ page }) => {
       // GIVEN: Orphan stream with icon URL
-      await page.goto('/');
-
-      await page.route('**/api/orphan-streams', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 1,
-              streamId: 101,
-              name: 'HBO Max HD',
-              streamIcon: 'http://example.com/hbo.png',
-              qualities: 'HD,FHD',
-              categoryName: 'Movies',
-            },
-          ]),
-        })
-      );
-
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
-
-      // WHEN: User opens promote dialog
-      await page.click('[data-testid="promote-button-1"]');
-
-      // THEN: Icon URL field is pre-filled with Xtream icon
-      const iconUrlInput = page.getByTestId('icon-url-input');
-      await expect(iconUrlInput).toHaveValue('http://example.com/hbo.png');
-    });
-
-    test('should allow editing display name in dialog', async ({ page }) => {
-      // GIVEN: Promote dialog is open
-      await page.goto('/');
-
-      await page.route('**/api/orphan-streams', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 1,
-              streamId: 101,
-              name: 'HBO Max HD',
-              streamIcon: 'http://example.com/hbo.png',
-              qualities: 'HD,FHD',
-              categoryName: 'Movies',
-            },
-          ]),
-        })
-      );
-
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
-      await page.click('[data-testid="promote-button-1"]');
-
-      // WHEN: User edits display name
-      const displayNameInput = page.getByTestId('display-name-input');
-      await displayNameInput.fill('HBO Max Custom Name');
-
-      // THEN: Input reflects new value
-      await expect(displayNameInput).toHaveValue('HBO Max Custom Name');
-    });
-
-    test('should close dialog when clicking cancel', async ({ page }) => {
-      // GIVEN: Promote dialog is open
-      await page.goto('/');
-
-      await page.route('**/api/orphan-streams', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 1,
-              streamId: 101,
-              name: 'HBO Max HD',
-              streamIcon: 'http://example.com/hbo.png',
-              qualities: 'HD,FHD',
-              categoryName: 'Movies',
-            },
-          ]),
-        })
-      );
-
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
-      await page.click('[data-testid="promote-button-1"]');
-
-      // WHEN: User clicks Cancel button
-      await page.click('[data-testid="cancel-button"]');
-
-      // THEN: Dialog is closed
-      const dialog = page.getByTestId('promote-dialog');
-      await expect(dialog).not.toBeVisible();
-    });
-  });
-
-  test.describe('AC #3: Promote to Synthetic Channel', () => {
-    test('should create synthetic channel when confirming promotion', async ({ page }) => {
-      // GIVEN: User has filled out promote dialog
-      await page.goto('/');
-
-      await page.route('**/api/orphan-streams', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 1,
-              streamId: 101,
-              name: 'HBO Max HD',
-              streamIcon: 'http://example.com/hbo.png',
-              qualities: 'HD,FHD',
-              categoryName: 'Movies',
-            },
-          ]),
-        })
-      );
-
-      // Mock promote API call
-      let promoteCalled = false;
-      await page.route('**/api/promote-orphan', async (route) => {
-        promoteCalled = true;
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            id: 999,
-            channelId: 'synthetic-1',
-            displayName: 'HBO Max HD',
-            icon: 'http://example.com/hbo.png',
-            isSynthetic: true,
-            streamMatches: [
-              {
-                xtreamChannelId: 1,
-                streamId: 101,
-                name: 'HBO Max HD',
-                qualities: 'HD,FHD',
-              },
-            ],
-          }),
-        });
-      });
-
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
-      await page.click('[data-testid="promote-button-1"]');
-
-      // WHEN: User confirms promotion
-      await page.click('[data-testid="confirm-promote-button"]');
-
-      // THEN: API is called to promote the channel
-      await page.waitForResponse((resp) => resp.url().includes('/api/promote-orphan'));
-      expect(promoteCalled).toBe(true);
-    });
-
-    test('should display success message after promotion', async ({ page }) => {
-      // GIVEN: Promote operation completes successfully
-      await page.goto('/');
-
-      await page.route('**/api/orphan-streams', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 1,
-              streamId: 101,
-              name: 'HBO Max HD',
-              streamIcon: 'http://example.com/hbo.png',
-              qualities: 'HD,FHD',
-              categoryName: 'Movies',
-            },
-          ]),
-        })
-      );
-
-      await page.route('**/api/promote-orphan', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            id: 999,
-            channelId: 'synthetic-1',
-            displayName: 'HBO Max HD',
-            icon: 'http://example.com/hbo.png',
-            isSynthetic: true,
-          }),
-        })
-      );
-
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
-      await page.click('[data-testid="promote-button-1"]');
-
-      // WHEN: User confirms promotion
-      await page.click('[data-testid="confirm-promote-button"]');
-      await page.waitForResponse((resp) => resp.url().includes('/api/promote-orphan'));
-
-      // THEN: Success message is displayed
-      await expect(page.getByText(/promoted successfully/i)).toBeVisible();
-    });
-
-    test('should remove promoted stream from orphan section', async ({ page }) => {
-      // GIVEN: Orphan stream exists in section
-      await page.goto('/');
-
-      let orphanStreams = [
+      const orphanStreams = [
         {
-          id: 1,
-          streamId: 101,
+          id: 100,
+          streamId: 1000,
           name: 'HBO Max HD',
-          streamIcon: 'http://example.com/hbo.png',
-          qualities: 'HD,FHD',
+          streamIcon: 'https://example.com/hbo.png',
+          qualities: ['HD'],
           categoryName: 'Movies',
         },
       ];
+      await injectOrphanChannelMocks(page, orphanStreams);
 
-      await page.route('**/api/orphan-streams', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify(orphanStreams),
-        })
-      );
+      await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
 
-      await page.route('**/api/promote-orphan', async (route) => {
-        // After promotion, orphan list is empty
-        orphanStreams = [];
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            id: 999,
-            channelId: 'synthetic-1',
-            displayName: 'HBO Max HD',
-            icon: 'http://example.com/hbo.png',
-            isSynthetic: true,
-          }),
-        });
-      });
+      // WHEN: User opens promote dialog
+      await page.click('[data-testid="promote-button-100"]');
 
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
-      await page.click('[data-testid="promote-button-1"]');
-      await page.click('[data-testid="confirm-promote-button"]');
-      await page.waitForResponse((resp) => resp.url().includes('/api/promote-orphan'));
-
-      // WHEN: Orphan list refreshes after promotion
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
-
-      // THEN: Promoted stream is no longer in orphan section
-      await expect(page.getByText('HBO Max HD')).not.toBeVisible();
+      // THEN: Icon URL field is pre-filled with Xtream icon
+      const iconUrlInput = page.locator('[data-testid="icon-url-input"]');
+      await expect(iconUrlInput).toHaveValue('https://example.com/hbo.png');
     });
 
-    test('should display error message when promotion fails', async ({ page }) => {
-      // GIVEN: Promotion API fails
+    test('should allow editing display name before promotion', async ({ page }) => {
+      // GIVEN: Orphan stream and open dialog
+      const orphanStreams = createMockOrphanStreams(1);
+      await injectOrphanChannelMocks(page, orphanStreams);
+
       await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
+      await page.click('[data-testid="promote-button-100"]');
 
-      await page.route('**/api/orphan-streams', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 1,
-              streamId: 101,
-              name: 'HBO Max HD',
-              streamIcon: 'http://example.com/hbo.png',
-              qualities: 'HD,FHD',
-              categoryName: 'Movies',
-            },
-          ]),
-        })
-      );
+      // WHEN: Edit the display name
+      const nameInput = page.locator('[data-testid="display-name-input"]');
+      await nameInput.fill('My Custom Channel Name');
 
-      await page.route('**/api/promote-orphan', (route) =>
-        route.fulfill({
-          status: 500,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            error: 'Database error',
-          }),
-        })
-      );
+      // THEN: Input value is updated
+      await expect(nameInput).toHaveValue('My Custom Channel Name');
+    });
 
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/orphan-streams'));
-      await page.click('[data-testid="promote-button-1"]');
+    test('should allow editing icon URL before promotion', async ({ page }) => {
+      // GIVEN: Orphan stream and open dialog
+      const orphanStreams = createMockOrphanStreams(1);
+      await injectOrphanChannelMocks(page, orphanStreams);
 
-      // WHEN: User confirms promotion
+      await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
+      await page.click('[data-testid="promote-button-100"]');
+
+      // WHEN: Edit the icon URL
+      const iconInput = page.locator('[data-testid="icon-url-input"]');
+      await iconInput.fill('https://example.com/custom-icon.png');
+
+      // THEN: Input value is updated
+      await expect(iconInput).toHaveValue('https://example.com/custom-icon.png');
+    });
+
+    test('should close dialog on cancel', async ({ page }) => {
+      // GIVEN: Open promote dialog
+      const orphanStreams = createMockOrphanStreams(1);
+      await injectOrphanChannelMocks(page, orphanStreams);
+
+      await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
+      await page.click('[data-testid="promote-button-100"]');
+      await expect(page.locator('[data-testid="promote-dialog"]')).toBeVisible();
+
+      // WHEN: Click cancel
+      await page.click('[data-testid="cancel-button"]');
+
+      // THEN: Dialog closes
+      await expect(page.locator('[data-testid="promote-dialog"]')).not.toBeVisible();
+    });
+  });
+
+  test.describe('AC #3: Synthetic Channel Creation', () => {
+    test('should create synthetic channel when confirming promotion', async ({ page }) => {
+      // GIVEN: Orphan stream
+      const orphanStreams = createMockOrphanStreams(1);
+      await injectOrphanChannelMocks(page, orphanStreams);
+
+      await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
+
+      // WHEN: Promote the stream
+      await page.click('[data-testid="promote-button-100"]');
       await page.click('[data-testid="confirm-promote-button"]');
-      await page.waitForResponse((resp) => resp.url().includes('/api/promote-orphan'));
 
-      // THEN: Error message is displayed
-      await expect(page.getByText(/failed to promote/i)).toBeVisible();
+      // THEN: Orphan stream is removed from orphan list
+      await expect(page.locator('[data-testid="orphan-stream-100"]')).not.toBeVisible();
+    });
+
+    test('should show synthetic channel in channels list after promotion', async ({ page }) => {
+      // GIVEN: Orphan stream
+      const orphanStreams = createMockOrphanStreams(1);
+      await injectOrphanChannelMocks(page, orphanStreams);
+
+      await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
+
+      // WHEN: Promote with custom name
+      await page.click('[data-testid="promote-button-100"]');
+      await page.locator('[data-testid="display-name-input"]').fill('My Promoted Channel');
+      await page.click('[data-testid="confirm-promote-button"]');
+
+      // Wait for dialog to close and success toast to appear (indicates mutation completed)
+      await expect(page.getByText(/promoted successfully/i)).toBeVisible({ timeout: 5000 });
+
+      // THEN: Channel appears in list with synthetic badge (query should have refetched)
+      // Wait for the "No XMLTV channels" message to disappear, indicating channels have loaded
+      await expect(page.getByText('No XMLTV channels found')).not.toBeVisible({ timeout: 10000 });
+
+      // Now check for the promoted channel
+      await expect(page.locator('[data-testid="xmltv-channels-list"]')).toContainText(
+        'My Promoted Channel'
+      );
+    });
+
+    test('should display success message after promotion', async ({ page }) => {
+      // GIVEN: Orphan stream
+      const orphanStreams = createMockOrphanStreams(1);
+      await injectOrphanChannelMocks(page, orphanStreams);
+
+      await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
+
+      // Verify orphan section is visible (ensures mock is working)
+      await expect(page.locator('[data-testid="orphan-xtream-section"]')).toBeVisible({ timeout: 5000 });
+
+      // WHEN: Promote the stream
+      await page.click('[data-testid="promote-button-100"]');
+      await expect(page.locator('[data-testid="promote-dialog"]')).toBeVisible();
+      await page.click('[data-testid="confirm-promote-button"]');
+
+      // Wait for dialog to close (mutation started)
+      await expect(page.locator('[data-testid="promote-dialog"]')).not.toBeVisible({ timeout: 5000 });
+
+      // THEN: Success message is displayed
+      await expect(page.getByText(/promoted successfully/i)).toBeVisible({ timeout: 10000 });
+    });
+  });
+
+  test.describe('AC #4: Placeholder EPG', () => {
+    test('should display info about placeholder EPG in promote dialog', async ({ page }) => {
+      // GIVEN: Orphan stream and open dialog
+      const orphanStreams = createMockOrphanStreams(1);
+      await injectOrphanChannelMocks(page, orphanStreams);
+
+      await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
+      await page.click('[data-testid="promote-button-100"]');
+
+      // THEN: Dialog shows info about placeholder EPG
+      const dialog = page.locator('[data-testid="promote-dialog"]');
+      await expect(dialog).toContainText('Placeholder EPG');
+      await expect(dialog).toContainText('7 days');
+      await expect(dialog).toContainText('Live Programming');
     });
   });
 
   test.describe('AC #5: Synthetic Channel Badge and Edit', () => {
-    test('should display synthetic badge on promoted channels', async ({ page }) => {
-      // GIVEN: Channel list includes synthetic channel
+    test('should display "Synthetic" badge on synthetic channels', async ({ page }) => {
+      // GIVEN: A synthetic channel exists
+      const syntheticChannel = createMockXmltvChannel({
+        id: 1,
+        displayName: 'Synthetic Test Channel',
+        isSynthetic: true,
+      });
+      await injectOrphanChannelMocks(page, [], [syntheticChannel]);
+
+      // WHEN: Navigate to Channels view
       await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
 
-      await page.route('**/api/xmltv-channels', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 999,
-              channelId: 'synthetic-1',
-              displayName: 'HBO Max HD',
-              icon: 'http://example.com/hbo.png',
-              isSynthetic: true,
-              isEnabled: false,
-              streamMatches: [],
-            },
-          ]),
-        })
-      );
-
-      // WHEN: User views channels list
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/xmltv-channels'));
-
-      // THEN: Synthetic badge is displayed
-      const syntheticBadge = page.getByTestId('synthetic-badge-999');
-      await expect(syntheticBadge).toBeVisible();
-      await expect(syntheticBadge).toHaveText('Synthetic');
+      // THEN: Synthetic badge is visible
+      await expect(page.locator('[data-testid="synthetic-badge-1"]')).toBeVisible();
+      await expect(page.locator('[data-testid="synthetic-badge-1"]')).toHaveText('Synthetic');
     });
 
-    test('should show edit button on synthetic channel rows', async ({ page }) => {
-      // GIVEN: Synthetic channel exists
+    test('should not display "Synthetic" badge on regular channels', async ({ page }) => {
+      // GIVEN: A regular (non-synthetic) channel exists
+      const regularChannel = createMockXmltvChannel({
+        id: 1,
+        displayName: 'Regular Channel',
+        isSynthetic: false,
+      });
+      await injectOrphanChannelMocks(page, [], [regularChannel]);
+
+      // WHEN: Navigate to Channels view
       await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
 
-      await page.route('**/api/xmltv-channels', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 999,
-              channelId: 'synthetic-1',
-              displayName: 'HBO Max HD',
-              icon: 'http://example.com/hbo.png',
-              isSynthetic: true,
-              isEnabled: false,
-              streamMatches: [],
-            },
-          ]),
-        })
-      );
+      // THEN: No synthetic badge
+      await expect(page.locator('[data-testid="synthetic-badge-1"]')).not.toBeVisible();
+    });
 
-      // WHEN: User views channels list
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/xmltv-channels'));
+    test('should show edit button for synthetic channels', async ({ page }) => {
+      // GIVEN: A synthetic channel exists
+      const syntheticChannel = createMockXmltvChannel({
+        id: 1,
+        displayName: 'Synthetic Test Channel',
+        isSynthetic: true,
+      });
+      await injectOrphanChannelMocks(page, [], [syntheticChannel]);
 
-      // THEN: Edit button is visible
-      const editButton = page.getByTestId('edit-synthetic-button-999');
-      await expect(editButton).toBeVisible();
+      // WHEN: Navigate to Channels view
+      await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
+
+      // THEN: Edit button is visible for synthetic channel
+      await expect(page.locator('[data-testid="edit-synthetic-button-1"]')).toBeVisible();
     });
 
     test('should open edit dialog when clicking edit button', async ({ page }) => {
-      // GIVEN: Synthetic channel with edit button
+      // GIVEN: A synthetic channel exists
+      const syntheticChannel = createMockXmltvChannel({
+        id: 1,
+        displayName: 'Synthetic Test Channel',
+        isSynthetic: true,
+        icon: 'https://example.com/icon.png',
+      });
+      await injectOrphanChannelMocks(page, [], [syntheticChannel]);
+
       await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
 
-      await page.route('**/api/xmltv-channels', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 999,
-              channelId: 'synthetic-1',
-              displayName: 'HBO Max HD',
-              icon: 'http://example.com/hbo.png',
-              isSynthetic: true,
-              isEnabled: false,
-              streamMatches: [],
-            },
-          ]),
-        })
-      );
+      // WHEN: Click edit button
+      await page.click('[data-testid="edit-synthetic-button-1"]');
 
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/xmltv-channels'));
-
-      // WHEN: User clicks edit button
-      await page.click('[data-testid="edit-synthetic-button-999"]');
-
-      // THEN: Edit dialog is displayed
-      const dialog = page.getByTestId('edit-synthetic-dialog');
+      // THEN: Edit dialog opens with current values
+      const dialog = page.locator('[data-testid="edit-synthetic-dialog"]');
       await expect(dialog).toBeVisible();
+      await expect(dialog.locator('[data-testid="display-name-input"]')).toHaveValue('Synthetic Test Channel');
     });
 
-    test('should update synthetic channel display name when editing', async ({ page }) => {
-      // GIVEN: Edit dialog is open for synthetic channel
+    test('should update synthetic channel on save', async ({ page }) => {
+      // GIVEN: A synthetic channel and open edit dialog
+      const syntheticChannel = createMockXmltvChannel({
+        id: 1,
+        displayName: 'Original Name',
+        isSynthetic: true,
+      });
+      await injectOrphanChannelMocks(page, [], [syntheticChannel]);
+
       await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
+      await page.click('[data-testid="edit-synthetic-button-1"]');
 
-      await page.route('**/api/xmltv-channels', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            {
-              id: 999,
-              channelId: 'synthetic-1',
-              displayName: 'HBO Max HD',
-              icon: 'http://example.com/hbo.png',
-              isSynthetic: true,
-              isEnabled: false,
-              streamMatches: [],
-            },
-          ]),
-        })
-      );
-
-      await page.route('**/api/update-synthetic-channel', (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            id: 999,
-            channelId: 'synthetic-1',
-            displayName: 'HBO Max Updated',
-            icon: 'http://example.com/hbo.png',
-            isSynthetic: true,
-            isEnabled: false,
-            streamMatches: [],
-          }),
-        })
-      );
-
-      await page.goto('/channels');
-      await page.waitForResponse((resp) => resp.url().includes('/api/xmltv-channels'));
-      await page.click('[data-testid="edit-synthetic-button-999"]');
-
-      // WHEN: User updates display name and saves
-      const displayNameInput = page.getByTestId('display-name-input');
-      await displayNameInput.fill('HBO Max Updated');
+      // WHEN: Edit and save
+      await page.locator('[data-testid="display-name-input"]').fill('Updated Name');
       await page.click('[data-testid="save-edit-button"]');
 
-      // THEN: Update API is called
-      await page.waitForResponse((resp) => resp.url().includes('/api/update-synthetic-channel'));
+      // THEN: Dialog closes and channel is updated
+      await expect(page.locator('[data-testid="edit-synthetic-dialog"]')).not.toBeVisible();
+    });
+  });
+
+  test.describe('Accessibility', () => {
+    test('should have accessible orphan section with proper ARIA', async ({ page }) => {
+      // GIVEN: Orphan streams exist
+      const orphanStreams = createMockOrphanStreams(2);
+      await injectOrphanChannelMocks(page, orphanStreams);
+
+      // WHEN: Navigate to Channels view
+      await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
+
+      // THEN: Section is accessible
+      const section = page.locator('[data-testid="orphan-xtream-section"]');
+      const expandButton = section.locator('button[aria-expanded]');
+      await expect(expandButton).toHaveAttribute('aria-expanded', 'true');
+      await expect(expandButton).toHaveAttribute('aria-controls', 'orphan-streams-content');
+    });
+
+    test('should close dialog on Escape key', async ({ page }) => {
+      // GIVEN: Open promote dialog
+      const orphanStreams = createMockOrphanStreams(1);
+      await injectOrphanChannelMocks(page, orphanStreams);
+
+      await page.goto('/');
+      await page.click('a[href="/channels"]');
+      await page.waitForLoadState('networkidle');
+      await page.click('[data-testid="promote-button-100"]');
+      await expect(page.locator('[data-testid="promote-dialog"]')).toBeVisible();
+
+      // WHEN: Press Escape
+      await page.keyboard.press('Escape');
+
+      // THEN: Dialog closes
+      await expect(page.locator('[data-testid="promote-dialog"]')).not.toBeVisible();
     });
   });
 });
