@@ -8,6 +8,7 @@ use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+use super::epg;
 use super::m3u;
 use super::state::AppState;
 
@@ -92,4 +93,75 @@ fn generate_etag(content: &str) -> String {
     let mut hasher = DefaultHasher::new();
     content.hash(&mut hasher);
     format!("{:x}", hasher.finish())
+}
+
+/// XMLTV EPG endpoint handler (Story 4-2)
+///
+/// Generates an XMLTV-format EPG for Plex integration containing:
+/// - Only enabled XMLTV channels with Xtream stream mappings
+/// - Channel IDs matching M3U playlist tvg-id values
+/// - Program data for enabled channels (7-day window)
+/// - Placeholder programs for synthetic channels (2-hour blocks)
+///
+/// Returns Content-Type: application/xml with ETag for caching
+/// Supports If-None-Match for 304 Not Modified responses
+pub async fn epg_xml(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let mut conn = state.get_connection().map_err(|e| {
+        eprintln!("EPG endpoint error - database connection failed: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server error".to_string(),
+        )
+    })?;
+
+    // Generate EPG content
+    let xml_content = epg::generate_xmltv_epg(&mut conn).map_err(|e| {
+        eprintln!("EPG endpoint error - generation failed: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server error".to_string(),
+        )
+    })?;
+
+    // Generate ETag from content hash for cache validation
+    let etag = format!("\"{}\"", generate_etag(&xml_content));
+
+    // Check If-None-Match header for conditional request
+    if let Some(client_etag) = headers.get(header::IF_NONE_MATCH) {
+        if let Ok(etag_str) = client_etag.to_str() {
+            if etag_str == etag {
+                // Return 304 Not Modified with minimal headers
+                let mut response_headers = HeaderMap::new();
+                response_headers.insert(header::ETAG, HeaderValue::from_str(&etag).unwrap());
+                response_headers.insert(
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static("public, max-age=300"),
+                );
+                return Ok((StatusCode::NOT_MODIFIED, response_headers, String::new()));
+            }
+        }
+    }
+
+    let content_length = xml_content.len();
+
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/xml; charset=utf-8"),
+    );
+    response_headers.insert(
+        header::CONTENT_LENGTH,
+        HeaderValue::from_str(&content_length.to_string()).unwrap(),
+    );
+    response_headers.insert(header::ETAG, HeaderValue::from_str(&etag).unwrap());
+    // Cache for 5 minutes - Plex polls frequently but EPG rarely changes
+    response_headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=300"),
+    );
+
+    Ok((StatusCode::OK, response_headers, xml_content))
 }

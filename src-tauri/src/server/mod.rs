@@ -1,3 +1,4 @@
+pub mod epg;
 pub mod handlers;
 pub mod m3u;
 pub mod routes;
