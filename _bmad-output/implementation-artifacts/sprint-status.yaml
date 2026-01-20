@@ -73,7 +73,7 @@ development_status:
   # Navigation Restructure (Option C) - Sprint Change 2026-01-20
   3-9-implement-target-lineup-view: done
   3-10-implement-sources-view-xmltv-tab: done
-  3-11-implement-sources-view-xtream-tab: ready-for-dev
+  3-11-implement-sources-view-xtream-tab: review
   epic-3-retrospective: optional
 
   # Epic 4: Plex Integration & Streaming

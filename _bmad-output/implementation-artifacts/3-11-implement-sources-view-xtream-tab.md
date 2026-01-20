@@ -1,6 +1,6 @@
 # Story 3.11: Implement Sources View Xtream Tab
 
-Status: ready-for-dev
+Status: dev-complete
 
 ## Story
 
@@ -516,10 +516,39 @@ From Story 3-10 Code Review:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-opus-4-5-20251101
 
 ### Debug Log References
 
+N/A
+
 ### Completion Notes List
 
+- **All 11 tasks completed** - Backend commands, TypeScript bindings, UI components, and tests all passing
+- **26 E2E tests pass** for story 3-11 (sources-xtream.spec.ts)
+- **Build verified** - Both frontend and Rust backend compile successfully
+- **All 4 ACs implemented:**
+  - AC#1: Xtream tab enabled with expandable accordion sections showing account name, stream count, orphan count
+  - AC#2: Lazy-loaded streams with icons, quality badges, and link status badges (Linked=blue, Orphan=amber, Promoted=green)
+  - AC#3: Linked stream actions - View Linked Channels popover, Unlink (with state update)
+  - AC#4: Orphan stream actions - Promote to Lineup dialog, Link to XMLTV Channel dialog
+- **Component pattern**: Reused accordion/action menu patterns from Story 3-10
+- **Performance**: Streams lazy-load only when accordion expanded (TanStack Query `enabled: isExpanded`)
+
 ### File List
+
+**Created:**
+- src-tauri/src/commands/xtream_sources.rs - Rust commands for streams and stats
+- src/components/sources/XtreamSourcesTab.tsx - Tab container component
+- src/components/sources/XtreamAccountAccordion.tsx - Expandable account accordion
+- src/components/sources/XtreamStreamRow.tsx - Stream row with badges and actions
+- src/components/sources/XtreamLinkToChannelDialog.tsx - Dialog for linking to XMLTV channel
+- tests/support/fixtures/sources-xtream.fixture.ts - E2E test fixture
+- tests/e2e/sources-xtream.spec.ts - E2E tests (26 tests)
+
+**Modified:**
+- src-tauri/src/commands/mod.rs - Added xtream_sources module
+- src-tauri/src/lib.rs - Registered new Tauri commands
+- src/lib/tauri.ts - Added TypeScript types and bindings (XtreamAccountStream, AccountStreamStats, getLinkStatusBadgeClasses, getLinkStatusLabel, unlinkXtreamStream)
+- src/views/Sources.tsx - Enabled Xtream tab (removed disabled state, added click handler)
+- src/components/sources/index.ts - Added new component exports

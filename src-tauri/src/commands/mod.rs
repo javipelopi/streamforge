@@ -4,6 +4,7 @@ pub mod epg;
 pub mod logs;
 pub mod matcher;
 pub mod xmltv_channels;
+pub mod xtream_sources;
 
 use diesel::prelude::*;
 use serde::Serialize;
