@@ -85,7 +85,6 @@ export function Channels() {
       );
     },
     onError: (err) => {
-      console.error('Failed to toggle channel:', err);
       // Standardized error handling: show toast then refetch
       showToast(`Failed to toggle channel: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
       refetch();
@@ -114,7 +113,6 @@ export function Channels() {
       );
     },
     onError: (err) => {
-      console.error('Failed to set primary stream:', err);
       // Standardized error handling: show toast then refetch
       showToast(`Failed to change primary stream: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
       refetch();
@@ -148,7 +146,6 @@ export function Channels() {
       showToast('Stream added successfully', 'success');
     },
     onError: (err) => {
-      console.error('Failed to add manual mapping:', err);
       // Standardized error handling: show toast then refetch
       showToast(`Failed to add stream: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
       refetch();
@@ -194,7 +191,6 @@ export function Channels() {
       showToast('Stream removed successfully', 'success');
     },
     onError: (err) => {
-      console.error('Failed to remove mapping:', err);
       // Standardized error handling: show toast then refetch
       showToast(`Failed to remove stream: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
       refetch();
@@ -281,7 +277,6 @@ export function Channels() {
       return { previousChannels };
     },
     onError: (err, _newChannelIds, context) => {
-      console.error('Failed to reorder channels:', err);
       // Rollback to previous order
       if (context?.previousChannels) {
         queryClient.setQueryData<XmltvChannelWithMappings[]>(
@@ -313,10 +308,40 @@ export function Channels() {
     [reorderMutation]
   );
 
-  // Story 3-7: Bulk toggle mutation
+  // Story 3-7: Bulk toggle mutation with optimistic updates
   const bulkToggleMutation = useMutation({
     mutationFn: ({ channelIds, enabled }: { channelIds: number[]; enabled: boolean }) =>
       bulkToggleChannels(channelIds, enabled),
+    onMutate: async ({ channelIds, enabled }) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['xmltv-channels-with-mappings'] });
+
+      // Snapshot previous value for rollback
+      const previousChannels = queryClient.getQueryData<XmltvChannelWithMappings[]>([
+        'xmltv-channels-with-mappings',
+      ]);
+
+      // Optimistically update channels
+      queryClient.setQueryData<XmltvChannelWithMappings[]>(
+        ['xmltv-channels-with-mappings'],
+        (old) => {
+          if (!old) return old;
+          const channelIdSet = new Set(channelIds);
+          return old.map((ch) => {
+            if (channelIdSet.has(ch.id)) {
+              // When enabling, only toggle channels with matches (simulate backend logic)
+              if (enabled && ch.matchCount === 0) {
+                return ch; // Don't change unmatched channels
+              }
+              return { ...ch, isEnabled: enabled };
+            }
+            return ch;
+          });
+        }
+      );
+
+      return { previousChannels };
+    },
     onSuccess: (result, { enabled }) => {
       const action = enabled ? 'Enabled' : 'Disabled';
       showToast(`${action} ${result.successCount} channels`, 'success');
@@ -328,11 +353,18 @@ export function Channels() {
         }, 1500);
       }
 
-      // Clear selection and refresh
+      // Clear selection and refresh to sync with backend
       clearSelection();
       queryClient.invalidateQueries({ queryKey: ['xmltv-channels-with-mappings'] });
     },
-    onError: (err) => {
+    onError: (err, _variables, context) => {
+      // Rollback optimistic update
+      if (context?.previousChannels) {
+        queryClient.setQueryData<XmltvChannelWithMappings[]>(
+          ['xmltv-channels-with-mappings'],
+          context.previousChannels
+        );
+      }
       showToast(`Bulk operation failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     },
   });
@@ -353,12 +385,21 @@ export function Channels() {
   );
 
   // Story 3-7: Select all matched channels (AC #4)
+  // Maximum recommended selection size to prevent performance issues
+  const MAX_SELECTION_WARN = 500;
+
   const selectAllMatched = useCallback(() => {
     const matchedIds = channels
       .filter((ch) => ch.matchCount > 0)
       .map((ch) => ch.id);
+
+    // Warn if selecting many channels
+    if (matchedIds.length > MAX_SELECTION_WARN) {
+      showToast(`Warning: Selecting ${matchedIds.length} channels may take longer to process`, 'error');
+    }
+
     setSelectedChannelIds(new Set(matchedIds));
-  }, [channels]);
+  }, [channels, showToast]);
 
   // Story 3-7: Select all visible/filtered channels (AC #5)
   const selectAllVisible = useCallback(() => {
@@ -550,6 +591,16 @@ export function Channels() {
           </div>
         </div>
       )}
+
+      {/* ARIA live region for screen reader announcements (Story 3-7 accessibility requirement) */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {toastMessage}
+      </div>
     </div>
   );
 }
