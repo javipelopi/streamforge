@@ -7,3 +7,4 @@ export { AddStreamButton } from './AddStreamButton';
 export { ChannelDragPreview } from './ChannelDragPreview';
 export { DraggableXmltvChannelsList } from './DraggableXmltvChannelsList';
 export { DraggableChannelRow } from './DraggableChannelRow';
+export { BulkActionToolbar } from './BulkActionToolbar';

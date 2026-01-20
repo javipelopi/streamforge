@@ -949,6 +949,124 @@ pub fn toggle_xmltv_channel(
     })
 }
 
+// ============================================================================
+// Story 3-7: Bulk Channel Operations
+// ============================================================================
+
+/// Result of bulk toggle operation
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkToggleResult {
+    /// Number of channels successfully toggled
+    pub success_count: i32,
+    /// Number of channels skipped (e.g., unmatched channels when enabling)
+    pub skipped_count: i32,
+    /// IDs of channels that were skipped
+    pub skipped_ids: Vec<i32>,
+}
+
+/// Bulk toggle the enabled status of multiple XMLTV channels.
+///
+/// Story 3-7: Bulk Channel Operations
+///
+/// When enabling:
+/// - Channels WITH matched streams are enabled
+/// - Channels WITHOUT matched streams are skipped (cannot enable without stream source)
+///
+/// When disabling:
+/// - All selected channels are disabled (no restrictions)
+///
+/// # Arguments
+///
+/// * `channel_ids` - Array of XMLTV channel IDs to toggle
+/// * `enabled` - True to enable, false to disable
+///
+/// # Returns
+///
+/// BulkToggleResult with success count, skipped count, and skipped IDs
+#[tauri::command]
+pub fn bulk_toggle_channels(
+    db: State<DbConnection>,
+    channel_ids: Vec<i32>,
+    enabled: bool,
+) -> Result<BulkToggleResult, String> {
+    use crate::db::models::NewXmltvChannelSettings;
+
+    // Validate input
+    if channel_ids.is_empty() {
+        return Ok(BulkToggleResult {
+            success_count: 0,
+            skipped_count: 0,
+            skipped_ids: vec![],
+        });
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    conn.transaction::<BulkToggleResult, diesel::result::Error, _>(|conn| {
+        let mut success_count = 0;
+        let mut skipped_ids: Vec<i32> = Vec::new();
+
+        for channel_id in &channel_ids {
+            // When enabling, check for matched streams
+            if enabled {
+                let match_count: i64 = channel_mappings::table
+                    .filter(channel_mappings::xmltv_channel_id.eq(channel_id))
+                    .count()
+                    .get_result(conn)?;
+
+                if match_count == 0 {
+                    // Skip channels without matched streams
+                    skipped_ids.push(*channel_id);
+                    continue;
+                }
+            }
+
+            // Check if settings exist for this channel
+            let existing: Option<XmltvChannelSettings> = xmltv_channel_settings::table
+                .filter(xmltv_channel_settings::xmltv_channel_id.eq(channel_id))
+                .first::<XmltvChannelSettings>(conn)
+                .optional()?;
+
+            let new_enabled_value = if enabled { 1 } else { 0 };
+
+            if existing.is_some() {
+                // Update existing settings
+                diesel::update(
+                    xmltv_channel_settings::table
+                        .filter(xmltv_channel_settings::xmltv_channel_id.eq(channel_id)),
+                )
+                .set((
+                    xmltv_channel_settings::is_enabled.eq(new_enabled_value),
+                    xmltv_channel_settings::updated_at.eq(chrono::Utc::now().to_rfc3339()),
+                ))
+                .execute(conn)?;
+            } else {
+                // Create new settings record
+                let new_settings = NewXmltvChannelSettings {
+                    xmltv_channel_id: *channel_id,
+                    is_enabled: new_enabled_value,
+                    plex_display_order: None,
+                };
+                diesel::insert_into(xmltv_channel_settings::table)
+                    .values(&new_settings)
+                    .execute(conn)?;
+            }
+
+            success_count += 1;
+        }
+
+        Ok(BulkToggleResult {
+            success_count,
+            skipped_count: skipped_ids.len() as i32,
+            skipped_ids,
+        })
+    })
+    .map_err(|e| format!("Failed to bulk toggle channels: {}", e))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
