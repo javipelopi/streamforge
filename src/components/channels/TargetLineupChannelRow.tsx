@@ -2,38 +2,34 @@
  * Target Lineup Channel Row Component
  * Story 3-9: Implement Target Lineup View
  *
- * A single channel row for the Target Lineup view with drag-drop support.
+ * A single channel row for the Target Lineup view with position input for reordering.
  */
-import { memo, useCallback, DragEvent } from 'react';
-import * as Switch from '@radix-ui/react-switch';
-import { GripVertical, AlertTriangle, FileText } from 'lucide-react';
+import { memo, useState, useCallback, useEffect, KeyboardEvent } from 'react';
+import { AlertTriangle, FileText, Trash2 } from 'lucide-react';
 import type { VirtualItem } from '@tanstack/react-virtual';
 import type { TargetLineupChannel } from '../../lib/tauri';
 
 interface TargetLineupChannelRowProps {
   channel: TargetLineupChannel;
   virtualItem: VirtualItem;
-  isDragging: boolean;
-  isDropTarget: boolean;
-  onDragStart: (channelId: number) => void;
-  onDragOver: (channelId: number) => void;
-  onDragEnd: () => void;
-  onDrop: (targetChannelId: number) => void;
+  totalChannels: number;
+  onMoveToPosition: (channelId: number, newPosition: number) => void;
   onToggleEnabled: () => void;
 }
 
 export const TargetLineupChannelRow = memo(function TargetLineupChannelRow({
   channel,
   virtualItem,
-  isDragging,
-  isDropTarget,
-  onDragStart,
-  onDragOver,
-  onDragEnd,
-  onDrop,
+  totalChannels,
+  onMoveToPosition,
   onToggleEnabled,
 }: TargetLineupChannelRowProps) {
   const hasStreams = channel.streamCount > 0;
+  const currentPosition = virtualItem.index + 1;
+
+  // Local state for the position input
+  const [inputValue, setInputValue] = useState(String(currentPosition));
+  const [isEditing, setIsEditing] = useState(false);
 
   const style = {
     transform: `translateY(${virtualItem.start}px)`,
@@ -44,47 +40,66 @@ export const TargetLineupChannelRow = memo(function TargetLineupChannelRow({
     width: '100%',
   };
 
-  // HTML5 drag event handlers
-  const handleDragStart = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      e.dataTransfer.setData('text/plain', String(channel.id));
-      e.dataTransfer.effectAllowed = 'move';
-      onDragStart(channel.id);
+  // Handle position change submission
+  const handlePositionSubmit = useCallback(() => {
+    const newPosition = parseInt(inputValue, 10);
+
+    // Validate the input
+    if (isNaN(newPosition) || newPosition < 1 || newPosition > totalChannels) {
+      // Reset to current position if invalid
+      setInputValue(String(currentPosition));
+      setIsEditing(false);
+      return;
+    }
+
+    // Only move if position actually changed
+    if (newPosition !== currentPosition) {
+      onMoveToPosition(channel.id, newPosition);
+    }
+
+    setIsEditing(false);
+  }, [inputValue, currentPosition, totalChannels, channel.id, onMoveToPosition]);
+
+  // Handle Enter key to submit
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handlePositionSubmit();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setInputValue(String(currentPosition));
+        setIsEditing(false);
+      }
     },
-    [channel.id, onDragStart]
+    [handlePositionSubmit, currentPosition]
   );
 
-  const handleDragOver = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      onDragOver(channel.id);
-    },
-    [channel.id, onDragOver]
-  );
+  // Handle blur to submit
+  const handleBlur = useCallback(() => {
+    handlePositionSubmit();
+  }, [handlePositionSubmit]);
 
-  const handleDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      onDrop(channel.id);
-    },
-    [channel.id, onDrop]
-  );
+  // Handle focus to select all text
+  const handleFocus = useCallback(() => {
+    setIsEditing(true);
+  }, []);
+
+  // Update input value when currentPosition changes (after reorder)
+  // Using useEffect to avoid state update during render
+  useEffect(() => {
+    if (!isEditing) {
+      setInputValue(String(currentPosition));
+    }
+  }, [currentPosition, isEditing]);
 
   return (
     <div
       data-testid={`target-lineup-channel-${channel.id}`}
       data-channel-id={channel.id}
-      data-dragging={isDragging ? 'true' : undefined}
-      data-drop-target={isDropTarget ? 'true' : undefined}
       role="option"
       aria-selected={false}
-      className={`${isDragging ? 'opacity-50 z-20 shadow-lg' : ''} ${
-        isDropTarget ? 'border-t-2 border-blue-500' : ''
-      }`}
       style={style}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
     >
       <div
         className={`border-b border-gray-200 ${
@@ -92,24 +107,23 @@ export const TargetLineupChannelRow = memo(function TargetLineupChannelRow({
         }`}
       >
         <div className="flex items-center gap-3 p-3">
-          {/* Drag handle */}
-          <div
-            data-testid={`channel-drag-handle-${channel.id}`}
-            draggable
-            onDragStart={handleDragStart}
-            onDragEnd={onDragEnd}
-            className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-gray-200 flex-shrink-0 touch-none"
-            aria-label={`Drag to reorder ${channel.displayName}`}
-            role="button"
-            tabIndex={0}
-          >
-            <GripVertical className="w-4 h-4 text-gray-400" />
-          </div>
-
-          {/* Channel position/number */}
-          <span className="text-sm text-gray-400 w-8 text-right flex-shrink-0">
-            {virtualItem.index + 1}
-          </span>
+          {/* Position input */}
+          <input
+            data-testid={`channel-position-input-${channel.id}`}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
+            onFocus={handleFocus}
+            className="w-12 h-8 text-center text-sm font-medium text-gray-600 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            aria-label={`Position of ${channel.displayName}, currently ${currentPosition}`}
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+          />
 
           {/* Channel Logo */}
           {channel.icon ? (
@@ -117,7 +131,7 @@ export const TargetLineupChannelRow = memo(function TargetLineupChannelRow({
               data-testid={`channel-logo-${channel.id}`}
               src={channel.icon}
               alt=""
-              className="w-10 h-10 rounded object-cover flex-shrink-0"
+              className="w-10 h-10 rounded object-contain flex-shrink-0"
               loading="lazy"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = 'none';
@@ -175,16 +189,17 @@ export const TargetLineupChannelRow = memo(function TargetLineupChannelRow({
             </span>
           )}
 
-          {/* Enable/disable toggle */}
-          <Switch.Root
-            data-testid={`channel-toggle-${channel.id}`}
-            checked={channel.isEnabled}
-            onCheckedChange={onToggleEnabled}
-            className="w-10 h-6 bg-gray-200 rounded-full relative data-[state=checked]:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-            aria-label={`Toggle channel ${channel.displayName}`}
+          {/* Remove from lineup button */}
+          <button
+            data-testid={`channel-remove-${channel.id}`}
+            type="button"
+            onClick={onToggleEnabled}
+            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+            aria-label={`Remove ${channel.displayName} from lineup`}
+            title="Remove from lineup"
           >
-            <Switch.Thumb className="block w-5 h-5 bg-white rounded-full shadow-sm transition-transform translate-x-0.5 data-[state=checked]:translate-x-[18px]" />
-          </Switch.Root>
+            <Trash2 className="w-5 h-5" />
+          </button>
         </div>
       </div>
     </div>

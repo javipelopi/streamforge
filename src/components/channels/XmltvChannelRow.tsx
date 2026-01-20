@@ -74,7 +74,7 @@ export const XmltvChannelRow = memo(function XmltvChannelRow({
             data-testid="channel-logo"
             src={channel.icon}
             alt=""
-            className="w-10 h-10 rounded object-cover flex-shrink-0"
+            className="w-10 h-10 rounded object-contain flex-shrink-0"
             loading="lazy"
             onError={(e) => {
               // Hide broken images

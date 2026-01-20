@@ -7,6 +7,7 @@
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import * as Popover from '@radix-ui/react-popover';
 import { MoreVertical, Tv, Link2, LinkIcon, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -20,8 +21,7 @@ import {
 import { ROUTES } from '../../lib/routes';
 import { XtreamLinkToChannelDialog } from './XtreamLinkToChannelDialog';
 
-// Toast notification duration in milliseconds
-const TOAST_DURATION_MS = 3000;
+import { TOAST_DURATION_MS } from '../../lib/constants';
 
 interface XtreamStreamRowProps {
   stream: XtreamAccountStream;
@@ -45,7 +45,6 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
     type: 'success',
   });
   const queryClient = useQueryClient();
-  const menuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   // Code Review Fix #3: Store toast timeout to prevent memory leak
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -75,6 +74,20 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
       }
     };
   }, []);
+
+  // Code Review Fix: ESC key handler for promote dialog and linked channels popover
+  useEffect(() => {
+    if (!showPromoteDialog && !showLinkedChannelsPopover) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showPromoteDialog) setShowPromoteDialog(false);
+        if (showLinkedChannelsPopover) setShowLinkedChannelsPopover(false);
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [showPromoteDialog, showLinkedChannelsPopover]);
 
   // Mutation for unlinking a stream
   const unlinkMutation = useMutation({
@@ -132,31 +145,6 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
     setMenuOpen(false);
   };
 
-  // Close menu when clicking outside or pressing Escape
-  // Code Review Fix #5: Add keyboard navigation for accessibility
-  useEffect(() => {
-    if (!menuOpen) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [menuOpen]);
-
   // Get status badge icon
   const getStatusIcon = () => {
     switch (stream.linkStatus) {
@@ -191,7 +179,7 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
               data-testid={`xtream-stream-icon-${stream.streamId}`}
               src={stream.streamIcon}
               alt=""
-              className="w-8 h-8 rounded object-cover flex-shrink-0"
+              className="w-8 h-8 rounded object-contain flex-shrink-0"
               onError={handleIconError}
             />
           ) : (
@@ -244,26 +232,25 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
         </div>
 
         {/* Action Menu */}
-        <div ref={menuRef} className="relative ml-2">
-          <button
-            data-testid={`xtream-stream-actions-${stream.streamId}`}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen(!menuOpen);
-            }}
-            className="p-1 rounded hover:bg-gray-200 transition-colors"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-          >
-            <MoreVertical className="w-4 h-4 text-gray-500" />
-          </button>
+        <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
+          <Popover.Trigger asChild>
+            <button
+              data-testid={`xtream-stream-actions-${stream.streamId}`}
+              type="button"
+              onClick={(e) => e.stopPropagation()}
+              className="p-1 rounded hover:bg-gray-200 transition-colors ml-2"
+              aria-haspopup="menu"
+            >
+              <MoreVertical className="w-4 h-4 text-gray-500" />
+            </button>
+          </Popover.Trigger>
 
-          {/* Dropdown Menu */}
-          {menuOpen && (
-            <div
+          <Popover.Portal>
+            <Popover.Content
               data-testid={`xtream-stream-menu-${stream.streamId}`}
-              className="absolute right-0 mt-1 w-56 bg-white rounded-md shadow-lg border z-10"
+              align="end"
+              sideOffset={4}
+              className="w-56 bg-white rounded-md shadow-lg border z-50"
               role="menu"
             >
               {/* Actions based on link status */}
@@ -281,7 +268,7 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
                       setShowPromoteDialog(true);
                       setMenuOpen(false);
                     }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-t-md"
                     role="menuitem"
                   >
                     <CheckCircle2 className="w-4 h-4 inline mr-2" />
@@ -295,7 +282,7 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
                       setShowLinkDialog(true);
                       setMenuOpen(false);
                     }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 border-t"
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 border-t rounded-b-md"
                     role="menuitem"
                   >
                     <LinkIcon className="w-4 h-4 inline mr-2" />
@@ -311,11 +298,10 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      // Show linked channels popover
                       setShowLinkedChannelsPopover(true);
                       setMenuOpen(false);
                     }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-t-md"
                     role="menuitem"
                   >
                     <Link2 className="w-4 h-4 inline mr-2" />
@@ -328,7 +314,7 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
                       e.stopPropagation();
                       unlinkMutation.mutate();
                     }}
-                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 border-t"
+                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 border-t rounded-b-md"
                     role="menuitem"
                     disabled={unlinkMutation.isPending}
                   >
@@ -347,7 +333,7 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
                       e.stopPropagation();
                       handleViewInLineup();
                     }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-t-md"
                     role="menuitem"
                   >
                     View in Lineup
@@ -357,20 +343,19 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      // For now, direct to Target Lineup for editing
                       showToast('Edit channel in Target Lineup', 'success');
                       setMenuOpen(false);
                     }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 border-t"
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 border-t rounded-b-md"
                     role="menuitem"
                   >
                     Edit Channel
                   </button>
                 </>
               )}
-            </div>
-          )}
-        </div>
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
 
         {/* Toast notification */}
         {toast.show && (
@@ -465,23 +450,34 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
             className="bg-white rounded-lg p-6 w-full max-w-sm"
           >
             <h3 className="text-lg font-semibold mb-4">Linked XMLTV Channels</h3>
-            <p className="text-gray-600 mb-2">
-              This stream is linked to {stream.linkedXmltvIds.length} XMLTV channel(s):
+            <p className="text-gray-600 mb-4">
+              This stream is linked as a video source to{' '}
+              <strong>{stream.linkedXmltvIds.length}</strong> XMLTV channel
+              {stream.linkedXmltvIds.length !== 1 ? 's' : ''}.
             </p>
-            <ul className="list-disc list-inside mb-4">
-              {stream.linkedXmltvIds.map((xmltvId) => (
-                <li key={xmltvId} className="text-gray-700">
-                  Channel ID: {xmltvId}
-                </li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              onClick={() => setShowLinkedChannelsPopover(false)}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-            >
-              Close
-            </button>
+            <p className="text-sm text-gray-500 mb-4">
+              To view or manage the linked channels, browse the XMLTV tab in Sources and look for
+              channels with this stream as a matched source.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLinkedChannelsPopover(false);
+                  navigate(ROUTES.SOURCES);
+                }}
+                className="flex-1 px-4 py-2 text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100"
+              >
+                Go to Sources
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowLinkedChannelsPopover(false)}
+                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
