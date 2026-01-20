@@ -4,6 +4,6 @@ export { XmltvChannelRow } from './XmltvChannelRow';
 export { MatchedStreamsList } from './MatchedStreamsList';
 export { StreamSearchDropdown } from './StreamSearchDropdown';
 export { AddStreamButton } from './AddStreamButton';
-export { SortableXmltvChannelsList } from './SortableXmltvChannelsList';
-export { SortableChannelRow } from './SortableChannelRow';
 export { ChannelDragPreview } from './ChannelDragPreview';
+export { DraggableXmltvChannelsList } from './DraggableXmltvChannelsList';
+export { DraggableChannelRow } from './DraggableChannelRow';

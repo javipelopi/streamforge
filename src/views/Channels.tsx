@@ -267,6 +267,10 @@ export function Channels() {
       }
       showToast(`Failed to reorder channels: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     },
+    onSuccess: () => {
+      // Refetch to ensure UI matches database state
+      queryClient.invalidateQueries({ queryKey: ['xmltv-channels-with-mappings'] });
+    },
     onSettled: () => {
       // Clear the previous order reference
       previousOrderRef.current = null;
@@ -276,6 +280,10 @@ export function Channels() {
   // Handle reorder (Story 3-6)
   const handleReorder = useCallback(
     (channelIds: number[]) => {
+      // Validate non-empty array before making API call
+      if (channelIds.length === 0) {
+        return;
+      }
       reorderMutation.mutate(channelIds);
     },
     [reorderMutation]
