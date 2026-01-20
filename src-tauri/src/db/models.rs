@@ -1,7 +1,10 @@
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::db::schema::{accounts, programs, settings, xmltv_channels, xmltv_sources, xtream_channels};
+use crate::db::schema::{
+    accounts, channel_mappings, event_log, programs, settings, xmltv_channel_settings, xmltv_channels,
+    xmltv_sources, xtream_channels,
+};
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone)]
 #[diesel(table_name = settings)]
@@ -85,7 +88,7 @@ impl NewAccount {
 }
 
 /// Xtream channel model for querying existing channels
-#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize)]
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize, Deserialize)]
 #[diesel(table_name = xtream_channels)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 #[serde(rename_all = "camelCase")]
@@ -223,6 +226,8 @@ pub struct XmltvChannel {
     pub icon: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// True if this is a synthetic channel created from an orphan Xtream stream (Story 3-8)
+    pub is_synthetic: Option<i32>,
 }
 
 /// New XMLTV channel for insertion
@@ -234,6 +239,8 @@ pub struct NewXmltvChannel {
     pub channel_id: String,
     pub display_name: String,
     pub icon: Option<String>,
+    /// True (1) if this is a synthetic channel created from an orphan Xtream stream
+    pub is_synthetic: Option<i32>,
 }
 
 impl NewXmltvChannel {
@@ -248,6 +255,23 @@ impl NewXmltvChannel {
             channel_id: channel_id.into(),
             display_name: display_name.into(),
             icon,
+            is_synthetic: Some(0), // Default: not synthetic (real XMLTV channel)
+        }
+    }
+
+    /// Create a synthetic XMLTV channel (for orphan Xtream streams promoted to Plex)
+    pub fn synthetic(
+        source_id: i32,
+        channel_id: impl Into<String>,
+        display_name: impl Into<String>,
+        icon: Option<String>,
+    ) -> Self {
+        Self {
+            source_id,
+            channel_id: channel_id.into(),
+            display_name: display_name.into(),
+            icon,
+            is_synthetic: Some(1), // Synthetic channel
         }
     }
 }
@@ -318,5 +342,266 @@ impl NewProgram {
     pub fn with_episode_info(mut self, episode_info: impl Into<String>) -> Self {
         self.episode_info = Some(episode_info.into());
         self
+    }
+}
+
+// ============================================================================
+// Channel Mapping Models (Story 3-1)
+// ============================================================================
+
+/// Channel mapping model for querying (XMLTV → Xtream associations)
+/// One XMLTV channel can have multiple Xtream streams mapped to it
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize)]
+#[diesel(table_name = channel_mappings)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelMapping {
+    pub id: Option<i32>,
+    pub xmltv_channel_id: i32,
+    pub xtream_channel_id: i32,
+    pub match_confidence: Option<f32>,
+    #[serde(serialize_with = "serialize_optional_bool")]
+    pub is_manual: Option<i32>,
+    #[serde(serialize_with = "serialize_optional_bool")]
+    pub is_primary: Option<i32>,
+    pub stream_priority: Option<i32>,
+    pub created_at: String,
+}
+
+/// Serialize SQLite INTEGER (0/1) to JSON boolean
+fn serialize_optional_bool<S>(value: &Option<i32>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match value {
+        Some(v) => serializer.serialize_bool(*v != 0),
+        None => serializer.serialize_none(),
+    }
+}
+
+/// New channel mapping for insertion
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = channel_mappings)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewChannelMapping {
+    pub xmltv_channel_id: i32,
+    pub xtream_channel_id: i32,
+    pub match_confidence: Option<f32>,
+    pub is_manual: i32,
+    pub is_primary: i32,
+    pub stream_priority: i32,
+}
+
+impl NewChannelMapping {
+    pub fn new(
+        xmltv_channel_id: i32,
+        xtream_channel_id: i32,
+        match_confidence: Option<f32>,
+        is_primary: bool,
+        stream_priority: i32,
+    ) -> Self {
+        Self {
+            xmltv_channel_id,
+            xtream_channel_id,
+            match_confidence,
+            is_manual: 0,
+            is_primary: if is_primary { 1 } else { 0 },
+            stream_priority,
+        }
+    }
+
+    pub fn manual(xmltv_channel_id: i32, xtream_channel_id: i32) -> Self {
+        Self {
+            xmltv_channel_id,
+            xtream_channel_id,
+            match_confidence: None,
+            is_manual: 1,
+            is_primary: 1,
+            stream_priority: 0,
+        }
+    }
+
+    pub fn with_primary(mut self, is_primary: bool) -> Self {
+        self.is_primary = if is_primary { 1 } else { 0 };
+        self
+    }
+
+    pub fn with_priority(mut self, priority: i32) -> Self {
+        self.stream_priority = priority;
+        self
+    }
+}
+
+// ============================================================================
+// XMLTV Channel Settings Models (Story 3-1)
+// ============================================================================
+
+/// XMLTV channel settings for Plex lineup (one per XMLTV channel)
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize)]
+#[diesel(table_name = xmltv_channel_settings)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[serde(rename_all = "camelCase")]
+pub struct XmltvChannelSettings {
+    pub id: Option<i32>,
+    pub xmltv_channel_id: i32,
+    pub is_enabled: Option<i32>,
+    pub plex_display_order: Option<i32>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// New XMLTV channel settings for insertion
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = xmltv_channel_settings)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewXmltvChannelSettings {
+    pub xmltv_channel_id: i32,
+    pub is_enabled: i32,
+    pub plex_display_order: Option<i32>,
+}
+
+impl NewXmltvChannelSettings {
+    pub fn new(xmltv_channel_id: i32, is_enabled: bool) -> Self {
+        Self {
+            xmltv_channel_id,
+            is_enabled: if is_enabled { 1 } else { 0 },
+            plex_display_order: None,
+        }
+    }
+
+    pub fn disabled(xmltv_channel_id: i32) -> Self {
+        Self::new(xmltv_channel_id, false)
+    }
+
+    pub fn enabled(xmltv_channel_id: i32) -> Self {
+        Self::new(xmltv_channel_id, true)
+    }
+
+    pub fn with_display_order(mut self, order: i32) -> Self {
+        self.plex_display_order = Some(order);
+        self
+    }
+}
+
+/// Changeset for updating XMLTV channel settings
+#[derive(AsChangeset, Debug, Clone)]
+#[diesel(table_name = xmltv_channel_settings)]
+pub struct XmltvChannelSettingsUpdate {
+    pub is_enabled: Option<i32>,
+    pub plex_display_order: Option<i32>,
+    pub updated_at: Option<String>,
+}
+
+// ============================================================================
+// Event Log Models (Story 3-4)
+// ============================================================================
+
+/// Event log entry model for querying
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize)]
+#[diesel(table_name = event_log)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[serde(rename_all = "camelCase")]
+pub struct EventLog {
+    pub id: Option<i32>,
+    pub timestamp: String,
+    pub level: String,
+    pub category: String,
+    pub message: String,
+    pub details: Option<String>,
+    #[serde(serialize_with = "serialize_bool")]
+    pub is_read: i32,
+}
+
+/// Serialize SQLite INTEGER (0/1) to JSON boolean
+fn serialize_bool<S>(value: &i32, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_bool(*value != 0)
+}
+
+/// New event log entry for insertion
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = event_log)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewEventLog {
+    pub level: String,
+    pub category: String,
+    pub message: String,
+    pub details: Option<String>,
+}
+
+impl NewEventLog {
+    pub fn new(level: impl Into<String>, category: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            level: level.into(),
+            category: category.into(),
+            message: message.into(),
+            details: None,
+        }
+    }
+
+    pub fn with_details(mut self, details: impl Into<String>) -> Self {
+        self.details = Some(details.into());
+        self
+    }
+
+    /// Create an info-level event
+    pub fn info(category: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new("info", category, message)
+    }
+
+    /// Create a warn-level event
+    pub fn warn(category: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new("warn", category, message)
+    }
+
+    /// Create an error-level event
+    pub fn error(category: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new("error", category, message)
+    }
+}
+
+/// Event level enumeration
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EventLevel {
+    Info,
+    Warn,
+    Error,
+}
+
+impl std::fmt::Display for EventLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EventLevel::Info => write!(f, "info"),
+            EventLevel::Warn => write!(f, "warn"),
+            EventLevel::Error => write!(f, "error"),
+        }
+    }
+}
+
+/// Event category enumeration
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EventCategory {
+    Connection,
+    Stream,
+    Match,
+    Epg,
+    System,
+    Provider,
+}
+
+impl std::fmt::Display for EventCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EventCategory::Connection => write!(f, "connection"),
+            EventCategory::Stream => write!(f, "stream"),
+            EventCategory::Match => write!(f, "match"),
+            EventCategory::Epg => write!(f, "epg"),
+            EventCategory::System => write!(f, "system"),
+            EventCategory::Provider => write!(f, "provider"),
+        }
     }
 }

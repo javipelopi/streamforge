@@ -1,1 +1,12 @@
 export { ChannelsList } from './ChannelsList';
+export { XmltvChannelsList } from './XmltvChannelsList';
+export { XmltvChannelRow } from './XmltvChannelRow';
+export { MatchedStreamsList } from './MatchedStreamsList';
+export { StreamSearchDropdown } from './StreamSearchDropdown';
+export { AddStreamButton } from './AddStreamButton';
+export { BulkActionToolbar } from './BulkActionToolbar';
+// Story 3-8: Orphan channel management
+export { OrphanXtreamSection } from './OrphanXtreamSection';
+export { PromoteToPlexDialog } from './PromoteToPlexDialog';
+export { EditSyntheticChannelDialog } from './EditSyntheticChannelDialog';
+export { TargetLineupChannelRow } from './TargetLineupChannelRow';

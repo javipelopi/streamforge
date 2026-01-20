@@ -7,7 +7,8 @@ pub mod schema;
 #[allow(unused_imports)]
 pub use connection::{establish_connection, get_db_path, run_migrations, DbConnection, DbPool, DbPooledConnection};
 pub use models::{
-    Account, AccountStatusUpdate, NewAccount, NewProgram, NewXmltvChannel, NewXmltvSource,
-    NewXtreamChannel, Program, Setting, XmltvChannel, XmltvSource, XmltvSourceUpdate,
-    XtreamChannel, XtreamChannelUpdate,
+    Account, AccountStatusUpdate, ChannelMapping, EventCategory, EventLevel, EventLog,
+    NewAccount, NewChannelMapping, NewEventLog, NewProgram, NewXmltvChannel,
+    NewXmltvChannelSettings, NewXmltvSource, NewXtreamChannel, Program, Setting, XmltvChannel,
+    XmltvChannelSettings, XmltvSource, XmltvSourceUpdate, XtreamChannel, XtreamChannelUpdate,
 };

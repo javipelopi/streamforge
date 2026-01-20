@@ -905,6 +905,128 @@ So that I can decide whether to add them to my Plex lineup with placeholder EPG.
 
 ---
 
+### Story 3.9: Implement Target Lineup View
+
+*Added via Sprint Change Proposal 2026-01-20 - Navigation Restructure (Option C)*
+
+As a user,
+I want a dedicated Target Lineup menu item showing my Plex channel lineup,
+So that I can manage what channels appear in Plex efficiently.
+
+**Context:** The original Channels tab loaded ALL data from ALL sources with complex SQL queries, causing performance issues. This story creates a focused "Target Lineup" view showing only enabled channels.
+
+**Acceptance Criteria:**
+
+**Given** the sidebar navigation
+**When** I look at the menu
+**Then** I see "Target Lineup" as a new menu item after Dashboard
+**And** the old "Channels" menu item is removed
+
+**Given** the sidebar navigation
+**When** I click "Target Lineup"
+**Then** I see a new view showing only channels where `is_enabled = true`
+**And** the list loads quickly (<500ms for 500 enabled channels)
+
+**Given** the Target Lineup view
+**When** I view the channel list
+**Then** I can drag-drop to reorder channels
+**And** I can toggle enable/disable (disabling removes from lineup)
+**And** channels without streams show a warning icon with tooltip "No stream source"
+
+**Given** an enabled channel has no stream source
+**When** viewing in Target Lineup
+**Then** a warning badge "No stream" appears
+**And** hovering shows tooltip "This channel has no video source"
+
+**Given** the Target Lineup is empty
+**When** viewing the page
+**Then** I see an empty state: "No channels in lineup. Add channels from Sources."
+**And** a button links to the Sources view
+
+**Given** I disable a channel from Target Lineup
+**When** the toggle is clicked
+**Then** the channel is removed from the list (optimistic UI)
+**And** a toast shows "Channel removed from lineup"
+**And** an "Undo" action is available for 5 seconds
+
+---
+
+### Story 3.10: Implement Sources View with XMLTV Tab
+
+*Added via Sprint Change Proposal 2026-01-20 - Navigation Restructure (Option C)*
+
+As a user,
+I want to browse channels from my XMLTV EPG sources,
+So that I can find channels to add to my Target Lineup.
+
+**Context:** This creates the new "Sources" menu item with tabbed interface. The XMLTV tab is the default, showing EPG sources as expandable sections.
+
+**Acceptance Criteria:**
+
+**Given** the sidebar navigation
+**When** I click "Sources"
+**Then** I see a new view with tabs: [XMLTV] [Xtream]
+**And** XMLTV tab is selected by default
+
+**Given** the XMLTV tab is active
+**When** the view loads
+**Then** I see my XMLTV sources as expandable accordion sections
+**And** each section header shows: source name, channel count
+
+**Given** I expand an XMLTV source section
+**When** the channels load (lazy-loaded per source)
+**Then** I see all channels from that source
+**And** each channel shows:
+- Display name and icon
+- "In Lineup" badge (green) if `is_enabled = true`
+- Match count badge (e.g., "3 streams matched")
+- "No streams" warning if matchCount = 0
+
+**Given** I click a channel in XMLTV tab
+**When** the action menu opens
+**Then** I can "Add to Lineup" (enable) or "Remove from Lineup" (disable)
+**And** I can view/edit matched Xtream streams
+
+---
+
+### Story 3.11: Implement Sources View Xtream Tab
+
+*Added via Sprint Change Proposal 2026-01-20 - Navigation Restructure (Option C)*
+
+As a user,
+I want to browse streams from my Xtream accounts,
+So that I can link streams to XMLTV channels or promote orphans to my lineup.
+
+**Context:** This adds the Xtream tab to the Sources view created in 3-10. Shows Xtream accounts as expandable sections with stream status indicators.
+
+**Acceptance Criteria:**
+
+**Given** the Sources view
+**When** I click the "Xtream" tab
+**Then** I see my Xtream accounts as expandable accordion sections
+**And** each section header shows: account name, stream count, orphan count
+
+**Given** I expand an Xtream account section
+**When** the streams load (lazy-loaded per account)
+**Then** I see all streams from that account
+**And** each stream shows:
+- Stream name, icon, quality badges (HD/SD/4K)
+- "Linked" badge (blue) if mapped to an XMLTV channel
+- "Orphan" badge (amber) if not mapped to any channel
+- "Promoted" badge (green) if has synthetic channel in lineup
+
+**Given** I click a linked stream
+**When** the action menu opens
+**Then** I can see which XMLTV channel(s) it's linked to
+**And** I can unlink or change the link
+
+**Given** I click an orphan stream
+**When** the action menu opens
+**Then** I can "Promote to Lineup" (create synthetic channel + enable)
+**And** I can "Link to XMLTV Channel" (manual match to existing XMLTV channel)
+
+---
+
 ## Epic 4: Plex Integration & Streaming
 
 User can add tuner to Plex and watch live TV with automatic quality failover.
