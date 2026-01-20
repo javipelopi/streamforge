@@ -1,6 +1,6 @@
 # Story 3.7: Bulk Channel Operations
 
-Status: review
+Status: done
 
 ## Story
 
@@ -580,6 +580,14 @@ N/A - Implementation completed without issues requiring debug.
 
 5. **Test Fix Applied:**
    - Fixed AC5 test selector ambiguity (used `exact: true` for "Select All" button)
+
+6. **Code Review Fixes Applied (2026-01-20):**
+   - HIGH: Added ARIA live region for screen reader announcements (src/views/Channels.tsx:549-557)
+   - HIGH: Removed 5 console.error statements (Story 3-6 completion requirement)
+   - HIGH: Added input validation for negative/zero channel IDs in backend (src-tauri/src/commands/xmltv_channels.rs:1004-1007)
+   - MEDIUM: Added optimistic UI updates to bulkToggleMutation for instant feedback (src/views/Channels.tsx:315-344)
+   - MEDIUM: Added selection limit warning (500+ channels) to prevent performance issues (src/views/Channels.tsx:388-402)
+   - All 8 HIGH/MEDIUM issues from adversarial code review fixed
 
 ### File List
 

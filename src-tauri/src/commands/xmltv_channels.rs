@@ -992,13 +992,18 @@ pub fn bulk_toggle_channels(
 ) -> Result<BulkToggleResult, String> {
     use crate::db::models::NewXmltvChannelSettings;
 
-    // Validate input
+    // Validate input - empty array
     if channel_ids.is_empty() {
         return Ok(BulkToggleResult {
             success_count: 0,
             skipped_count: 0,
             skipped_ids: vec![],
         });
+    }
+
+    // Validate input - check for invalid channel IDs (negative or zero)
+    if channel_ids.iter().any(|id| *id <= 0) {
+        return Err("Invalid channel ID in bulk operation: IDs must be positive integers".to_string());
     }
 
     let mut conn = db
