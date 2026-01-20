@@ -1,5 +1,13 @@
-use axum::{http::StatusCode, Json};
+use axum::{
+    extract::State,
+    http::{header, StatusCode},
+    response::IntoResponse,
+    Json,
+};
 use serde::Serialize;
+
+use super::m3u;
+use super::state::AppState;
 
 /// Health check response structure
 #[derive(Serialize)]
@@ -27,30 +35,23 @@ pub async fn fallback_handler() -> StatusCode {
     StatusCode::NOT_FOUND
 }
 
-// TODO: Epic 4, Story 4-1: M3U Playlist Endpoint
-// ============================================================================
-// CRITICAL: Implement GET /lineup.m3u endpoint
-//
-// ACCEPTANCE CRITERIA (AC #2 from Story 3-5):
-// "Given an XMLTV channel is disabled, when the M3U playlist is generated for Plex,
-//  then the disabled channel is excluded"
-//
-// IMPLEMENTATION REQUIREMENTS:
-// 1. Query ONLY enabled channels with matched streams:
-//    SELECT xc.*, xcs.plex_display_order
-//    FROM xmltv_channels xc
-//    INNER JOIN xmltv_channel_settings xcs ON xc.id = xcs.xmltv_channel_id
-//    WHERE xcs.is_enabled = 1
-//    ORDER BY xcs.plex_display_order ASC NULLS LAST;
-//
-// 2. Verify each channel has at least one matched stream (channel_mappings table)
-//
-// 3. Return M3U8 format playlist:
-//    #EXTM3U
-//    #EXTINF:-1 tvg-id="..." tvg-logo="...", Channel Name
-//    http://localhost:5004/stream/{xmltv_channel_id}
-//
-// 4. Stream URL must use xmltv_channel_id (not xtream stream_id)
-//
-// See: _bmad-output/planning-artifacts/epics.md Story 3.5 AC #2
-// See: Architecture.md "M3U Playlist Generation" section
+/// M3U Playlist endpoint handler (Story 4-1)
+///
+/// Generates an M3U playlist for Plex integration containing:
+/// - Only enabled XMLTV channels with Xtream stream mappings
+/// - XMLTV channel names, IDs, and icons (with Xtream fallback)
+/// - Channel numbers from plex_display_order
+/// - Stream URLs pointing to /stream/{xmltv_channel_id}
+///
+/// Returns Content-Type: audio/x-mpegurl
+pub async fn playlist_m3u(State(state): State<AppState>) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let mut conn = state
+        .get_connection()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database connection error: {}", e)))?;
+
+    let port = state.get_port();
+    let m3u_content = m3u::generate_m3u_playlist(&mut conn, port)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to generate M3U playlist: {}", e)))?;
+
+    Ok(([(header::CONTENT_TYPE, "audio/x-mpegurl")], m3u_content))
+}

@@ -1,6 +1,6 @@
 use axum::{routing::get, Router};
 
-use super::handlers::{fallback_handler, health_check};
+use super::handlers::{fallback_handler, health_check, playlist_m3u};
 use super::state::AppState;
 
 /// Create the Axum router with all routes configured
@@ -13,6 +13,7 @@ use super::state::AppState;
 pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_check))
+        .route("/playlist.m3u", get(playlist_m3u))
         .fallback(fallback_handler)
         .with_state(state)
 }
