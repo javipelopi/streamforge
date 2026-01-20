@@ -30,7 +30,7 @@ function App() {
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
       <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full">
         <h1 className="text-2xl font-bold text-gray-800 mb-4">
-          IPTV Plex Integration
+          StreamForge
         </h1>
         <div className="flex flex-col gap-2 mb-4">
           <label htmlFor="name-input" className="text-sm font-medium text-gray-700">

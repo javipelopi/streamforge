@@ -138,11 +138,41 @@ pub fn run() {
 
             // Build tray icon with menu and event handlers
             // Note: Tray icon is optional - app continues if creation fails
-            if let Some(icon) = app.default_window_icon() {
-                match TrayIconBuilder::new()
-                    .icon(icon.clone())
+            // Use template icon for macOS tray (black silhouette, adapts to light/dark mode)
+            // On other platforms, use the default window icon
+            let tray_icon = {
+                #[cfg(target_os = "macos")]
+                {
+                    // Load template icon for macOS - black silhouette that adapts to menubar light/dark mode
+                    // Icon is bundled with the app and resolved from resources
+                    app.path()
+                        .resolve("icons/tray-iconTemplate@2x.png", tauri::path::BaseDirectory::Resource)
+                        .ok()
+                        .and_then(|path| tauri::image::Image::from_path(path).ok())
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    app.default_window_icon().cloned()
+                }
+            };
+
+            if let Some(icon) = tray_icon {
+                // On macOS, mark as template so it adapts to light/dark menubar automatically
+                #[cfg(target_os = "macos")]
+                let tray_builder = TrayIconBuilder::new()
+                    .icon(icon)
+                    .icon_as_template(true)
                     .menu(&menu)
-                    .show_menu_on_left_click(false) // Left click shows window, right click shows menu
+                    .show_menu_on_left_click(false);
+
+                #[cfg(not(target_os = "macos"))]
+                let tray_builder = TrayIconBuilder::new()
+                    .icon(icon)
+                    .menu(&menu)
+                    .show_menu_on_left_click(false);
+
+                match tray_builder
+                    // Left click shows window, right click shows menu
                     .on_menu_event(|app, event| match event.id.as_ref() {
                         "show" => {
                             if let Some(window) = app.get_webview_window(MAIN_WINDOW_NAME) {
@@ -206,7 +236,7 @@ pub fn run() {
                     }
                 }
             } else {
-                eprintln!("No default window icon available. App will continue without tray functionality.");
+                eprintln!("No tray icon available. App will continue without tray functionality.");
             }
 
             // Handle --minimized startup flag (used when autostart launches the app)

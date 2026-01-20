@@ -19,7 +19,7 @@ use std::sync::OnceLock;
 ///
 /// # Examples
 /// ```
-/// use iptv_lib::xtream::quality::detect_qualities;
+/// use streamforge_lib::xtream::quality::detect_qualities;
 ///
 /// assert_eq!(detect_qualities("ESPN HD"), vec!["HD"]);
 /// assert_eq!(detect_qualities("CNN 4K"), vec!["4K"]);

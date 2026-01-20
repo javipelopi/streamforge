@@ -57,7 +57,7 @@ test.describe('Story 1.3: React GUI Shell with Routing', () => {
     // THEN: Header with app title is visible
     const header = page.locator('[data-testid="app-header"]');
     await expect(header).toBeVisible();
-    await expect(header).toContainText('iptv');
+    await expect(header).toContainText('StreamForge');
   });
 
   test('should display app header with status indicator', async ({ page }) => {

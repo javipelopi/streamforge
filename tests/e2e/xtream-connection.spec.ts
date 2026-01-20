@@ -35,7 +35,7 @@ async function injectAccountMocks(
       window.__TEST_CONNECTION_RESPONSE__ = ${JSON.stringify(testConnectionResponse)};
 
       const mockCommands = {
-        greet: (args) => \`Hello, \${args.name}! Welcome to iptv.\`,
+        greet: (args) => \`Hello, \${args.name}! Welcome to StreamForge.\`,
         get_setting: () => null,
         set_setting: () => undefined,
         get_server_port: () => 5004,
@@ -145,7 +145,7 @@ test.describe('Test Xtream Connection', () => {
         window.__TEST_CONNECTION_RESPONSE__ = ${JSON.stringify(successResponse)};
 
         const mockCommands = {
-          greet: (args) => \`Hello, \${args.name}! Welcome to iptv.\`,
+          greet: (args) => \`Hello, \${args.name}! Welcome to StreamForge.\`,
           get_setting: () => null,
           set_setting: () => undefined,
           get_server_port: () => 5004,

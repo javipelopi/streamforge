@@ -74,7 +74,7 @@ async function injectTargetLineupMocks(
 
       const mockCommands = {
         // Core settings commands
-        greet: (args) => \`Hello, \${args.name}! Welcome to iptv.\`,
+        greet: (args) => \`Hello, \${args.name}! Welcome to StreamForge.\`,
         get_setting: () => null,
         set_setting: () => undefined,
         get_server_port: () => 5004,

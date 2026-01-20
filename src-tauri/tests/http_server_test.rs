@@ -8,7 +8,7 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use iptv_lib::server::{routes::create_router, AppState};
+use streamforge_lib::server::{routes::create_router, AppState};
 use tokio::net::TcpListener;
 
 /// Helper function to create a test AppState with a mock database pool

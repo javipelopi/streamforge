@@ -29,7 +29,7 @@ pub struct AutostartStatus {
 
 #[tauri::command]
 pub fn greet(name: &str) -> String {
-    format!("Hello, {}! Welcome to iptv.", name)
+    format!("Hello, {}! Welcome to StreamForge.", name)
 }
 
 #[tauri::command]
