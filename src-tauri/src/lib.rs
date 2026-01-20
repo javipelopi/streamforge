@@ -47,8 +47,16 @@ pub fn run() {
             let db_connection = db::DbConnection::new(database_url)
                 .map_err(|e| format!("Failed to create connection pool: {}", e))?;
 
-            // Create HTTP server state from database pool
-            let server_state = server::create_app_state(db_connection.clone_pool());
+            // Get app data directory for credential retrieval in stream proxy
+            let app_data_dir = app.path()
+                .app_data_dir()
+                .map_err(|_| "Failed to get app data directory".to_string())?;
+
+            // Create HTTP server state with database pool and app data dir
+            let server_state = server::create_app_state_with_dir(
+                db_connection.clone_pool(),
+                app_data_dir
+            );
 
             // Spawn HTTP server in background - MUST use tauri::async_runtime
             // Server runs independently of GUI and continues when window is hidden
@@ -281,6 +289,7 @@ pub fn run() {
             commands::set_server_port,
             commands::get_autostart_enabled,
             commands::set_autostart_enabled,
+            commands::get_plex_config,
             commands::accounts::add_account,
             commands::accounts::get_accounts,
             commands::accounts::delete_account,
@@ -336,7 +345,10 @@ pub fn run() {
             commands::logs::get_unread_event_count,
             commands::logs::mark_event_read,
             commands::logs::mark_all_events_read,
-            commands::logs::clear_old_events
+            commands::logs::clear_old_events,
+            // Test data commands (only functional when IPTV_TEST_MODE=1)
+            commands::test_data::seed_stream_proxy_test_data,
+            commands::test_data::clear_stream_proxy_test_data
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
