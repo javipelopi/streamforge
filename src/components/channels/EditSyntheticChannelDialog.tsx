@@ -1,5 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { type XmltvChannelWithMappings } from '../../lib/tauri';
+
+// Validate URL is safe (no javascript: protocol, etc.)
+function isValidIconUrl(url: string): boolean {
+  if (!url.trim()) return true; // Empty is OK
+  try {
+    const parsed = new URL(url);
+    // Only allow http/https protocols
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false; // Invalid URL format
+  }
+}
 
 /**
  * EditSyntheticChannelDialog - Dialog for editing a synthetic XMLTV channel
@@ -30,20 +42,75 @@ export function EditSyntheticChannelDialog({
   // Form state - pre-fill from channel
   const [displayName, setDisplayName] = useState(channel.displayName);
   const [iconUrl, setIconUrl] = useState(channel.icon || '');
+  const [urlError, setUrlError] = useState<string | null>(null);
+
+  // Ref for focus management
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const firstInputRef = useRef<HTMLInputElement>(null);
 
   // Reset form when channel changes
   useEffect(() => {
     setDisplayName(channel.displayName);
     setIconUrl(channel.icon || '');
+    setUrlError(null);
   }, [channel]);
 
-  // Handle form submission
+  // Focus trap and initial focus
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Focus first input when dialog opens
+    firstInputRef.current?.focus();
+
+    // Trap focus within dialog
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+
+      const focusableElements = dialog.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      const firstElement = focusableElements[0] as HTMLElement;
+      const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+      if (e.shiftKey) {
+        if (document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement.focus();
+        }
+      } else {
+        if (document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
+
+  // Handle form submission with URL validation
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      if (displayName.trim()) {
-        onSave(displayName.trim(), iconUrl.trim() || null);
+
+      // Validate display name
+      if (!displayName.trim()) {
+        return;
       }
+
+      // Validate icon URL
+      const trimmedUrl = iconUrl.trim();
+      if (trimmedUrl && !isValidIconUrl(trimmedUrl)) {
+        setUrlError('Invalid URL format. Only http:// and https:// URLs are allowed.');
+        return;
+      }
+
+      setUrlError(null);
+      onSave(displayName.trim(), trimmedUrl || null);
     },
     [displayName, iconUrl, onSave]
   );
@@ -76,6 +143,7 @@ export function EditSyntheticChannelDialog({
       aria-labelledby="edit-synthetic-dialog-title"
     >
       <div
+        ref={dialogRef}
         data-testid="edit-synthetic-dialog"
         className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 overflow-hidden"
       >
@@ -112,14 +180,17 @@ export function EditSyntheticChannelDialog({
                 Display Name
               </label>
               <input
+                ref={firstInputRef}
                 id="edit-display-name"
                 data-testid="display-name-input"
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="Enter display name"
+                maxLength={200}
                 required
                 disabled={isLoading}
+                aria-required="true"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
               />
               <p className="mt-1 text-xs text-gray-500">
@@ -140,11 +211,24 @@ export function EditSyntheticChannelDialog({
                 data-testid="icon-url-input"
                 type="url"
                 value={iconUrl}
-                onChange={(e) => setIconUrl(e.target.value)}
+                onChange={(e) => {
+                  setIconUrl(e.target.value);
+                  setUrlError(null); // Clear error on change
+                }}
                 placeholder="https://example.com/icon.png"
+                maxLength={500}
                 disabled={isLoading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                aria-invalid={urlError ? 'true' : 'false'}
+                aria-describedby={urlError ? 'icon-url-error' : undefined}
+                className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 ${
+                  urlError ? 'border-red-500 focus:border-red-500' : 'border-gray-300 focus:border-blue-500'
+                }`}
               />
+              {urlError && (
+                <p id="icon-url-error" className="mt-1 text-xs text-red-600" role="alert">
+                  {urlError}
+                </p>
+              )}
               {/* Icon preview */}
               {iconUrl.trim() && (
                 <div className="mt-2 flex items-center gap-2">
@@ -152,7 +236,7 @@ export function EditSyntheticChannelDialog({
                   <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center overflow-hidden border border-gray-200">
                     <img
                       src={iconUrl.trim()}
-                      alt="Icon preview"
+                      alt={`${displayName} channel icon preview`}
                       className="w-full h-full object-contain"
                       onError={(e) => {
                         e.currentTarget.style.display = 'none';
