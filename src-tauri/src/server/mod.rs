@@ -38,8 +38,9 @@ pub async fn start_server(state: AppState) -> Result<(), ServerError> {
     let port = state.get_port();
     let app = routes::create_router(state);
 
-    // CRITICAL: Bind to 127.0.0.1 only - not 0.0.0.0 for security (NFR21)
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    // Bind to 0.0.0.0 to allow LAN access for Plex integration
+    // Plex needs to connect from other devices on the network
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     println!("HTTP server listening on http://{}", addr);
