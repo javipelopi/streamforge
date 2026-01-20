@@ -5,10 +5,13 @@
  * Displays a single channel with badges for lineup status and match count.
  * Includes action menu for add/remove from lineup.
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MoreVertical, AlertTriangle, Radio } from 'lucide-react';
 import { toggleXmltvChannel, type XmltvSourceChannel } from '../../lib/tauri';
+
+// Toast notification duration in milliseconds
+const TOAST_DURATION_MS = 3000;
 
 interface XmltvSourceChannelRowProps {
   channel: XmltvSourceChannel;
@@ -24,6 +27,7 @@ export function XmltvSourceChannelRow({ channel, sourceId }: XmltvSourceChannelR
     type: 'success',
   });
   const queryClient = useQueryClient();
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // Handle icon load error - show fallback
   const handleIconError = useCallback(() => {
@@ -33,7 +37,7 @@ export function XmltvSourceChannelRow({ channel, sourceId }: XmltvSourceChannelR
   // Show toast notification
   const showToast = useCallback((message: string, type: 'success' | 'error') => {
     setToast({ show: true, message, type });
-    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), TOAST_DURATION_MS);
   }, []);
 
   // State to track if we're adding or removing for the toast message
@@ -86,17 +90,23 @@ export function XmltvSourceChannelRow({ channel, sourceId }: XmltvSourceChannelR
   };
 
   // Close menu when clicking outside
-  const handleClickOutside = () => {
-    if (menuOpen) {
-      setMenuOpen(false);
-    }
-  };
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [menuOpen]);
 
   return (
     <div
       data-testid={`xmltv-channel-row-${channel.id}`}
       className="flex items-center justify-between px-4 py-3 hover:bg-gray-50"
-      onClick={handleClickOutside}
     >
       {/* Channel Info */}
       <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -170,7 +180,7 @@ export function XmltvSourceChannelRow({ channel, sourceId }: XmltvSourceChannelR
       </div>
 
       {/* Action Menu */}
-      <div className="relative ml-2">
+      <div ref={menuRef} className="relative ml-2">
         <button
           data-testid={`xmltv-channel-actions-${channel.id}`}
           type="button"

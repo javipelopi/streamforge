@@ -6,7 +6,7 @@
  * Lazy-loads channels only when expanded.
  */
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import {
   getXmltvChannelsForSource,
@@ -22,6 +22,7 @@ interface XmltvSourceAccordionProps {
 export function XmltvSourceAccordion({ source }: XmltvSourceAccordionProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const contentId = `xmltv-source-channels-${source.id}`;
+  const queryClient = useQueryClient();
 
   // Fetch EPG stats for channel count
   const { data: epgStats } = useQuery({
@@ -99,8 +100,16 @@ export function XmltvSourceAccordion({ source }: XmltvSourceAccordionProps) {
 
           {/* Error state */}
           {channelsError && (
-            <div className="p-4 bg-red-50 text-red-700">
-              Failed to load channels
+            <div className="p-4 bg-red-50 border border-red-200 rounded">
+              <p className="text-red-700 mb-2">Failed to load channels</p>
+              <button
+                onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ['xmltv-source-channels', source.id] });
+                }}
+                className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+              >
+                Retry
+              </button>
             </div>
           )}
 
