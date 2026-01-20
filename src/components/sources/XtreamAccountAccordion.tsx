@@ -26,7 +26,12 @@ export function XtreamAccountAccordion({ account }: XtreamAccountAccordionProps)
   const queryClient = useQueryClient();
 
   // Fetch stream stats for header counts (always enabled)
-  const { data: stats } = useQuery({
+  // Code Review Fix #2: Add error state and retry for stats query
+  const {
+    data: stats,
+    error: statsError,
+    refetch: refetchStats,
+  } = useQuery({
     queryKey: ['account-stream-stats', account.id],
     queryFn: () => getAccountStreamStats(account.id),
     staleTime: 60000, // 1 minute
@@ -81,20 +86,36 @@ export function XtreamAccountAccordion({ account }: XtreamAccountAccordionProps)
           )}
           <div className="flex items-center gap-3">
             <span className="font-medium text-gray-900">{account.name}</span>
-            <span
-              data-testid={`stream-count-${account.id}`}
-              className="text-sm text-gray-500"
-            >
-              {stats?.streamCount ?? '...'} stream{(stats?.streamCount ?? 0) !== 1 ? 's' : ''}
-            </span>
-            {/* Orphan count badge - only show if > 0 */}
-            {stats && stats.orphanCount > 0 && (
-              <span
-                data-testid={`orphan-count-badge-${account.id}`}
-                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800"
+            {/* Code Review Fix #2: Show error state for stats with retry button */}
+            {statsError ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  refetchStats();
+                }}
+                className="text-xs text-red-600 hover:text-red-700 underline"
+                title="Failed to load stats. Click to retry."
               >
-                {stats.orphanCount} orphan{stats.orphanCount !== 1 ? 's' : ''}
-              </span>
+                Stats error - retry
+              </button>
+            ) : (
+              <>
+                <span
+                  data-testid={`stream-count-${account.id}`}
+                  className="text-sm text-gray-500"
+                >
+                  {stats?.streamCount ?? '...'} stream{(stats?.streamCount ?? 0) !== 1 ? 's' : ''}
+                </span>
+                {/* Orphan count badge - only show if > 0 */}
+                {stats && stats.orphanCount > 0 && (
+                  <span
+                    data-testid={`orphan-count-badge-${account.id}`}
+                    className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800"
+                  >
+                    {stats.orphanCount} orphan{stats.orphanCount !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -155,9 +176,10 @@ export function XtreamAccountAccordion({ account }: XtreamAccountAccordionProps)
           )}
 
           {/* Empty streams */}
+          {/* Code Review Fix #4: More actionable empty state message */}
           {!streamsLoading && !streamsError && streams.length === 0 && (
             <div className="p-4 text-center text-gray-500">
-              No streams in this account. Try scanning channels first.
+              No streams found. Refresh your account in Accounts to load streams.
             </div>
           )}
         </div>
