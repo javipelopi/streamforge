@@ -81,7 +81,7 @@ development_status:
   4-1-serve-m3u-playlist-endpoint: done
   4-2-serve-xmltv-epg-endpoint: done
   4-3-implement-hdhomerun-emulation: done
-  4-4-stream-proxy-with-quality-selection: backlog
+  4-4-stream-proxy-with-quality-selection: ready-for-dev
   4-5-automatic-stream-failover: backlog
   4-6-display-plex-configuration-urls: backlog
   epic-4-retrospective: optional
