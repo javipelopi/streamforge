@@ -4,6 +4,17 @@
 //! HDHomeRun endpoints follow the XMLTV-first architecture where XMLTV channels
 //! define the Plex lineup and Xtream streams are video sources.
 //!
+//! ## Stream Endpoint Placeholder
+//! The lineup URLs reference `/stream/{xmltv_channel_id}` which will be implemented
+//! in Story 4-4. This forward-compatible URL format ensures consistency across
+//! M3U, EPG, and HDHomeRun endpoints.
+//!
+//! ## Security: Local-Only Access Model
+//! DeviceAuth uses a static value "streamforge" which is acceptable because:
+//! - Server binds to 127.0.0.1 only (NFR21 - local-only access)
+//! - No external network exposure
+//! - HDHomeRun protocol expects DeviceAuth but doesn't enforce it for local access
+//!
 //! Story 4-3: Implement HDHomeRun Emulation
 
 use diesel::prelude::*;
@@ -107,6 +118,14 @@ pub fn get_local_ip() -> String {
 ///
 /// Returns the maximum max_connections value from active accounts,
 /// defaulting to 2 if no accounts exist.
+///
+/// ## Why MAX and not SUM?
+/// Uses MAX (not SUM) because:
+/// - Plex treats this as total concurrent streams available
+/// - All streams proxy through StreamForge regardless of source account
+/// - The account with highest max_connections represents the bottleneck
+/// - If Account A has 2 connections and Account B has 3, Plex can use up to 3
+///   concurrent streams total (limited by the single account constraint)
 pub fn get_tuner_count(conn: &mut DbPooledConnection) -> Result<u32, diesel::result::Error> {
     let result = diesel::sql_query(
         r#"
