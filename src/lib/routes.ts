@@ -6,6 +6,7 @@
 export const ROUTES = {
   DASHBOARD: '/',
   TARGET_LINEUP: '/target-lineup',
+  SOURCES: '/sources',
   EPG: '/epg',
   ACCOUNTS: '/accounts',
   SETTINGS: '/settings',
@@ -31,6 +32,13 @@ export const NAV_ITEMS: NavItem[] = [
     icon: 'listChecks',
     testId: 'target-lineup-nav-item',
     ariaLabel: 'Target Lineup - Your Plex channel lineup',
+  },
+  {
+    label: 'Sources',
+    path: ROUTES.SOURCES,
+    icon: 'database',
+    testId: 'sources-nav-item',
+    ariaLabel: 'Sources - Browse XMLTV and Xtream channel sources',
   },
   { label: 'EPG', path: ROUTES.EPG, icon: 'calendar' },
   { label: 'Accounts', path: ROUTES.ACCOUNTS, icon: 'person' },
