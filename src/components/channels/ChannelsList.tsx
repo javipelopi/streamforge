@@ -103,7 +103,7 @@ export function ChannelsList({ channels, isLoading }: ChannelsListProps) {
                   <img
                     src={channel.streamIcon}
                     alt=""
-                    className="w-10 h-10 rounded object-cover flex-shrink-0"
+                    className="w-10 h-10 rounded object-contain flex-shrink-0"
                     loading="lazy"
                   />
                 )}

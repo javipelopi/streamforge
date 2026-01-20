@@ -11,9 +11,10 @@ use tauri::State;
 use thiserror::Error;
 
 use crate::db::{
-    schema::{programs, xmltv_channels, xmltv_sources},
-    DbConnection, NewProgram, NewXmltvChannel, NewXmltvSource, Program, XmltvChannel, XmltvSource,
-    XmltvSourceUpdate,
+    schema::{channel_mappings, programs, xmltv_channel_settings, xmltv_channels, xmltv_sources},
+    ChannelMapping, DbConnection, NewChannelMapping, NewProgram, NewXmltvChannel,
+    NewXmltvChannelSettings, NewXmltvSource, Program, XmltvChannel, XmltvChannelSettings,
+    XmltvSource, XmltvSourceUpdate,
 };
 use crate::xmltv::{fetch_xmltv, parse_xmltv_data, XmltvError};
 
@@ -77,6 +78,113 @@ impl From<EpgSourceError> for String {
     fn from(err: EpgSourceError) -> Self {
         err.to_string()
     }
+}
+
+// ============================================================================
+// Helper types and functions for preserving data during XMLTV refresh
+// ============================================================================
+
+/// Preserved data from XMLTV channels before refresh
+/// Stores mappings and settings by channel_id (string) so they can be restored
+/// after channels are recreated with new database IDs
+struct PreservedChannelData {
+    /// Manual mappings: (channel_id, xtream_channel_id, is_primary, stream_priority)
+    manual_mappings: Vec<(String, i32, i32, i32)>,
+    /// Channel settings: (channel_id, is_enabled, plex_display_order)
+    settings: Vec<(String, i32, Option<i32>)>,
+}
+
+/// Save manual mappings and channel settings before deleting XMLTV channels
+fn preserve_channel_data(
+    conn: &mut diesel::SqliteConnection,
+    source_id: i32,
+) -> Result<PreservedChannelData, diesel::result::Error> {
+    // Get all existing channels for this source with their channel_id
+    let existing_channels: Vec<XmltvChannel> = xmltv_channels::table
+        .filter(xmltv_channels::source_id.eq(source_id))
+        .load(conn)?;
+
+    // Build a map of old db_id -> channel_id for lookup
+    let old_id_to_channel_id: HashMap<i32, String> = existing_channels
+        .iter()
+        .filter_map(|c| c.id.map(|id| (id, c.channel_id.clone())))
+        .collect();
+
+    // Save manual mappings (is_manual = 1) with their channel_id
+    let mappings: Vec<ChannelMapping> = channel_mappings::table
+        .filter(channel_mappings::is_manual.eq(1))
+        .load(conn)?;
+
+    let manual_mappings: Vec<(String, i32, i32, i32)> = mappings
+        .into_iter()
+        .filter_map(|m| {
+            old_id_to_channel_id.get(&m.xmltv_channel_id).map(|channel_id| {
+                (
+                    channel_id.clone(),
+                    m.xtream_channel_id,
+                    m.is_primary.unwrap_or(0),
+                    m.stream_priority.unwrap_or(0),
+                )
+            })
+        })
+        .collect();
+
+    // Save channel settings with their channel_id
+    let all_settings: Vec<XmltvChannelSettings> = xmltv_channel_settings::table.load(conn)?;
+
+    let settings: Vec<(String, i32, Option<i32>)> = all_settings
+        .into_iter()
+        .filter_map(|s| {
+            old_id_to_channel_id.get(&s.xmltv_channel_id).map(|channel_id| {
+                (
+                    channel_id.clone(),
+                    s.is_enabled.unwrap_or(0),
+                    s.plex_display_order,
+                )
+            })
+        })
+        .collect();
+
+    Ok(PreservedChannelData {
+        manual_mappings,
+        settings,
+    })
+}
+
+/// Restore manual mappings and channel settings after inserting new XMLTV channels
+fn restore_channel_data(
+    conn: &mut diesel::SqliteConnection,
+    preserved: &PreservedChannelData,
+    channel_id_map: &HashMap<String, i32>,
+) -> Result<(), diesel::result::Error> {
+    // Restore manual mappings
+    for (channel_id, xtream_channel_id, is_primary, stream_priority) in &preserved.manual_mappings {
+        if let Some(&new_xmltv_id) = channel_id_map.get(channel_id) {
+            let new_mapping = NewChannelMapping::manual(new_xmltv_id, *xtream_channel_id)
+                .with_primary(*is_primary == 1)
+                .with_priority(*stream_priority);
+
+            diesel::insert_into(channel_mappings::table)
+                .values(&new_mapping)
+                .execute(conn)?;
+        }
+    }
+
+    // Restore channel settings
+    for (channel_id, is_enabled, plex_display_order) in &preserved.settings {
+        if let Some(&new_xmltv_id) = channel_id_map.get(channel_id) {
+            let mut new_settings = NewXmltvChannelSettings::new(new_xmltv_id, *is_enabled == 1);
+            if let Some(order) = plex_display_order {
+                new_settings = new_settings.with_display_order(*order);
+            }
+
+            diesel::insert_into(xmltv_channel_settings::table)
+                .values(&new_settings)
+                .execute(conn)?;
+        }
+    }
+
+    Ok(())
 }
 
 /// Response type for XMLTV source data
@@ -449,12 +557,16 @@ pub async fn refresh_epg_source(
 
     // Wrap all database operations in a transaction for atomicity
     conn.transaction::<_, EpgSourceError, _>(|conn| {
-        // Clear existing data for this source (cascade will delete programs too)
+        // Preserve manual mappings and channel settings before deletion
+        let preserved = preserve_channel_data(conn, source_id)
+            .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+        // Clear existing data for this source (cascade deletes mappings)
         diesel::delete(xmltv_channels::table.filter(xmltv_channels::source_id.eq(source_id)))
             .execute(conn)
             .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
 
-        // Insert channels and build mapping from channel_id to db id
+        // Insert new channels and build mapping from channel_id to db id
         let mut channel_id_map: HashMap<String, i32> = HashMap::new();
 
         for parsed_channel in &parsed_channels {
@@ -519,6 +631,10 @@ pub async fn refresh_epg_source(
                 .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
         }
 
+        // Restore manual mappings and channel settings
+        restore_channel_data(conn, &preserved, &channel_id_map)
+            .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
         // Update last_refresh timestamp on the source
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(source_id)))
@@ -555,7 +671,7 @@ pub async fn refresh_all_epg_sources(db: State<'_, DbConnection>) -> Result<(), 
     for source in sources {
         let source_id = source.id.unwrap_or(0);
 
-        // Fetch and parse XMLTV data
+        // Fetch and parse XMLTV data (outside transaction - network I/O)
         let data = match fetch_xmltv(&source.url, &source.format).await {
             Ok(d) => d,
             Err(e) => {
@@ -574,100 +690,96 @@ pub async fn refresh_all_epg_sources(db: State<'_, DbConnection>) -> Result<(), 
             }
         };
 
-        // Clear existing data for this source
-        if let Err(e) =
+        // Wrap all database operations in a transaction for atomicity
+        let result = conn.transaction::<_, diesel::result::Error, _>(|conn| {
+            // Preserve manual mappings and channel settings before deletion
+            let preserved = preserve_channel_data(conn, source_id)?;
+
+            // Clear existing data for this source
             diesel::delete(xmltv_channels::table.filter(xmltv_channels::source_id.eq(source_id)))
-                .execute(&mut conn)
-        {
-            eprintln!("Failed to clear data for source {}: {}", source.name, e);
-            continue;
-        }
+                .execute(conn)?;
 
-        // Insert channels
-        let mut channel_id_map: HashMap<String, i32> = HashMap::new();
+            // Insert channels
+            let mut channel_id_map: HashMap<String, i32> = HashMap::new();
 
-        for parsed_channel in &parsed_channels {
-            let new_channel = NewXmltvChannel::new(
-                source_id,
-                &parsed_channel.channel_id,
-                &parsed_channel.display_name,
-                parsed_channel.icon.clone(),
-            );
+            for parsed_channel in &parsed_channels {
+                let new_channel = NewXmltvChannel::new(
+                    source_id,
+                    &parsed_channel.channel_id,
+                    &parsed_channel.display_name,
+                    parsed_channel.icon.clone(),
+                );
 
-            match diesel::insert_into(xmltv_channels::table)
-                .values(&new_channel)
-                .get_result::<XmltvChannel>(&mut conn)
-            {
-                Ok(inserted) => {
-                    if let Some(id) = inserted.id {
-                        channel_id_map.insert(parsed_channel.channel_id.clone(), id);
-                    }
+                let inserted: XmltvChannel = diesel::insert_into(xmltv_channels::table)
+                    .values(&new_channel)
+                    .get_result(conn)?;
+
+                if let Some(id) = inserted.id {
+                    channel_id_map.insert(parsed_channel.channel_id.clone(), id);
                 }
-                Err(e) => {
-                    eprintln!(
-                        "Failed to insert channel {} for source {}: {}",
-                        parsed_channel.channel_id, source.name, e
+            }
+
+            // Insert programs in batches
+            let mut programs_to_insert: Vec<NewProgram> = Vec::with_capacity(BATCH_SIZE);
+
+            for parsed_program in &parsed_programs {
+                if let Some(&channel_db_id) = channel_id_map.get(&parsed_program.channel_id) {
+                    let mut new_program = NewProgram::new(
+                        channel_db_id,
+                        &parsed_program.title,
+                        &parsed_program.start_time,
+                        &parsed_program.end_time,
                     );
-                }
-            }
-        }
 
-        // Insert programs in batches
-        let mut programs_to_insert: Vec<NewProgram> = Vec::with_capacity(BATCH_SIZE);
-
-        for parsed_program in &parsed_programs {
-            if let Some(&channel_db_id) = channel_id_map.get(&parsed_program.channel_id) {
-                let mut new_program = NewProgram::new(
-                    channel_db_id,
-                    &parsed_program.title,
-                    &parsed_program.start_time,
-                    &parsed_program.end_time,
-                );
-
-                if let Some(ref desc) = parsed_program.description {
-                    new_program = new_program.with_description(desc);
-                }
-                if let Some(ref cat) = parsed_program.category {
-                    new_program = new_program.with_category(cat);
-                }
-                if let Some(ref ep) = parsed_program.episode_info {
-                    new_program = new_program.with_episode_info(ep);
-                }
-
-                programs_to_insert.push(new_program);
-
-                if programs_to_insert.len() >= BATCH_SIZE {
-                    if let Err(e) = diesel::insert_into(programs::table)
-                        .values(&programs_to_insert)
-                        .execute(&mut conn)
-                    {
-                        eprintln!("Failed to insert programs batch for source {}: {}", source.name, e);
+                    if let Some(ref desc) = parsed_program.description {
+                        new_program = new_program.with_description(desc);
                     }
-                    programs_to_insert.clear();
+                    if let Some(ref cat) = parsed_program.category {
+                        new_program = new_program.with_category(cat);
+                    }
+                    if let Some(ref ep) = parsed_program.episode_info {
+                        new_program = new_program.with_episode_info(ep);
+                    }
+
+                    programs_to_insert.push(new_program);
+
+                    if programs_to_insert.len() >= BATCH_SIZE {
+                        diesel::insert_into(programs::table)
+                            .values(&programs_to_insert)
+                            .execute(conn)?;
+                        programs_to_insert.clear();
+                    }
                 }
             }
-        }
 
-        // Insert remaining programs
-        if !programs_to_insert.is_empty() {
-            if let Err(e) = diesel::insert_into(programs::table)
-                .values(&programs_to_insert)
-                .execute(&mut conn)
-            {
-                eprintln!(
-                    "Failed to insert final programs batch for source {}: {}",
-                    source.name, e
-                );
+            // Insert remaining programs
+            if !programs_to_insert.is_empty() {
+                diesel::insert_into(programs::table)
+                    .values(&programs_to_insert)
+                    .execute(conn)?;
+            }
+
+            // Restore manual mappings and channel settings
+            restore_channel_data(conn, &preserved, &channel_id_map)?;
+
+            // Update last_refresh timestamp
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(source_id)))
+                .set(xmltv_sources::last_refresh.eq(&now))
+                .execute(conn)?;
+
+            Ok(())
+        });
+
+        match result {
+            Ok(()) => {
+                success_count += 1;
+            }
+            Err(e) => {
+                eprintln!("Failed to refresh source {}: {}", source.name, e);
+                failed_sources.push(format!("{}: {}", source.name, e));
             }
         }
-
-        // Update last_refresh timestamp
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let _ = diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(source_id)))
-            .set(xmltv_sources::last_refresh.eq(&now))
-            .execute(&mut conn);
-
-        success_count += 1;
     }
 
     // Return error if all sources failed

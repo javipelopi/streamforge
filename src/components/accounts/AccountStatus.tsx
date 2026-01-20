@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CheckCircledIcon, CrossCircledIcon, ReloadIcon, MagnifyingGlassIcon } from '@radix-ui/react-icons';
-import { testConnection, scanChannels, type TestConnectionResponse, type ScanChannelsResponse } from '../../lib/tauri';
+import { testConnection, scanAndRematch, type TestConnectionResponse, type ScanAndRematchResponse } from '../../lib/tauri';
 
 interface AccountStatusProps {
   accountId: number;
@@ -35,7 +35,7 @@ export function AccountStatus({
   const [isLoading, setIsLoading] = useState(false);
   const [testResult, setTestResult] = useState<TestConnectionResponse | null>(null);
   const [isScanLoading, setIsScanLoading] = useState(false);
-  const [scanResult, setScanResult] = useState<ScanChannelsResponse | null>(null);
+  const [scanResult, setScanResult] = useState<ScanAndRematchResponse | null>(null);
   const [hasAutoScanned, setHasAutoScanned] = useState(false);
 
   // Use test result or initial values for display
@@ -75,7 +75,8 @@ export function AccountStatus({
     setIsScanLoading(true);
     setScanResult(null);
     try {
-      const result = await scanChannels(accountId);
+      // Use the enhanced scan_and_rematch which auto-matches to XMLTV channels
+      const result = await scanAndRematch(accountId);
       setScanResult(result);
     } catch (error) {
       setScanResult({
@@ -84,6 +85,10 @@ export function AccountStatus({
         newChannels: 0,
         updatedChannels: 0,
         removedChannels: 0,
+        newMatches: 0,
+        removedMatches: 0,
+        updatedMatches: 0,
+        preservedManualMatches: 0,
         scanDurationMs: 0,
         errorMessage: error instanceof Error ? error.message : 'Channel scan failed',
       });
@@ -212,11 +217,12 @@ export function AccountStatus({
 
       {/* Scan Result - Success */}
       {scanResult?.success && (
-        <div data-testid="scan-result-success" className="flex flex-col gap-1 mt-2 p-3 bg-green-50 rounded-md">
+        <div data-testid="scan-result-success" className="flex flex-col gap-2 mt-2 p-3 bg-green-50 rounded-md">
           <div className="flex items-center gap-2">
             <CheckCircledIcon className="w-5 h-5 text-green-500" />
             <span className="font-medium text-green-700">Channel scan complete</span>
           </div>
+          {/* Channel counts */}
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-green-700">
             <span data-testid="scan-result-total">
               Total: <strong>{scanResult.totalChannels}</strong> channels
@@ -227,9 +233,40 @@ export function AccountStatus({
             <span data-testid="scan-result-updated">
               Updated: <strong>{scanResult.updatedChannels}</strong>
             </span>
-            <span data-testid="scan-result-duration">
-              Duration: <strong>{formatDuration(scanResult.scanDurationMs)}</strong>
-            </span>
+            {scanResult.removedChannels > 0 && (
+              <span data-testid="scan-result-removed" className="text-amber-700">
+                Removed: <strong>{scanResult.removedChannels}</strong>
+              </span>
+            )}
+          </div>
+          {/* Auto-rematch results (only show if there were changes) */}
+          {(scanResult.newMatches > 0 || scanResult.removedMatches > 0 || scanResult.updatedMatches > 0) && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-blue-700 border-t border-green-200 pt-2 mt-1">
+              <span className="text-blue-600 font-medium">Auto-rematch:</span>
+              {scanResult.newMatches > 0 && (
+                <span data-testid="scan-result-new-matches">
+                  +{scanResult.newMatches} new match{scanResult.newMatches !== 1 ? 'es' : ''}
+                </span>
+              )}
+              {scanResult.removedMatches > 0 && (
+                <span data-testid="scan-result-removed-matches" className="text-amber-700">
+                  -{scanResult.removedMatches} removed
+                </span>
+              )}
+              {scanResult.updatedMatches > 0 && (
+                <span data-testid="scan-result-updated-matches">
+                  {scanResult.updatedMatches} updated
+                </span>
+              )}
+              {scanResult.preservedManualMatches > 0 && (
+                <span data-testid="scan-result-preserved" className="text-gray-600">
+                  ({scanResult.preservedManualMatches} manual preserved)
+                </span>
+              )}
+            </div>
+          )}
+          <div className="text-xs text-gray-500">
+            Duration: {formatDuration(scanResult.scanDurationMs)}
           </div>
         </div>
       )}

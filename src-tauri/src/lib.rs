@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod credentials;
 pub mod db;
+pub mod matcher;
 pub mod scheduler;
 pub mod server;
 pub mod xmltv;
@@ -256,6 +257,7 @@ pub fn run() {
             commands::accounts::update_account,
             commands::accounts::test_connection,
             commands::channels::scan_channels,
+            commands::channels::scan_and_rematch,
             commands::channels::get_channels,
             commands::channels::get_channel_count,
             commands::epg::add_xmltv_source,
@@ -269,7 +271,42 @@ pub fn run() {
             commands::epg::get_xmltv_channels,
             commands::epg::get_programs,
             commands::epg::get_epg_schedule,
-            commands::epg::set_epg_schedule
+            commands::epg::set_epg_schedule,
+            commands::matcher::run_channel_matching,
+            commands::matcher::get_match_stats,
+            commands::matcher::get_channel_mappings_for_xmltv,
+            commands::matcher::get_xmltv_channel_settings,
+            commands::matcher::get_match_threshold,
+            commands::matcher::set_match_threshold,
+            commands::matcher::normalize_channel_name,
+            commands::matcher::calculate_match_score,
+            commands::matcher::detect_provider_changes,
+            commands::matcher::auto_rematch_new_streams,
+            commands::matcher::handle_removed_streams,
+            commands::matcher::handle_changed_streams,
+            commands::xmltv_channels::get_xmltv_channels_with_mappings,
+            commands::xmltv_channels::set_primary_stream,
+            commands::xmltv_channels::toggle_xmltv_channel,
+            commands::xmltv_channels::update_channel_order,
+            commands::xmltv_channels::get_all_xtream_streams,
+            commands::xmltv_channels::search_xtream_streams,
+            commands::xmltv_channels::add_manual_stream_mapping,
+            commands::xmltv_channels::remove_stream_mapping,
+            commands::xmltv_channels::bulk_toggle_channels,
+            commands::xmltv_channels::get_orphan_xtream_streams,
+            commands::xmltv_channels::promote_orphan_to_plex,
+            commands::xmltv_channels::update_synthetic_channel,
+            commands::xmltv_channels::get_target_lineup_channels,
+            commands::xmltv_channels::get_xmltv_channels_for_source,
+            commands::xtream_sources::get_xtream_streams_for_account,
+            commands::xtream_sources::get_account_stream_stats,
+            commands::xtream_sources::unlink_xtream_stream,
+            commands::logs::log_event,
+            commands::logs::get_events,
+            commands::logs::get_unread_event_count,
+            commands::logs::mark_event_read,
+            commands::logs::mark_all_events_read,
+            commands::logs::clear_old_events
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

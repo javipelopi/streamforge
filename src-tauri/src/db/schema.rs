@@ -20,6 +20,31 @@ diesel::table! {
 }
 
 diesel::table! {
+    channel_mappings (id) {
+        id -> Nullable<Integer>,
+        xmltv_channel_id -> Integer,
+        xtream_channel_id -> Integer,
+        match_confidence -> Nullable<Float>,
+        is_manual -> Nullable<Integer>,
+        is_primary -> Nullable<Integer>,
+        stream_priority -> Nullable<Integer>,
+        created_at -> Text,
+    }
+}
+
+diesel::table! {
+    event_log (id) {
+        id -> Nullable<Integer>,
+        timestamp -> Text,
+        level -> Text,
+        category -> Text,
+        message -> Text,
+        details -> Nullable<Text>,
+        is_read -> Integer,
+    }
+}
+
+diesel::table! {
     programs (id) {
         id -> Nullable<Integer>,
         xmltv_channel_id -> Integer,
@@ -41,6 +66,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    xmltv_channel_settings (id) {
+        id -> Nullable<Integer>,
+        xmltv_channel_id -> Integer,
+        is_enabled -> Nullable<Integer>,
+        plex_display_order -> Nullable<Integer>,
+        created_at -> Text,
+        updated_at -> Text,
+    }
+}
+
+diesel::table! {
     xmltv_channels (id) {
         id -> Nullable<Integer>,
         source_id -> Integer,
@@ -49,6 +85,7 @@ diesel::table! {
         icon -> Nullable<Text>,
         created_at -> Text,
         updated_at -> Text,
+        is_synthetic -> Nullable<Integer>,
     }
 }
 
@@ -84,14 +121,20 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(channel_mappings -> xmltv_channels (xmltv_channel_id));
+diesel::joinable!(channel_mappings -> xtream_channels (xtream_channel_id));
 diesel::joinable!(programs -> xmltv_channels (xmltv_channel_id));
+diesel::joinable!(xmltv_channel_settings -> xmltv_channels (xmltv_channel_id));
 diesel::joinable!(xmltv_channels -> xmltv_sources (source_id));
 diesel::joinable!(xtream_channels -> accounts (account_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     accounts,
+    channel_mappings,
+    event_log,
     programs,
     settings,
+    xmltv_channel_settings,
     xmltv_channels,
     xmltv_sources,
     xtream_channels,
