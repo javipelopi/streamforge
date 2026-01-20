@@ -26,7 +26,7 @@ pub struct M3uChannel {
     pub tvg_id: String,
 }
 
-/// Query result for enabled channels
+/// Query result for enabled channels with resolved logos
 #[derive(QueryableByName, Debug)]
 struct EnabledChannelRow {
     #[diesel(sql_type = Integer)]
@@ -39,6 +39,8 @@ struct EnabledChannelRow {
     icon: Option<String>,
     #[diesel(sql_type = Nullable<Integer>)]
     plex_display_order: Option<i32>,
+    #[diesel(sql_type = Nullable<Text>)]
+    xtream_fallback_icon: Option<String>,
 }
 
 /// Query result for Xtream stream icon fallback
@@ -52,11 +54,31 @@ struct XtreamIconRow {
 ///
 /// Channels are ordered by plex_display_order (ascending, nulls last)
 /// then by display_name (ascending) for channels without explicit order.
+///
+/// Performance optimized: Single query with LEFT JOIN to get Xtream fallback icons,
+/// eliminating N+1 query pattern.
 pub fn get_enabled_channels_for_m3u(conn: &mut DbPooledConnection) -> Result<Vec<M3uChannel>, diesel::result::Error> {
-    // Query enabled XMLTV channels with their settings that have at least one mapping
+    // Query enabled XMLTV channels with their settings and Xtream fallback icon in ONE query
+    // Uses subquery to get the best Xtream icon for fallback (primary first, then highest priority)
     let rows = diesel::sql_query(
         r#"
-        SELECT xc.id, xc.channel_id, xc.display_name, xc.icon, xcs.plex_display_order
+        SELECT
+            xc.id,
+            xc.channel_id,
+            xc.display_name,
+            xc.icon,
+            xcs.plex_display_order,
+            (
+                SELECT xtc.stream_icon
+                FROM channel_mappings cm
+                INNER JOIN xtream_channels xtc ON cm.xtream_channel_id = xtc.id
+                WHERE cm.xmltv_channel_id = xc.id
+                ORDER BY
+                    CASE WHEN cm.is_primary = 1 THEN 0 ELSE 1 END,
+                    cm.stream_priority ASC,
+                    cm.id ASC
+                LIMIT 1
+            ) as xtream_fallback_icon
         FROM xmltv_channels xc
         INNER JOIN xmltv_channel_settings xcs ON xc.id = xcs.xmltv_channel_id
         WHERE xcs.is_enabled = 1
@@ -72,12 +94,20 @@ pub fn get_enabled_channels_for_m3u(conn: &mut DbPooledConnection) -> Result<Vec
     )
     .load::<EnabledChannelRow>(conn)?;
 
-    // Convert to M3uChannel with logo resolution
+    // Convert to M3uChannel with logo resolution (no additional queries needed!)
     let mut channels = Vec::with_capacity(rows.len());
     let mut row_index = 1;
 
     for row in rows {
-        let logo_url = resolve_channel_logo(conn, row.id, row.icon.as_deref())?;
+        // Logo priority: XMLTV icon -> Xtream fallback -> None
+        let logo_url = if let Some(icon) = row.icon.as_ref().filter(|s| !s.trim().is_empty()) {
+            Some(icon.clone())
+        } else if let Some(fallback) = row.xtream_fallback_icon.as_ref().filter(|s| !s.trim().is_empty()) {
+            Some(fallback.clone())
+        } else {
+            None
+        };
+
         let channel_number = row.plex_display_order.unwrap_or(row_index);
         row_index += 1;
 
@@ -95,10 +125,14 @@ pub fn get_enabled_channels_for_m3u(conn: &mut DbPooledConnection) -> Result<Vec
 
 /// Resolve the logo URL for a channel
 ///
+/// **DEPRECATED**: Logo resolution is now done in the main query for performance.
+/// This function is kept for backward compatibility only.
+///
 /// Priority order:
 /// 1. XMLTV channel icon (if not null/empty)
 /// 2. Primary Xtream stream icon (fallback)
 /// 3. No logo (returns None)
+#[allow(dead_code)]
 pub fn resolve_channel_logo(
     conn: &mut DbPooledConnection,
     xmltv_channel_id: i32,
@@ -112,14 +146,17 @@ pub fn resolve_channel_logo(
     }
 
     // Fallback to primary Xtream stream icon
+    // Priority: 1) Primary stream (is_primary=1), 2) Highest priority stream, 3) First by ID
     let xtream_icon = diesel::sql_query(
         r#"
         SELECT xtc.stream_icon
         FROM channel_mappings cm
         INNER JOIN xtream_channels xtc ON cm.xtream_channel_id = xtc.id
         WHERE cm.xmltv_channel_id = ?
-        AND (cm.is_primary = 1 OR cm.is_primary IS NULL)
-        ORDER BY cm.is_primary DESC NULLS LAST, cm.stream_priority ASC
+        ORDER BY
+            CASE WHEN cm.is_primary = 1 THEN 0 ELSE 1 END,
+            cm.stream_priority ASC,
+            cm.id ASC
         LIMIT 1
         "#,
     )
@@ -143,42 +180,66 @@ pub fn resolve_channel_logo(
 /// - #EXTM3U header
 /// - EXTINF entries for each enabled channel
 /// - Stream URLs pointing to /stream/{xmltv_channel_id}
+///
+/// For large channel counts (>1000), consider using streaming response to reduce memory usage.
+/// This implementation builds the full string for simplicity and Plex compatibility.
 pub fn generate_m3u_playlist(conn: &mut DbPooledConnection, port: u16) -> Result<String, diesel::result::Error> {
     let channels = get_enabled_channels_for_m3u(conn)?;
-    Ok(generate_m3u_from_channels(&channels, port))
+
+    // Pre-allocate estimated capacity: ~200 bytes per channel + header
+    let estimated_size = 50 + (channels.len() * 200);
+    let mut output = String::with_capacity(estimated_size);
+
+    output.push_str("#EXTM3U\n");
+
+    for channel in &channels {
+        generate_channel_entry(&mut output, channel, port);
+    }
+
+    Ok(output)
+}
+
+/// Generate a single M3U channel entry and append to output string
+///
+/// Extracted for potential streaming implementation in future.
+fn generate_channel_entry(output: &mut String, channel: &M3uChannel, port: u16) {
+    // Build EXTINF line with attributes
+    output.push_str(&format!(
+        "#EXTINF:-1 tvg-id=\"{}\" tvg-name=\"{}\"",
+        escape_m3u_attribute(&channel.tvg_id),
+        escape_m3u_attribute(&channel.display_name)
+    ));
+
+    // Add logo if available
+    if let Some(ref logo) = channel.logo_url {
+        output.push_str(&format!(" tvg-logo=\"{}\"", escape_m3u_attribute(logo)));
+    }
+
+    // Add channel number
+    output.push_str(&format!(" tvg-chno=\"{}\"", channel.channel_number));
+
+    // Add display name after comma
+    output.push_str(&format!(",{}\n", channel.display_name));
+
+    // Add stream URL
+    output.push_str(&format!("http://127.0.0.1:{}/stream/{}\n", port, channel.xmltv_channel_id));
 }
 
 /// Generate M3U playlist content from a list of channels
 ///
 /// This is the core M3U generation logic, separated from database queries
 /// to allow unit testing without a database connection.
+///
+/// Pre-allocates string capacity based on channel count for better performance.
 pub fn generate_m3u_from_channels(channels: &[M3uChannel], port: u16) -> String {
-    let mut output = String::from("#EXTM3U\n");
+    // Pre-allocate estimated capacity: ~200 bytes per channel + header
+    let estimated_size = 50 + (channels.len() * 200);
+    let mut output = String::with_capacity(estimated_size);
+
+    output.push_str("#EXTM3U\n");
 
     for channel in channels {
-        // Build EXTINF line with attributes
-        let mut extinf = format!(
-            "#EXTINF:-1 tvg-id=\"{}\" tvg-name=\"{}\"",
-            escape_m3u_attribute(&channel.tvg_id),
-            escape_m3u_attribute(&channel.display_name)
-        );
-
-        // Add logo if available
-        if let Some(ref logo) = channel.logo_url {
-            extinf.push_str(&format!(" tvg-logo=\"{}\"", escape_m3u_attribute(logo)));
-        }
-
-        // Add channel number
-        extinf.push_str(&format!(" tvg-chno=\"{}\"", channel.channel_number));
-
-        // Add display name after comma
-        extinf.push_str(&format!(",{}\n", channel.display_name));
-
-        // Add stream URL
-        let stream_url = format!("http://127.0.0.1:{}/stream/{}\n", port, channel.xmltv_channel_id);
-
-        output.push_str(&extinf);
-        output.push_str(&stream_url);
+        generate_channel_entry(&mut output, channel, port);
     }
 
     output
