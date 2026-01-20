@@ -1,8 +1,8 @@
 use axum::{routing::{get, post, delete}, Router};
 
 use super::handlers::{
-    discover_json, epg_xml, fallback_handler, health_check, lineup_json, lineup_status_json,
-    playlist_m3u, stream_proxy, seed_test_data, clear_test_data_endpoint,
+    device_xml, discover_json, epg_xml, fallback_handler, health_check, lineup_json,
+    lineup_status_json, playlist_m3u, stream_proxy, seed_test_data, clear_test_data_endpoint,
 };
 use super::state::AppState;
 
@@ -22,6 +22,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/discover.json", get(discover_json))
         .route("/lineup.json", get(lineup_json))
         .route("/lineup_status.json", get(lineup_status_json))
+        .route("/device.xml", get(device_xml))
         // Stream proxy endpoint (Story 4-4)
         // Routes stream requests to Xtream providers with quality selection
         .route("/stream/{channel_id}", get(stream_proxy))

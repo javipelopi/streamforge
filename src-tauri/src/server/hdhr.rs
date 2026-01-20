@@ -250,6 +250,38 @@ pub fn generate_lineup_status() -> LineupStatusResponse {
     }
 }
 
+/// Generate HDHomeRun device.xml (UPnP device description)
+///
+/// Plex requires this XML endpoint for proper device discovery.
+/// Returns a valid UPnP device description with HDHomeRun information.
+pub fn generate_device_xml(port: u16) -> String {
+    let local_ip = get_local_ip();
+    let device_id = generate_device_id();
+    let base_url = format!("http://{}:{}", local_ip, port);
+
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+    <specVersion>
+        <major>1</major>
+        <minor>0</minor>
+    </specVersion>
+    <URLBase>{base_url}</URLBase>
+    <device>
+        <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
+        <friendlyName>StreamForge</friendlyName>
+        <manufacturer>Silicondust</manufacturer>
+        <modelName>HDHR5-4K</modelName>
+        <modelNumber>HDHR5-4K</modelNumber>
+        <serialNumber>{device_id}</serialNumber>
+        <UDN>uuid:{device_id}</UDN>
+    </device>
+</root>"#,
+        base_url = base_url,
+        device_id = device_id,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

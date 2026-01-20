@@ -310,6 +310,23 @@ pub async fn lineup_status_json() -> impl IntoResponse {
     (headers, Json(status))
 }
 
+/// HDHomeRun device.xml endpoint handler
+///
+/// Returns UPnP device description XML for Plex device discovery.
+/// Plex requires this endpoint to properly identify and add the HDHomeRun device.
+pub async fn device_xml(State(state): State<AppState>) -> impl IntoResponse {
+    let port = state.get_port();
+    let xml = hdhr::generate_device_xml(port);
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/xml"),
+    );
+
+    (headers, xml)
+}
+
 /// Stream proxy endpoint handler (Story 4-4 + Story 4-5 Failover)
 ///
 /// Proxies live streams from Xtream providers to Plex with automatic failover:
