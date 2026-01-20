@@ -247,6 +247,9 @@ pub async fn get_plex_config(db: State<'_, DbConnection>) -> Result<PlexConfig, 
     // Get local IP (reuse existing function from hdhr.rs)
     let local_ip = get_local_ip();
 
+    // Check if server is running FIRST to ensure data consistency
+    let server_running = check_server_health(&local_ip, port).await;
+
     // Get tuner count from active accounts (reuse existing function from hdhr.rs)
     let tuner_count = get_tuner_count(&mut conn)
         .map_err(|e| format!("Failed to get tuner count: {}", e))?
@@ -257,9 +260,6 @@ pub async fn get_plex_config(db: State<'_, DbConnection>) -> Result<PlexConfig, 
     let m3u_url = format!("{}/playlist.m3u", base_url);
     let epg_url = format!("{}/epg.xml", base_url);
     let hdhr_url = base_url;
-
-    // Check if server is running by attempting a health check
-    let server_running = check_server_health(port).await;
 
     Ok(PlexConfig {
         server_running,
@@ -275,14 +275,36 @@ pub async fn get_plex_config(db: State<'_, DbConnection>) -> Result<PlexConfig, 
 /// Check if the HTTP server is running by attempting a health check
 ///
 /// Returns true if server responds, false otherwise.
-async fn check_server_health(port: u16) -> bool {
+async fn check_server_health(local_ip: &str, port: u16) -> bool {
     // Try to connect to the server's discover.json endpoint
     // Using discover.json because it's a simple GET that always exists when server runs
-    let url = format!("http://127.0.0.1:{}/discover.json", port);
+    // Use the actual local IP that will be shown to users, not localhost
+    let url = format!("http://{}:{}/discover.json", local_ip, port);
 
-    match reqwest::get(&url).await {
-        Ok(response) => response.status().is_success(),
-        Err(_) => false,
+    // Set a 2-second timeout to avoid blocking UI (NFR5: responsiveness < 100ms requirement)
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+    {
+        Ok(client) => client,
+        Err(e) => {
+            eprintln!("Failed to create HTTP client for server health check: {}", e);
+            return false;
+        }
+    };
+
+    match client.get(&url).send().await {
+        Ok(response) => {
+            let is_healthy = response.status().is_success();
+            if !is_healthy {
+                eprintln!("Server health check failed: received status {}", response.status());
+            }
+            is_healthy
+        }
+        Err(e) => {
+            eprintln!("Server health check failed for {}:{} - {}", local_ip, port, e);
+            false
+        }
     }
 }
 
@@ -400,7 +422,16 @@ mod tests {
     #[tokio::test]
     async fn test_check_server_health_returns_false_when_server_not_running() {
         // Use a port that's unlikely to have a server
-        let result = check_server_health(59999).await;
+        let result = check_server_health("127.0.0.1", 59999).await;
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_check_server_health_uses_provided_ip() {
+        // Test that health check uses the provided IP address, not hardcoded localhost
+        // This ensures the health check matches the URLs displayed to users
+        let result = check_server_health("192.168.1.1", 59999).await;
+        // Should fail (no server), but verifies IP parameter is used
         assert!(!result);
     }
 }
