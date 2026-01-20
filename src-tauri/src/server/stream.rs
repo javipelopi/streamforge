@@ -163,8 +163,6 @@ pub fn select_best_quality(qualities_json: Option<&str>) -> String {
     let qualities = match qualities_json {
         Some(json) if !json.is_empty() => qualities_from_json(json),
         _ => {
-            // CODE REVIEW FIX: Added logging for observability
-            eprintln!("Quality selection - no quality info available, defaulting to SD");
             return "SD".to_string();
         }
     };
@@ -172,20 +170,11 @@ pub fn select_best_quality(qualities_json: Option<&str>) -> String {
     // Return first matching quality in priority order
     for quality in QUALITY_PRIORITY.iter() {
         if qualities.iter().any(|q| q.eq_ignore_ascii_case(quality)) {
-            // CODE REVIEW FIX: Log selected quality for debugging
-            eprintln!(
-                "Quality selection - selected {} from available qualities: {:?}",
-                quality, qualities
-            );
             return quality.to_string();
         }
     }
 
     // Default to SD if no recognized quality found
-    eprintln!(
-        "Quality selection - no recognized qualities in {:?}, defaulting to SD",
-        qualities
-    );
     "SD".to_string()
 }
 

@@ -1,6 +1,6 @@
 # Story 4.5: Automatic Stream Failover
 
-Status: review
+Status: in-progress
 
 ## Story
 
@@ -233,6 +233,14 @@ This is the **fifth story in Epic 4: Plex Integration & Streaming**. Epic 4 enab
   - [x] 12.1 Run `cargo check` - no Rust errors
   - [x] 12.2 Run `cargo test` - all unit tests pass
   - [x] 12.3 Run `npm run build` - build succeeds
+
+### Code Review Follow-ups (AI)
+
+- [ ] [AI-Review][HIGH] Implement FailoverStream wrapper for mid-stream failover (AC #1 complete) [handlers.rs:521]
+- [ ] [AI-Review][HIGH] Integrate quality upgrade retry into streaming loop (AC #3) [handlers.rs:335-534]
+- [ ] [AI-Review][MEDIUM] Add FailureReason::CredentialError variant for better error categorization [failover.rs:234, handlers.rs:550]
+- [ ] [AI-Review][LOW] Implement circuit breaker pattern for known-bad streams [failover.rs]
+- [ ] [AI-Review][LOW] Create mock Xtream server for complete integration tests [tests/integration/]
 
 ## Dev Notes
 
@@ -539,6 +547,74 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
 - Quality upgrade retry logic (AC #3) is implemented in FailoverState but not yet integrated into the streaming loop (requires mid-stream failover which needs the FailoverStream wrapper). The foundation is complete.
 - Full integration testing requires a mock Xtream server (deferred from Story 4-4).
 
+### Code Review Findings (2026-01-20)
+
+**Review Agent:** Claude Sonnet 4.5
+
+**Issues Found:** 7 (2 HIGH, 3 MEDIUM, 2 LOW)
+
+#### HIGH Severity Issues
+
+1. **AC #3 Not Fully Implemented - Quality Upgrade Retry Missing**
+   - **Status:** DOCUMENTED (requires architectural refactor)
+   - **Location:** handlers.rs:335-534, stream_proxy function
+   - **Problem:** Quality upgrade retry (AC #3) is not integrated into the streaming loop. The implementation tries streams at request start only - there's no mid-stream upgrade check after 60 seconds.
+   - **Root Cause:** The simplified approach (try-at-start) achieves NFR2 (<2s failover) but doesn't support AC #3 (upgrade after 60s). This requires the FailoverStream wrapper approach from the original design.
+   - **Recommendation:** Accept as-is for MVP (primary failover works), or implement FailoverStream wrapper in future story.
+
+2. **Incomplete Mid-Stream Failover**
+   - **Status:** DOCUMENTED (by design - simplified approach)
+   - **Location:** handlers.rs:415-468
+   - **Problem:** Implementation tries all streams at request start, not during streaming. Doesn't handle streams that start successfully but fail mid-playback.
+   - **Root Cause:** Simplified implementation prioritizes NFR2 (fast failover) over complete AC #1 (mid-stream detection).
+   - **Recommendation:** Works for connection failures (most common case). Mid-stream failures require FailoverStream wrapper.
+
+#### MEDIUM Severity Issues
+
+3. **Missing Mid-Stream Failure Detection**
+   - **Status:** DOCUMENTED (same root cause as #2)
+   - **Location:** handlers.rs:516-533, SessionCleanupStream
+   - **Problem:** SessionCleanupStream only cleans up on drop - doesn't detect stream read errors to trigger failover.
+   - **Impact:** Stream read errors during playback won't trigger failover.
+
+4. **Logging in Hot Path**
+   - **Status:** FIXED
+   - **Location:** stream.rs:162-178, select_best_quality
+   - **Problem:** Code review comments added eprintln! to every quality selection (every stream request).
+   - **Fix:** Removed all eprintln! statements from select_best_quality function.
+   - **Files Changed:** src-tauri/src/server/stream.rs
+
+5. **Test Coverage Claims vs Reality**
+   - **Status:** DOCUMENTED
+   - **Location:** Story file Task 11, test file lines 209, 244
+   - **Problem:** Integration tests are mostly placeholders. Test file admits "Full failover tests require mock Xtream server".
+   - **Impact:** False confidence in test coverage.
+   - **Recommendation:** Mark tests as incomplete or implement mock server.
+
+#### LOW Severity Issues
+
+6. **Inconsistent Error Handling**
+   - **Location:** handlers.rs:543-551
+   - **Problem:** Credential decryption errors mapped to FailureReason::ConnectionError.
+   - **Impact:** Minor - makes debugging slightly harder.
+   - **Recommendation:** Add FailureReason::CredentialError variant in future refactor.
+
+7. **No Circuit Breaker for Failing Streams**
+   - **Location:** failover.rs module
+   - **Problem:** No rate limiting or circuit breaker on failover attempts.
+   - **Impact:** Minor - will retry known-bad streams on every request.
+   - **Recommendation:** Implement circuit breaker pattern in future optimization.
+
+#### Summary
+
+- **Total Issues:** 7 (2 HIGH, 3 MEDIUM, 2 LOW)
+- **Fixed:** 1 (Issue #4 - logging removed)
+- **Documented:** 6 (architectural limitations, deferred improvements)
+
+**Key Finding:** The simplified failover approach (try-at-start) successfully implements connection-level failover (AC #1 partial, AC #2, AC #4, AC #5) and meets NFR2 (<2s failover). However, AC #3 (quality upgrade retry) and full AC #1 (mid-stream failover) require the FailoverStream wrapper approach from the original design. This is a known trade-off documented in the Implementation Notes.
+
+**Recommendation:** Mark story as "in-progress" with action items to complete AC #3, or accept simplified implementation and update ACs to match delivered functionality.
+
 ### File List
 
 **Files Created:**
@@ -546,7 +622,7 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 **Files Modified:**
 - `src-tauri/src/server/mod.rs` - Added failover module export
-- `src-tauri/src/server/stream.rs` - Extended StreamSession with failover tracking
+- `src-tauri/src/server/stream.rs` - Extended StreamSession with failover tracking, removed hot-path logging
 - `src-tauri/src/server/handlers.rs` - Integrated failover into stream_proxy handler
 
 **Test Files:**
