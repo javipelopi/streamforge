@@ -289,6 +289,7 @@ pub fn run() {
             commands::set_server_port,
             commands::get_autostart_enabled,
             commands::set_autostart_enabled,
+            commands::get_plex_config,
             commands::accounts::add_account,
             commands::accounts::get_accounts,
             commands::accounts::delete_account,
