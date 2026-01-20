@@ -1,13 +1,15 @@
 /**
  * Sources View
  * Story 3-10: Implement Sources View with XMLTV Tab
+ * Story 3-11: Implement Sources View with Xtream Tab
  *
  * A tabbed interface for browsing channel sources:
  * - XMLTV tab: Browse EPG sources with lazy-loaded channels
- * - Xtream tab: Browse stream sources (disabled until story 3-11)
+ * - Xtream tab: Browse Xtream stream sources with lazy-loaded streams
  */
 import { useState } from 'react';
 import { XmltvSourcesTab } from '../components/sources/XmltvSourcesTab';
+import { XtreamSourcesTab } from '../components/sources/XtreamSourcesTab';
 
 type TabType = 'xmltv' | 'xtream';
 
@@ -45,12 +47,14 @@ export function Sources() {
           role="tab"
           aria-selected={activeTab === 'xtream'}
           aria-controls="xtream-tab-panel"
-          className="px-4 py-2 font-medium text-sm text-gray-400 cursor-not-allowed"
-          disabled
-          title="Coming in story 3-11"
+          className={`px-4 py-2 font-medium text-sm ${
+            activeTab === 'xtream'
+              ? 'border-b-2 border-blue-500 text-blue-600'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+          onClick={() => setActiveTab('xtream')}
         >
           Xtream
-          <span className="ml-2 text-xs bg-gray-200 px-1.5 py-0.5 rounded">Soon</span>
         </button>
       </div>
 
@@ -71,9 +75,9 @@ export function Sources() {
           id="xtream-tab-panel"
           role="tabpanel"
           aria-labelledby="xtream-tab"
-          className="flex-1 flex items-center justify-center"
+          className="flex-1 overflow-hidden"
         >
-          <p className="text-gray-500">Xtream sources coming in story 3-11</p>
+          <XtreamSourcesTab />
         </div>
       )}
     </div>

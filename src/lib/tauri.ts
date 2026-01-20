@@ -1202,3 +1202,125 @@ export interface XmltvSourceChannel {
 export async function getXmltvChannelsForSource(sourceId: number): Promise<XmltvSourceChannel[]> {
   return invoke<XmltvSourceChannel[]>('get_xmltv_channels_for_source', { sourceId });
 }
+
+// ============================================================================
+// Xtream Sources View (Story 3-11)
+// ============================================================================
+
+/** Link status for Xtream streams */
+export type LinkStatus = 'linked' | 'orphan' | 'promoted';
+
+/** Xtream stream with mapping status for display in Sources view */
+export interface XtreamAccountStream {
+  id: number;
+  streamId: number;
+  name: string;
+  streamIcon: string | null;
+  qualities: string[];
+  categoryName: string | null;
+  /** "linked" | "orphan" | "promoted" */
+  linkStatus: LinkStatus;
+  /** XMLTV channel IDs this stream is linked to */
+  linkedXmltvIds: number[];
+  /** If promoted, the synthetic channel ID */
+  syntheticChannelId: number | null;
+}
+
+/** Statistics for an account's streams */
+export interface AccountStreamStats {
+  /** Total number of streams for this account */
+  streamCount: number;
+  /** Number of streams linked to XMLTV channels */
+  linkedCount: number;
+  /** Number of orphan streams (not linked) */
+  orphanCount: number;
+  /** Number of promoted streams (linked to synthetic channels) */
+  promotedCount: number;
+}
+
+/**
+ * Get all Xtream streams for a specific account with their mapping status.
+ *
+ * Story 3-11: AC #2 - Display streams grouped by account
+ *
+ * Returns streams with:
+ * - Stream info (name, icon, qualities, category)
+ * - Link status: linked (mapped to XMLTV), orphan (unmapped), or promoted (synthetic)
+ * - List of linked XMLTV channel IDs
+ *
+ * @param accountId - The Xtream account ID to get streams for
+ * @returns List of streams for the account with mapping status
+ */
+export async function getXtreamStreamsForAccount(accountId: number): Promise<XtreamAccountStream[]> {
+  return invoke<XtreamAccountStream[]>('get_xtream_streams_for_account', { accountId });
+}
+
+/**
+ * Get stream statistics for a specific account.
+ *
+ * Story 3-11: AC #3 - Show statistics in accordion header
+ *
+ * Returns counts of:
+ * - Total streams
+ * - Linked streams (mapped to XMLTV channels)
+ * - Orphan streams (not mapped)
+ * - Promoted streams (linked to synthetic channels)
+ *
+ * @param accountId - The Xtream account ID to get stats for
+ * @returns Statistics for the account's streams
+ */
+export async function getAccountStreamStats(accountId: number): Promise<AccountStreamStats> {
+  return invoke<AccountStreamStats>('get_account_stream_stats', { accountId });
+}
+
+/**
+ * Remove all mappings for a specific Xtream stream.
+ *
+ * Story 3-11: AC #3 - Unlink stream from all XMLTV channels
+ *
+ * Deletes all channel_mappings rows for the given xtream_channel_id.
+ * This effectively orphans the stream so it can be re-linked or promoted.
+ *
+ * @param xtreamChannelId - The Xtream channel ID to unlink
+ * @returns Number of mappings removed
+ */
+export async function unlinkXtreamStream(xtreamChannelId: number): Promise<number> {
+  return invoke<number>('unlink_xtream_stream', { xtreamChannelId });
+}
+
+/**
+ * Get link status badge color classes for display
+ * Story 3-11 AC #2: Linked (blue), Orphan (amber), Promoted (green)
+ * @param status - Link status
+ * @returns Tailwind CSS classes for the badge
+ */
+export function getLinkStatusBadgeClasses(status: LinkStatus): string {
+  switch (status) {
+    case 'linked':
+      return 'bg-blue-100 text-blue-800';
+    case 'orphan':
+      return 'bg-amber-100 text-amber-800';
+    case 'promoted':
+      return 'bg-green-100 text-green-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+}
+
+/**
+ * Get link status display label
+ * @param status - Link status
+ * @returns Human-readable status label
+ */
+export function getLinkStatusLabel(status: LinkStatus): string {
+  switch (status) {
+    case 'linked':
+      return 'Linked';
+    case 'orphan':
+      return 'Orphan';
+    case 'promoted':
+      return 'Promoted';
+    default:
+      return 'Unknown';
+  }
+}

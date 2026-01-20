@@ -198,19 +198,23 @@ function generateXtreamMockScript(
           throw new Error('Stream not found');
         },
 
-        // Story 3-3: Remove stream mapping
+        // Story 3-3: Remove stream mapping (legacy - kept for compatibility)
         remove_stream_mapping: (args) => {
           console.log('[Mock] remove_stream_mapping:', args);
-          const { mappingId } = args;
+          return { success: true };
+        },
 
-          // Find and update the stream (simplified - just clear all links for now)
+        // Story 3-11: Unlink xtream stream (removes all mappings for a stream)
+        unlink_xtream_stream: (args) => {
+          console.log('[Mock] unlink_xtream_stream:', args);
+          const { xtreamChannelId } = args;
+
+          // Find and update the stream by xtream channel ID
           for (const [accountId, streams] of window.__XTREAM_SOURCES_STATE__.streamsByAccountId.entries()) {
-            // In a real scenario, we'd track mappingId → stream
-            // For testing, we'll just find any linked stream and unlink it
-            const linkedStream = streams.find(s => s.linkStatus === 'linked');
-            if (linkedStream) {
-              linkedStream.linkStatus = 'orphan';
-              linkedStream.linkedXmltvIds = [];
+            const stream = streams.find(s => s.id === xtreamChannelId);
+            if (stream && stream.linkStatus === 'linked') {
+              stream.linkStatus = 'orphan';
+              stream.linkedXmltvIds = [];
 
               // Update stats
               const stats = window.__XTREAM_SOURCES_STATE__.statsByAccountId.get(accountId);
@@ -219,11 +223,11 @@ function generateXtreamMockScript(
                 stats.orphanCount++;
               }
 
-              return { success: true };
+              return 1; // Return count of deleted mappings
             }
           }
 
-          return { success: true };
+          return 0;
         },
 
         // XMLTV sources integration
