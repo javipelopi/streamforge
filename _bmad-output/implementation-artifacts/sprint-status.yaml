@@ -78,7 +78,7 @@ development_status:
 
   # Epic 4: Plex Integration & Streaming
   epic-4: in-progress
-  4-1-serve-m3u-playlist-endpoint: ready-for-dev
+  4-1-serve-m3u-playlist-endpoint: review
   4-2-serve-xmltv-epg-endpoint: backlog
   4-3-implement-hdhomerun-emulation: backlog
   4-4-stream-proxy-with-quality-selection: backlog
