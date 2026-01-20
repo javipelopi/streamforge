@@ -1471,50 +1471,53 @@ pub fn get_target_lineup_channels(
         .get_connection()
         .map_err(|e| format!("Database connection error: {}", e))?;
 
-    // Load all XMLTV channels
-    let channels: Vec<XmltvChannel> = xmltv_channels::table
-        .load::<XmltvChannel>(&mut conn)
-        .map_err(|e| format!("Failed to load XMLTV channels: {}", e))?;
+    // OPTIMIZED QUERY: Only load enabled channels via INNER JOIN
+    // This matches the SQL spec from Task 3.2 in the story
+    let mut enabled_channels: Vec<(XmltvChannel, XmltvChannelSettings)> = xmltv_channels::table
+        .inner_join(xmltv_channel_settings::table)
+        .filter(xmltv_channel_settings::is_enabled.eq(1))
+        .select((xmltv_channels::all_columns, xmltv_channel_settings::all_columns))
+        .load::<(XmltvChannel, XmltvChannelSettings)>(&mut conn)
+        .map_err(|e| format!("Failed to load enabled channels: {}", e))?;
 
-    // Load all settings into a map
-    let settings: Vec<XmltvChannelSettings> = xmltv_channel_settings::table
-        .load::<XmltvChannelSettings>(&mut conn)
-        .map_err(|e| format!("Failed to load channel settings: {}", e))?;
+    // Sort in Rust: nulls last, then by display_name
+    enabled_channels.sort_by(|a, b| {
+        match (a.1.plex_display_order, b.1.plex_display_order) {
+            (Some(a_order), Some(b_order)) => a_order.cmp(&b_order),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.0.display_name.cmp(&b.0.display_name),
+        }
+    });
 
-    let settings_map: std::collections::HashMap<i32, XmltvChannelSettings> = settings
-        .into_iter()
-        .filter_map(|s| Some((s.xmltv_channel_id, s)))
+    // Get channel IDs for mapping count query
+    let channel_ids: Vec<i32> = enabled_channels
+        .iter()
+        .filter_map(|(ch, _)| ch.id)
         .collect();
 
-    // Load mapping counts per channel
-    let mappings: Vec<ChannelMapping> = channel_mappings::table
-        .load::<ChannelMapping>(&mut conn)
-        .map_err(|e| format!("Failed to load channel mappings: {}", e))?;
+    // Load mapping counts only for enabled channels
+    let mapping_counts: Vec<(i32, i64)> = channel_mappings::table
+        .filter(channel_mappings::xmltv_channel_id.eq_any(&channel_ids))
+        .group_by(channel_mappings::xmltv_channel_id)
+        .select((
+            channel_mappings::xmltv_channel_id,
+            diesel::dsl::count(channel_mappings::id),
+        ))
+        .load::<(i32, i64)>(&mut conn)
+        .map_err(|e| format!("Failed to load mapping counts: {}", e))?;
 
-    let mut mapping_counts: std::collections::HashMap<i32, i32> =
-        std::collections::HashMap::new();
-    for mapping in mappings {
-        *mapping_counts.entry(mapping.xmltv_channel_id).or_insert(0) += 1;
-    }
-
-    // Filter to enabled channels only and build result
-    let mut result: Vec<TargetLineupChannel> = channels
+    let counts_map: std::collections::HashMap<i32, i32> = mapping_counts
         .into_iter()
-        .filter_map(|channel| {
+        .map(|(id, count)| (id, count as i32))
+        .collect();
+
+    // Build result from pre-filtered enabled channels
+    let result: Vec<TargetLineupChannel> = enabled_channels
+        .into_iter()
+        .filter_map(|(channel, settings)| {
             let channel_id = channel.id?;
-            let settings = settings_map.get(&channel_id);
-
-            // Only include enabled channels
-            let is_enabled = settings
-                .map(|s| s.is_enabled.unwrap_or(0) != 0)
-                .unwrap_or(false);
-
-            if !is_enabled {
-                return None;
-            }
-
-            let stream_count = mapping_counts.get(&channel_id).copied().unwrap_or(0);
-            let plex_display_order = settings.and_then(|s| s.plex_display_order);
+            let stream_count = counts_map.get(&channel_id).copied().unwrap_or(0);
 
             Some(TargetLineupChannel {
                 id: channel_id,
@@ -1523,21 +1526,12 @@ pub fn get_target_lineup_channels(
                 is_enabled: true,
                 is_synthetic: channel.is_synthetic.unwrap_or(0) != 0,
                 stream_count,
-                plex_display_order,
+                plex_display_order: settings.plex_display_order,
             })
         })
         .collect();
 
-    // Sort by plex_display_order (nulls last), then by display_name
-    result.sort_by(|a, b| {
-        match (a.plex_display_order, b.plex_display_order) {
-            (Some(a_order), Some(b_order)) => a_order.cmp(&b_order),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => a.display_name.cmp(&b.display_name),
-        }
-    });
-
+    // Result is already sorted by plex_display_order from SQL query
     Ok(result)
 }
 

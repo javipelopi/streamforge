@@ -44,6 +44,9 @@ export function TargetLineup() {
     new Map()
   );
 
+  // Track pending disables to prevent race conditions
+  const pendingDisablesRef = useRef<Set<number>>(new Set());
+
   // Fetch enabled channels
   const {
     data: channels = [],
@@ -64,6 +67,11 @@ export function TargetLineup() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['targetLineupChannels'] });
     },
+    onError: (error) => {
+      console.error('Failed to update channel order:', error);
+      // Revert optimistic update by refetching
+      queryClient.invalidateQueries({ queryKey: ['targetLineupChannels'] });
+    },
   });
 
   // Mutation for toggling channel enabled status
@@ -72,6 +80,11 @@ export function TargetLineup() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['targetLineupChannels'] });
       queryClient.invalidateQueries({ queryKey: ['xmltvChannels'] });
+    },
+    onError: (error) => {
+      console.error('Failed to toggle channel:', error);
+      // Revert optimistic update by refetching
+      queryClient.invalidateQueries({ queryKey: ['targetLineupChannels'] });
     },
   });
 
@@ -104,11 +117,23 @@ export function TargetLineup() {
         return;
       }
 
+      // Validate displayChannels is not empty
+      if (displayChannels.length === 0) {
+        handleDragEnd();
+        return;
+      }
+
       // Find indices
       const sourceIndex = displayChannels.findIndex((c) => c.id === draggedId);
       const targetIndex = displayChannels.findIndex((c) => c.id === targetChannelId);
 
       if (sourceIndex === -1 || targetIndex === -1) {
+        handleDragEnd();
+        return;
+      }
+
+      // Additional validation: ensure indices are within bounds
+      if (sourceIndex >= displayChannels.length || targetIndex >= displayChannels.length) {
         handleDragEnd();
         return;
       }
@@ -132,6 +157,9 @@ export function TargetLineup() {
     (channel: TargetLineupChannel) => {
       // If channel is enabled, we're disabling it
       if (channel.isEnabled) {
+        // Add to pending disables to prevent race conditions
+        pendingDisablesRef.current.add(channel.id);
+
         // Store for undo
         setRemovedChannels((prev) => {
           const next = new Map(prev);
@@ -139,15 +167,21 @@ export function TargetLineup() {
           return next;
         });
 
-        // Clear any existing timeout
+        // Clear any existing timeout and remove from pending
         if (undoToast.timeoutId) {
           clearTimeout(undoToast.timeoutId);
+          if (undoToast.channelId) {
+            pendingDisablesRef.current.delete(undoToast.channelId);
+          }
         }
 
         // Set up undo toast with 5 second timeout
         const timeoutId = setTimeout(() => {
-          // Actually disable the channel after timeout
-          toggleMutation.mutate(channel.id);
+          // Only execute if still pending (not undone)
+          if (pendingDisablesRef.current.has(channel.id)) {
+            toggleMutation.mutate(channel.id);
+            pendingDisablesRef.current.delete(channel.id);
+          }
           setRemovedChannels((prev) => {
             const next = new Map(prev);
             next.delete(channel.id);
@@ -167,7 +201,7 @@ export function TargetLineup() {
         toggleMutation.mutate(channel.id);
       }
     },
-    [toggleMutation, undoToast.timeoutId]
+    [toggleMutation, undoToast.timeoutId, undoToast.channelId]
   );
 
   // Undo handler
@@ -175,6 +209,8 @@ export function TargetLineup() {
     if (undoToast.timeoutId) {
       clearTimeout(undoToast.timeoutId);
     }
+    // Remove from pending disables to prevent mutation
+    pendingDisablesRef.current.delete(undoToast.channelId);
     setRemovedChannels((prev) => {
       const next = new Map(prev);
       next.delete(undoToast.channelId);
@@ -244,6 +280,7 @@ export function TargetLineup() {
             aria-label="Browse Sources"
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
+            {/* TODO(story 3-10): Update to navigate to ROUTES.SOURCES when Sources view exists */}
             Browse Sources
           </button>
         </div>
@@ -269,6 +306,7 @@ export function TargetLineup() {
             aria-label="Browse Sources"
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
+            {/* TODO(story 3-10): Update to navigate to ROUTES.SOURCES when Sources view exists */}
             Browse Sources
           </button>
         </div>
