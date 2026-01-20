@@ -398,8 +398,8 @@ test.describe('Bulk Channel Operations (Story 3-7)', () => {
     await expect(page.locator('[data-testid="channel-row-3"]')).not.toBeVisible();
     await expect(page.locator('[data-testid="channel-row-4"]')).not.toBeVisible();
 
-    // WHEN: I click "Select All"
-    await page.locator('button', { hasText: 'Select All' }).click();
+    // WHEN: I click "Select All" (the visible/filtered channels button, not "Select All Matched")
+    await page.getByRole('button', { name: 'Select All', exact: true }).click();
 
     // THEN: Only filtered (visible) channels are selected
     await expect(page.locator('[data-testid="channel-checkbox-1"]')).toBeChecked();

@@ -1,6 +1,7 @@
-import { useCallback, useState, useRef } from 'react';
+import { useCallback, useState, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DraggableXmltvChannelsList } from '../components/channels/DraggableXmltvChannelsList';
+import { BulkActionToolbar } from '../components/channels/BulkActionToolbar';
 import {
   getXmltvChannelsWithMappings,
   toggleXmltvChannel,
@@ -8,6 +9,7 @@ import {
   addManualStreamMapping,
   removeStreamMapping,
   updateChannelOrder,
+  bulkToggleChannels,
   type XmltvChannelWithMappings,
   type XtreamStreamMatch,
 } from '../lib/tauri';
@@ -29,10 +31,32 @@ export function Channels() {
   // Store previous order for rollback on error
   const previousOrderRef = useRef<XmltvChannelWithMappings[] | null>(null);
 
+  // Story 3-7: Selection state for bulk operations
+  const [selectedChannelIds, setSelectedChannelIds] = useState<Set<number>>(new Set());
+  // Category filter state for AC #5
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+
   const showToast = useCallback((message: string, type: 'error' | 'success' = 'error') => {
     setToastMessage(message);
     setToastType(type);
     setTimeout(() => setToastMessage(null), 5000);
+  }, []);
+
+  // Story 3-7: Selection management callbacks
+  const toggleChannelSelection = useCallback((channelId: number) => {
+    setSelectedChannelIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(channelId)) {
+        next.delete(channelId);
+      } else {
+        next.add(channelId);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedChannelIds(new Set());
   }, []);
 
   // Fetch XMLTV channels with mappings using TanStack Query
@@ -289,6 +313,89 @@ export function Channels() {
     [reorderMutation]
   );
 
+  // Story 3-7: Bulk toggle mutation
+  const bulkToggleMutation = useMutation({
+    mutationFn: ({ channelIds, enabled }: { channelIds: number[]; enabled: boolean }) =>
+      bulkToggleChannels(channelIds, enabled),
+    onSuccess: (result, { enabled }) => {
+      const action = enabled ? 'Enabled' : 'Disabled';
+      showToast(`${action} ${result.successCount} channels`, 'success');
+
+      if (result.skippedCount > 0 && enabled) {
+        // Show warning for skipped channels (only when enabling)
+        setTimeout(() => {
+          showToast(`Skipped ${result.skippedCount} channels without streams`, 'error');
+        }, 1500);
+      }
+
+      // Clear selection and refresh
+      clearSelection();
+      queryClient.invalidateQueries({ queryKey: ['xmltv-channels-with-mappings'] });
+    },
+    onError: (err) => {
+      showToast(`Bulk operation failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+    },
+  });
+
+  // Story 3-7: Computed values for filtered and matched channels
+  const filteredChannels = useMemo(() => {
+    if (!categoryFilter) return channels;
+    // Simple category filter based on display name pattern matching
+    // Full category support would require schema changes
+    return channels.filter((ch) =>
+      ch.displayName.toLowerCase().includes(categoryFilter.toLowerCase())
+    );
+  }, [channels, categoryFilter]);
+
+  const matchedChannelCount = useMemo(
+    () => channels.filter((ch) => ch.matchCount > 0).length,
+    [channels]
+  );
+
+  // Story 3-7: Select all matched channels (AC #4)
+  const selectAllMatched = useCallback(() => {
+    const matchedIds = channels
+      .filter((ch) => ch.matchCount > 0)
+      .map((ch) => ch.id);
+    setSelectedChannelIds(new Set(matchedIds));
+  }, [channels]);
+
+  // Story 3-7: Select all visible/filtered channels (AC #5)
+  const selectAllVisible = useCallback(() => {
+    const visibleIds = filteredChannels.map((ch) => ch.id);
+    setSelectedChannelIds(new Set(visibleIds));
+  }, [filteredChannels]);
+
+  // Story 3-7: Extract unique categories from channel names (simplified approach)
+  // Full category support would require categories field in XMLTV channel data
+  const categories = useMemo(() => {
+    // For now, extract simple categories from channel names if they follow patterns
+    const categoryPatterns = ['Sports', 'News', 'Movies', 'Entertainment', 'Kids', 'Music', 'Documentary'];
+    const foundCategories = new Set<string>();
+
+    channels.forEach((ch) => {
+      const lowerName = ch.displayName.toLowerCase();
+      for (const pattern of categoryPatterns) {
+        if (lowerName.includes(pattern.toLowerCase())) {
+          foundCategories.add(pattern);
+        }
+      }
+    });
+
+    return Array.from(foundCategories).sort();
+  }, [channels]);
+
+  // Story 3-7: Bulk action handlers
+  const handleBulkEnable = useCallback(() => {
+    if (selectedChannelIds.size === 0) return;
+    bulkToggleMutation.mutate({ channelIds: Array.from(selectedChannelIds), enabled: true });
+  }, [selectedChannelIds, bulkToggleMutation]);
+
+  const handleBulkDisable = useCallback(() => {
+    if (selectedChannelIds.size === 0) return;
+    bulkToggleMutation.mutate({ channelIds: Array.from(selectedChannelIds), enabled: false });
+  }, [selectedChannelIds, bulkToggleMutation]);
+
   // Calculate stats for header
   const totalChannels = channels.length;
   const enabledChannels = channels.filter((ch) => ch.isEnabled).length;
@@ -341,6 +448,48 @@ export function Channels() {
         </div>
       )}
 
+      {/* Story 3-7: Filter and selection controls */}
+      {!isLoading && channels.length > 0 && (
+        <div className="mb-4 flex items-center gap-4">
+          {/* Category filter (AC #5) */}
+          {categories.length > 0 && (
+            <select
+              data-testid="category-filter"
+              value={categoryFilter || ''}
+              onChange={(e) => setCategoryFilter(e.target.value || null)}
+              className="px-3 py-2 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All Categories</option>
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* Select All Matched button (AC #4) */}
+          <button
+            type="button"
+            onClick={selectAllMatched}
+            className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            Select All Matched ({matchedChannelCount})
+          </button>
+
+          {/* Select All (visible) button (AC #5) */}
+          {categoryFilter && (
+            <button
+              type="button"
+              onClick={selectAllVisible}
+              className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+            >
+              Select All
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Error message */}
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-md flex items-center justify-between">
@@ -355,15 +504,26 @@ export function Channels() {
       )}
 
       {/* Main content */}
-      <div className="bg-white border border-gray-200 rounded-lg">
+      <div className="bg-white border border-gray-200 rounded-lg relative">
         <DraggableXmltvChannelsList
-          channels={channels}
+          channels={filteredChannels}
           isLoading={isLoading}
           onToggleChannel={handleToggleChannel}
           onSetPrimaryStream={handleSetPrimaryStream}
           onAddManualMapping={handleAddManualMapping}
           onRemoveMapping={handleRemoveMapping}
           onReorder={handleReorder}
+          selectedChannelIds={selectedChannelIds}
+          onToggleSelection={toggleChannelSelection}
+        />
+
+        {/* Story 3-7: Bulk Action Toolbar */}
+        <BulkActionToolbar
+          selectedCount={selectedChannelIds.size}
+          onEnableSelected={handleBulkEnable}
+          onDisableSelected={handleBulkDisable}
+          onClearSelection={clearSelection}
+          isLoading={bulkToggleMutation.isPending}
         />
       </div>
 

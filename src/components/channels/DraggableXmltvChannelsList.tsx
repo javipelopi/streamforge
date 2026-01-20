@@ -29,6 +29,9 @@ interface DraggableXmltvChannelsListProps {
   ) => Promise<XtreamStreamMatch[]>;
   onRemoveMapping: (mappingId: number) => Promise<XtreamStreamMatch[]>;
   onReorder: (channelIds: number[]) => void;
+  // Story 3-7: Selection props for bulk operations
+  selectedChannelIds?: Set<number>;
+  onToggleSelection?: (channelId: number) => void;
 }
 
 // Row heights for virtualization
@@ -50,6 +53,8 @@ export function DraggableXmltvChannelsList({
   onAddManualMapping,
   onRemoveMapping,
   onReorder,
+  selectedChannelIds,
+  onToggleSelection,
 }: DraggableXmltvChannelsListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
@@ -435,6 +440,8 @@ export function DraggableXmltvChannelsList({
                 onKeyboardMove={handleKeyboardMove}
                 isMouseDragging={isMouseDragging}
                 isKeyboardPicked={keyboardPickedId === channel.id}
+                isSelected={selectedChannelIds?.has(channel.id) ?? false}
+                onToggleSelection={onToggleSelection}
               />
             );
           })}

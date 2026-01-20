@@ -1019,3 +1019,40 @@ export function parseEventDetails<T = Record<string, unknown>>(details: string |
     return null;
   }
 }
+
+// ============================================================================
+// Bulk Channel Operations (Story 3-7)
+// ============================================================================
+
+/** Result of bulk toggle operation */
+export interface BulkToggleResult {
+  /** Number of channels successfully toggled */
+  successCount: number;
+  /** Number of channels skipped (e.g., unmatched channels when enabling) */
+  skippedCount: number;
+  /** IDs of channels that were skipped */
+  skippedIds: number[];
+}
+
+/**
+ * Bulk toggle the enabled status of multiple XMLTV channels.
+ *
+ * Story 3-7: Bulk Channel Operations
+ *
+ * When enabling:
+ * - Channels WITH matched streams are enabled
+ * - Channels WITHOUT matched streams are skipped (cannot enable without stream source)
+ *
+ * When disabling:
+ * - All selected channels are disabled (no restrictions)
+ *
+ * @param channelIds - Array of XMLTV channel IDs to toggle
+ * @param enabled - True to enable, false to disable
+ * @returns BulkToggleResult with success count, skipped count, and skipped IDs
+ */
+export async function bulkToggleChannels(
+  channelIds: number[],
+  enabled: boolean
+): Promise<BulkToggleResult> {
+  return invoke<BulkToggleResult>('bulk_toggle_channels', { channelIds, enabled });
+}

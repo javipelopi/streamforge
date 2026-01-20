@@ -37,6 +37,9 @@ interface DraggableChannelRowProps {
   onKeyboardMove?: (channelId: number, direction: 'up' | 'down') => void;
   isMouseDragging?: boolean;
   isKeyboardPicked?: boolean;
+  // Story 3-7: Selection props for bulk operations
+  isSelected?: boolean;
+  onToggleSelection?: (channelId: number) => void;
 }
 
 /**
@@ -71,6 +74,8 @@ export const DraggableChannelRow = memo(function DraggableChannelRow({
   onKeyboardMove,
   isMouseDragging = false,
   isKeyboardPicked = false,
+  isSelected = false,
+  onToggleSelection,
 }: DraggableChannelRowProps) {
   const hasMatches = channel.matchCount > 0;
   const primaryMatch = channel.matches.find((m) => m.isPrimary);
@@ -173,6 +178,18 @@ export const DraggableChannelRow = memo(function DraggableChannelRow({
       >
         {/* Main row content */}
         <div className="flex items-center gap-3 p-3">
+          {/* Story 3-7: Selection checkbox for bulk operations */}
+          {onToggleSelection && (
+            <input
+              type="checkbox"
+              data-testid={`channel-checkbox-${channel.id}`}
+              checked={isSelected}
+              onChange={() => onToggleSelection(channel.id)}
+              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 flex-shrink-0"
+              aria-label={`Select ${channel.displayName}`}
+            />
+          )}
+
           {/* Drag handle - draggable element */}
           <div
             data-testid="drag-handle"
