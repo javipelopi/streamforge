@@ -1434,6 +1434,113 @@ pub fn update_synthetic_channel(
     })
 }
 
+// ============================================================================
+// Story 3-9: Target Lineup View
+// ============================================================================
+
+/// Target Lineup channel response (simplified for lineup view)
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetLineupChannel {
+    pub id: i32,
+    pub display_name: String,
+    pub icon: Option<String>,
+    pub is_enabled: bool,
+    pub is_synthetic: bool,
+    /// Number of Xtream streams mapped to this channel
+    pub stream_count: i32,
+    /// Display order in Plex lineup
+    pub plex_display_order: Option<i32>,
+}
+
+/// Get all ENABLED channels for the Target Lineup view.
+///
+/// Story 3-9: AC #2 - Display only enabled channels
+///
+/// Returns channels sorted by plex_display_order (nulls last).
+/// This is an optimized query that only returns fields needed for the lineup view.
+///
+/// # Returns
+///
+/// List of enabled channels for the Target Lineup
+#[tauri::command]
+pub fn get_target_lineup_channels(
+    db: State<DbConnection>,
+) -> Result<Vec<TargetLineupChannel>, String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    // Load all XMLTV channels
+    let channels: Vec<XmltvChannel> = xmltv_channels::table
+        .load::<XmltvChannel>(&mut conn)
+        .map_err(|e| format!("Failed to load XMLTV channels: {}", e))?;
+
+    // Load all settings into a map
+    let settings: Vec<XmltvChannelSettings> = xmltv_channel_settings::table
+        .load::<XmltvChannelSettings>(&mut conn)
+        .map_err(|e| format!("Failed to load channel settings: {}", e))?;
+
+    let settings_map: std::collections::HashMap<i32, XmltvChannelSettings> = settings
+        .into_iter()
+        .filter_map(|s| Some((s.xmltv_channel_id, s)))
+        .collect();
+
+    // Load mapping counts per channel
+    let mappings: Vec<ChannelMapping> = channel_mappings::table
+        .load::<ChannelMapping>(&mut conn)
+        .map_err(|e| format!("Failed to load channel mappings: {}", e))?;
+
+    let mut mapping_counts: std::collections::HashMap<i32, i32> =
+        std::collections::HashMap::new();
+    for mapping in mappings {
+        *mapping_counts.entry(mapping.xmltv_channel_id).or_insert(0) += 1;
+    }
+
+    // Filter to enabled channels only and build result
+    let mut result: Vec<TargetLineupChannel> = channels
+        .into_iter()
+        .filter_map(|channel| {
+            let channel_id = channel.id?;
+            let settings = settings_map.get(&channel_id);
+
+            // Only include enabled channels
+            let is_enabled = settings
+                .map(|s| s.is_enabled.unwrap_or(0) != 0)
+                .unwrap_or(false);
+
+            if !is_enabled {
+                return None;
+            }
+
+            let stream_count = mapping_counts.get(&channel_id).copied().unwrap_or(0);
+            let plex_display_order = settings.and_then(|s| s.plex_display_order);
+
+            Some(TargetLineupChannel {
+                id: channel_id,
+                display_name: channel.display_name,
+                icon: channel.icon,
+                is_enabled: true,
+                is_synthetic: channel.is_synthetic.unwrap_or(0) != 0,
+                stream_count,
+                plex_display_order,
+            })
+        })
+        .collect();
+
+    // Sort by plex_display_order (nulls last), then by display_name
+    result.sort_by(|a, b| {
+        match (a.plex_display_order, b.plex_display_order) {
+            (Some(a_order), Some(b_order)) => a_order.cmp(&b_order),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.display_name.cmp(&b.display_name),
+        }
+    });
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1138,3 +1138,34 @@ export async function updateSyntheticChannel(
     iconUrl,
   });
 }
+
+// ============================================================================
+// Target Lineup View (Story 3-9)
+// ============================================================================
+
+/** Target Lineup Channel - simplified view for Plex lineup management */
+export interface TargetLineupChannel {
+  id: number;
+  displayName: string;
+  icon: string | null;
+  isEnabled: boolean;
+  isSynthetic: boolean;
+  /** Number of Xtream streams mapped to this channel */
+  streamCount: number;
+  /** Display order in Plex lineup */
+  plexDisplayOrder: number | null;
+}
+
+/**
+ * Get all ENABLED channels for the Target Lineup view.
+ *
+ * Story 3-9: AC #2 - Display only enabled channels
+ *
+ * Returns channels sorted by plex_display_order (nulls last).
+ * This is an optimized query that only returns fields needed for the lineup view.
+ *
+ * @returns List of enabled channels for the Target Lineup
+ */
+export async function getTargetLineupChannels(): Promise<TargetLineupChannel[]> {
+  return invoke<TargetLineupChannel[]>('get_target_lineup_channels');
+}

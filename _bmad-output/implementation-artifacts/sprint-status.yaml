@@ -71,7 +71,7 @@ development_status:
   3-7-bulk-channel-operations: done
   3-8-manage-orphan-xtream-channels: done
   # Navigation Restructure (Option C) - Sprint Change 2026-01-20
-  3-9-implement-target-lineup-view: ready-for-dev
+  3-9-implement-target-lineup-view: review
   3-10-implement-sources-view-xmltv-tab: backlog
   3-11-implement-sources-view-xtream-tab: backlog
   epic-3-retrospective: optional
