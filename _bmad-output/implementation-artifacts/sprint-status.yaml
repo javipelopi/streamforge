@@ -61,7 +61,7 @@ development_status:
 
   # Epic 3: Channel Discovery & Matching (XMLTV-First) - REWRITTEN
   # Original stories (done)
-  epic-3: in-progress
+  epic-3: done
   3-1-implement-fuzzy-channel-matching-algorithm: done
   3-2-display-xmltv-channel-list-with-match-status: done
   3-3-manual-match-override-via-search-dropdown: done
@@ -77,8 +77,8 @@ development_status:
   epic-3-retrospective: optional
 
   # Epic 4: Plex Integration & Streaming
-  epic-4: backlog
-  4-1-serve-m3u-playlist-endpoint: backlog
+  epic-4: in-progress
+  4-1-serve-m3u-playlist-endpoint: ready-for-dev
   4-2-serve-xmltv-epg-endpoint: backlog
   4-3-implement-hdhomerun-emulation: backlog
   4-4-stream-proxy-with-quality-selection: backlog
