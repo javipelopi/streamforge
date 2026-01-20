@@ -1,6 +1,6 @@
 # Story 3.6: Drag-and-Drop Channel Reordering
 
-Status: review
+Status: done
 
 ## Story
 
@@ -512,6 +512,39 @@ This story ensures the order is correctly stored; Epic 4 will consume it.
 - [Source: src-tauri/src/commands/xmltv_channels.rs:45 - plex_display_order field]
 - [Source: src/components/channels/XmltvChannelsList.tsx - virtualized list implementation]
 - [Source: src/components/channels/XmltvChannelRow.tsx - row component]
+
+## Code Review (2026-01-20)
+
+### Review Summary
+
+Adversarial code review completed. Found 2 HIGH, 4 MEDIUM, and 1 LOW severity issues. All issues fixed automatically.
+
+### Issues Found and Fixed
+
+**HIGH SEVERITY (2 issues - all fixed):**
+1. ~~Missing refetch after successful reorder~~ - FIXED: Added `onSuccess` handler with `queryClient.invalidateQueries()`  to ensure UI syncs with database state
+2. ~~plexDisplayOrder type inconsistency~~ - FALSE POSITIVE: Type was already correct (`number | null`)
+
+**MEDIUM SEVERITY (4 issues - all fixed):**
+3. ~~Unused dnd-kit packages~~ - FIXED: Removed @dnd-kit/* packages (~50KB savings), replaced `arrayMove` with custom implementation, deleted unused SortableXmltvChannelsList.tsx and SortableChannelRow.tsx files
+4. ~~Console.log statements in production code~~ - FIXED: Removed 13 console.log debug statements from DraggableXmltvChannelsList.tsx
+5. ~~Missing ARIA live region for screen reader feedback~~ - FIXED: Added `aria-live="polite"` region with announcements for drag start, move, and drop events
+6. ~~No frontend validation for empty channelIds array~~ - FIXED: Added early return in `handleReorder` to prevent unnecessary API calls
+
+**LOW SEVERITY (1 issue - already correct):**
+7. ~~Rust doc comment syntax~~ - FALSE POSITIVE: Doc comment was already correct with `///`
+
+### Files Modified in Code Review
+
+- `src/views/Channels.tsx` - Added refetch on success, empty array validation
+- `src/components/channels/DraggableXmltvChannelsList.tsx` - Removed console.logs, added ARIA live region, replaced arrayMove with custom implementation
+- `package.json` - Removed @dnd-kit/* dependencies
+- Deleted: `src/components/channels/SortableXmltvChannelsList.tsx` (unused)
+- Deleted: `src/components/channels/SortableChannelRow.tsx` (unused)
+
+### Status After Review
+
+Story status: **done** (all HIGH and MEDIUM issues fixed, all ACs implemented)
 
 ## Dev Agent Record
 

@@ -6,7 +6,16 @@ import type {
 } from '../../lib/tauri';
 import { DraggableChannelRow } from './DraggableChannelRow';
 import { ChannelDragPreview } from './ChannelDragPreview';
-import { arrayMove } from '@dnd-kit/sortable';
+
+/**
+ * Move an item from one position to another in an array
+ */
+function arrayMove<T>(array: T[], from: number, to: number): T[] {
+  const newArray = array.slice();
+  const [item] = newArray.splice(from, 1);
+  newArray.splice(to, 0, item);
+  return newArray;
+}
 
 interface DraggableXmltvChannelsListProps {
   channels: XmltvChannelWithMappings[];
@@ -54,6 +63,8 @@ export function DraggableXmltvChannelsList({
   const [mouseOverId, setMouseOverId] = useState<number | null>(null);
   // Keyboard reordering state (Space + Arrow keys)
   const [keyboardPickedId, setKeyboardPickedId] = useState<number | null>(null);
+  // ARIA live region message for screen readers
+  const [ariaMessage, setAriaMessage] = useState<string>('');
 
   // Calculate row height based on expanded state
   const getRowHeight = useCallback(
@@ -88,36 +99,36 @@ export function DraggableXmltvChannelsList({
 
   // Handle HTML5 drag start
   const handleDragStart = useCallback((channelId: number) => {
-    console.log('[HTML5 DnD] Drag start:', channelId);
+    const channel = channels.find(ch => ch.id === channelId);
+    if (channel) {
+      setAriaMessage(`Dragging ${channel.displayName}`);
+    }
     setDraggedId(channelId);
-  }, []);
+  }, [channels]);
 
   // Handle HTML5 drag over
   const handleDragOver = useCallback((channelId: number) => {
     if (draggedId !== null && channelId !== draggedId) {
-      console.log('[HTML5 DnD] Drag over:', channelId);
       setOverId(channelId);
     }
   }, [draggedId]);
 
   // Handle HTML5 drag end
   const handleDragEnd = useCallback(() => {
-    console.log('[HTML5 DnD] Drag end');
     setDraggedId(null);
     setOverId(null);
   }, []);
 
   // Handle HTML5 drop
   const handleDrop = useCallback((targetChannelId: number) => {
-    console.log('[HTML5 DnD] Drop:', { draggedId, targetChannelId });
     if (draggedId !== null && draggedId !== targetChannelId) {
       const oldIndex = channels.findIndex((ch) => ch.id === draggedId);
       const newIndex = channels.findIndex((ch) => ch.id === targetChannelId);
-      console.log('[HTML5 DnD] Reorder:', { oldIndex, newIndex });
-
       if (oldIndex !== -1 && newIndex !== -1) {
+        const draggedChannel = channels[oldIndex];
+        const targetChannel = channels[newIndex];
+        setAriaMessage(`Moved ${draggedChannel.displayName} to position ${newIndex + 1}, before ${targetChannel.displayName}`);
         const newOrder = arrayMove(channels, oldIndex, newIndex);
-        console.log('[HTML5 DnD] New order:', newOrder.map(ch => ch.id));
         onReorder(newOrder.map((ch) => ch.id));
       }
     }
@@ -127,14 +138,12 @@ export function DraggableXmltvChannelsList({
 
   // Mouse-based drag start (for Playwright tests using page.mouse.down)
   const handleMouseDragStart = useCallback((channelId: number) => {
-    console.log('[Mouse DnD] Mouse drag start:', channelId);
     setMouseDraggedId(channelId);
   }, []);
 
   // Mouse-based drag over (for Playwright tests using hover during mousedown)
   const handleMouseDragOver = useCallback((channelId: number) => {
     if (mouseDraggedId !== null && channelId !== mouseDraggedId) {
-      console.log('[Mouse DnD] Mouse drag over:', channelId);
       setMouseOverId(channelId);
     }
   }, [mouseDraggedId]);
@@ -143,7 +152,6 @@ export function DraggableXmltvChannelsList({
   useEffect(() => {
     const handleMouseUp = () => {
       if (mouseDraggedId !== null) {
-        console.log('[Mouse DnD] Mouse up - clearing drag state');
         setMouseDraggedId(null);
         setMouseOverId(null);
       }
@@ -154,29 +162,34 @@ export function DraggableXmltvChannelsList({
 
   // Keyboard pick (Space to select item for reordering)
   const handleKeyboardPick = useCallback((channelId: number) => {
-    console.log('[Keyboard DnD] Picking up:', channelId);
+    const channel = channels.find(ch => ch.id === channelId);
+    if (channel) {
+      setAriaMessage(`Picked up ${channel.displayName}. Use arrow keys to move, space to drop.`);
+    }
     setKeyboardPickedId(channelId);
-  }, []);
+  }, [channels]);
 
   // Keyboard drop (Space to drop item)
   const handleKeyboardDrop = useCallback(() => {
-    console.log('[Keyboard DnD] Dropping');
+    if (keyboardPickedId !== null) {
+      const channel = channels.find(ch => ch.id === keyboardPickedId);
+      if (channel) {
+        setAriaMessage(`Dropped ${channel.displayName}`);
+      }
+    }
     setKeyboardPickedId(null);
-  }, []);
+  }, [keyboardPickedId, channels]);
 
   // Keyboard move (Arrow keys to reorder)
-  const handleKeyboardMove = useCallback((channelId: number, direction: 'up' | 'down') => {
+  const handleKeyboardMove = useCallback((_channelId: number, direction: 'up' | 'down') => {
     if (keyboardPickedId === null) {
       return;
     }
-    console.log('[Keyboard DnD] Moving:', { channelId, direction });
-
     const currentIndex = channels.findIndex((ch) => ch.id === keyboardPickedId);
     const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
 
     if (newIndex >= 0 && newIndex < channels.length) {
       const newOrder = arrayMove(channels, currentIndex, newIndex);
-      console.log('[Keyboard DnD] New order:', newOrder.map(ch => ch.id));
       onReorder(newOrder.map((ch) => ch.id));
     }
   }, [keyboardPickedId, channels, onReorder]);
@@ -351,6 +364,16 @@ export function DraggableXmltvChannelsList({
       {/* Hidden keyboard instructions for screen readers */}
       <div id="keyboard-instructions" className="sr-only">
         Use arrow keys to navigate. Drag and drop to reorder channels.
+      </div>
+
+      {/* ARIA live region for drag-and-drop announcements */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {ariaMessage}
       </div>
 
       <div
