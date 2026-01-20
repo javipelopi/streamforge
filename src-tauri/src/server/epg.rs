@@ -145,9 +145,22 @@ fn get_programs_for_channels(
         return Ok(Vec::new());
     }
 
-    // Build the IN clause with placeholders
-    let placeholders: Vec<String> = channel_ids.iter().map(|id| id.to_string()).collect();
-    let in_clause = placeholders.join(",");
+    // Build the IN clause with proper validation
+    // Convert channel_ids to strings with explicit validation to prevent SQL injection
+    // Even though inputs are i32, this ensures secure coding practices
+    let mut validated_ids = Vec::with_capacity(channel_ids.len());
+    for &id in channel_ids {
+        // Validate that id is within reasonable bounds (positive integer)
+        if id > 0 {
+            validated_ids.push(id.to_string());
+        }
+    }
+
+    if validated_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let in_clause = validated_ids.join(",");
 
     let query = format!(
         r#"

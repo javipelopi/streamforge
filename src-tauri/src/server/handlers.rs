@@ -105,10 +105,51 @@ fn generate_etag(content: &str) -> String {
 ///
 /// Returns Content-Type: application/xml with ETag for caching
 /// Supports If-None-Match for 304 Not Modified responses
+/// Implements server-side caching with 5-minute TTL
 pub async fn epg_xml(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+    // Check server-side cache first
+    if let Some(cached) = state.get_epg_cache() {
+        let etag = format!("\"{}\"", cached.etag);
+
+        // Check If-None-Match for 304 response
+        if let Some(client_etag) = headers.get(header::IF_NONE_MATCH) {
+            if let Ok(etag_str) = client_etag.to_str() {
+                if etag_str == etag {
+                    // Return 304 Not Modified
+                    let mut response_headers = HeaderMap::new();
+                    response_headers.insert(header::ETAG, HeaderValue::from_str(&etag).unwrap());
+                    response_headers.insert(
+                        header::CACHE_CONTROL,
+                        HeaderValue::from_static("public, max-age=300"),
+                    );
+                    return Ok((StatusCode::NOT_MODIFIED, response_headers, String::new()));
+                }
+            }
+        }
+
+        // Return cached content
+        let content_length = cached.content.len();
+        let mut response_headers = HeaderMap::new();
+        response_headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/xml; charset=utf-8"),
+        );
+        response_headers.insert(
+            header::CONTENT_LENGTH,
+            HeaderValue::from_str(&content_length.to_string()).unwrap(),
+        );
+        response_headers.insert(header::ETAG, HeaderValue::from_str(&etag).unwrap());
+        response_headers.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=300"),
+        );
+        return Ok((StatusCode::OK, response_headers, cached.content));
+    }
+
+    // Cache miss - generate fresh EPG
     let mut conn = state.get_connection().map_err(|e| {
         eprintln!("EPG endpoint error - database connection failed: {}", e);
         (
@@ -117,7 +158,6 @@ pub async fn epg_xml(
         )
     })?;
 
-    // Generate EPG content
     let xml_content = epg::generate_xmltv_epg(&mut conn).map_err(|e| {
         eprintln!("EPG endpoint error - generation failed: {}", e);
         (
@@ -126,14 +166,15 @@ pub async fn epg_xml(
         )
     })?;
 
-    // Generate ETag from content hash for cache validation
-    let etag = format!("\"{}\"", generate_etag(&xml_content));
+    // Generate ETag and store in cache
+    let etag_hash = generate_etag(&xml_content);
+    let etag = format!("\"{}\"", etag_hash);
+    state.set_epg_cache(xml_content.clone(), etag_hash);
 
-    // Check If-None-Match header for conditional request
+    // Check If-None-Match for conditional request
     if let Some(client_etag) = headers.get(header::IF_NONE_MATCH) {
         if let Ok(etag_str) = client_etag.to_str() {
             if etag_str == etag {
-                // Return 304 Not Modified with minimal headers
                 let mut response_headers = HeaderMap::new();
                 response_headers.insert(header::ETAG, HeaderValue::from_str(&etag).unwrap());
                 response_headers.insert(
@@ -146,7 +187,6 @@ pub async fn epg_xml(
     }
 
     let content_length = xml_content.len();
-
     let mut response_headers = HeaderMap::new();
     response_headers.insert(
         header::CONTENT_TYPE,
@@ -157,7 +197,6 @@ pub async fn epg_xml(
         HeaderValue::from_str(&content_length.to_string()).unwrap(),
     );
     response_headers.insert(header::ETAG, HeaderValue::from_str(&etag).unwrap());
-    // Cache for 5 minutes - Plex polls frequently but EPG rarely changes
     response_headers.insert(
         header::CACHE_CONTROL,
         HeaderValue::from_static("public, max-age=300"),
