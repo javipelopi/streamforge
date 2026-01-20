@@ -796,6 +796,21 @@ export async function removeStreamMapping(
 }
 
 // ============================================================================
+// Channel Reordering (Story 3-6)
+// ============================================================================
+
+/**
+ * Update the display order of XMLTV channels for Plex lineup.
+ * Story 3-6: Drag-and-Drop Channel Reordering
+ *
+ * @param channelIds - Array of XMLTV channel IDs in new display order
+ * @returns Promise that resolves when order is updated
+ */
+export async function updateChannelOrder(channelIds: number[]): Promise<void> {
+  return invoke('update_channel_order', { channelIds });
+}
+
+// ============================================================================
 // Auto-Rematch and Event Logging types and functions (Story 3-4)
 // ============================================================================
 
