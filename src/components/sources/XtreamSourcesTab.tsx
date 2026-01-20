@@ -4,6 +4,7 @@
  *
  * Displays Xtream accounts as expandable accordion sections.
  * Each account shows streams with link status and quality badges.
+ * Code Review Fix #1: Wrapped in error boundary for crash protection
  */
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -11,6 +12,7 @@ import { Tv } from 'lucide-react';
 import { getAccounts } from '../../lib/tauri';
 import { XtreamAccountAccordion } from './XtreamAccountAccordion';
 import { ROUTES } from '../../lib/routes';
+import { SourcesErrorBoundary } from './SourcesErrorBoundary';
 
 export function XtreamSourcesTab() {
   const navigate = useNavigate();
@@ -72,10 +74,13 @@ export function XtreamSourcesTab() {
   }
 
   // Accounts list
+  // Code Review Fix #1: Wrap each accordion in error boundary
   return (
     <div data-testid="xtream-sources-tab" className="space-y-4 overflow-auto h-full">
       {accounts.map((account) => (
-        <XtreamAccountAccordion key={account.id} account={account} />
+        <SourcesErrorBoundary key={account.id} fallbackMessage={`Error loading streams for ${account.name}`}>
+          <XtreamAccountAccordion account={account} />
+        </SourcesErrorBoundary>
       ))}
     </div>
   );

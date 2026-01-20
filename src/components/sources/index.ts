@@ -14,3 +14,6 @@ export { XtreamSourcesTab } from './XtreamSourcesTab';
 export { XtreamAccountAccordion } from './XtreamAccountAccordion';
 export { XtreamStreamRow } from './XtreamStreamRow';
 export { XtreamLinkToChannelDialog } from './XtreamLinkToChannelDialog';
+
+// Error Boundary (Code Review Fix #1)
+export { SourcesErrorBoundary } from './SourcesErrorBoundary';

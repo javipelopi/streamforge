@@ -7,7 +7,7 @@
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { MoreVertical, Tv, Link2, LinkIcon, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { MoreVertical, Tv, Link2, LinkIcon, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   promoteOrphanToPlex,
@@ -47,6 +47,8 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
   const queryClient = useQueryClient();
   const menuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  // Code Review Fix #3: Store toast timeout to prevent memory leak
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Handle icon load error - show fallback
   const handleIconError = useCallback(() => {
@@ -54,9 +56,24 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
   }, []);
 
   // Show toast notification
+  // Code Review Fix #3: Clear previous timeout before setting new one
   const showToast = useCallback((message: string, type: 'success' | 'error') => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
     setToast({ show: true, message, type });
-    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), TOAST_DURATION_MS);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast({ show: false, message: '', type: 'success' });
+    }, TOAST_DURATION_MS);
+  }, []);
+
+  // Code Review Fix #3: Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
   }, []);
 
   // Mutation for unlinking a stream
@@ -115,7 +132,8 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
     setMenuOpen(false);
   };
 
-  // Close menu when clicking outside
+  // Close menu when clicking outside or pressing Escape
+  // Code Review Fix #5: Add keyboard navigation for accessibility
   useEffect(() => {
     if (!menuOpen) return;
 
@@ -125,8 +143,18 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
       }
     };
 
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+      }
+    };
+
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [menuOpen]);
 
   // Get status badge icon
@@ -145,10 +173,16 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
 
   return (
     <>
+      {/* Code Review Fix #6: Add loading overlay during unlink operation */}
       <div
         data-testid={`xtream-stream-row-${stream.streamId}`}
-        className="flex items-center justify-between px-4 py-3 hover:bg-gray-50"
+        className={`flex items-center justify-between px-4 py-3 hover:bg-gray-50 relative ${unlinkMutation.isPending ? 'opacity-60 pointer-events-none' : ''}`}
       >
+        {unlinkMutation.isPending && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75">
+            <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+          </div>
+        )}
         {/* Stream Info */}
         <div className="flex items-center gap-3 flex-1 min-w-0">
           {/* Stream Icon - show image or fallback placeholder */}
