@@ -1,4 +1,5 @@
 pub mod epg;
+pub mod failover;
 pub mod handlers;
 pub mod hdhr;
 pub mod m3u;
