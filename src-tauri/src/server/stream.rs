@@ -31,6 +31,10 @@ pub struct StreamSession {
     pub current_quality: String,
     /// When the stream started
     pub started_at: Instant,
+    /// Count of failovers in this session (Story 4-5)
+    pub failover_count: u32,
+    /// Original primary stream ID for upgrade retry (Story 4-5)
+    pub original_stream_id: i32,
 }
 
 impl StreamSession {
@@ -41,7 +45,37 @@ impl StreamSession {
             xtream_stream_id,
             current_quality: quality,
             started_at: Instant::now(),
+            failover_count: 0,
+            original_stream_id: xtream_stream_id,
         }
+    }
+
+    /// Increment the failover count after a successful failover
+    pub fn increment_failover(&mut self) {
+        self.failover_count += 1;
+    }
+
+    /// Get the current failover count
+    pub fn get_failover_count(&self) -> u32 {
+        self.failover_count
+    }
+
+    /// Check if currently on a backup stream (not the original)
+    pub fn can_upgrade(&self) -> bool {
+        self.xtream_stream_id != self.original_stream_id
+    }
+
+    /// Update the current stream after failover
+    pub fn update_stream(&mut self, new_stream_id: i32, new_quality: String) {
+        self.xtream_stream_id = new_stream_id;
+        self.current_quality = new_quality;
+        self.failover_count += 1;
+    }
+
+    /// Complete upgrade to original stream
+    pub fn complete_upgrade(&mut self, quality: String) {
+        self.xtream_stream_id = self.original_stream_id;
+        self.current_quality = quality;
     }
 }
 
@@ -197,6 +231,38 @@ mod tests {
         assert_eq!(session.xtream_stream_id, 100);
         assert_eq!(session.current_quality, "HD");
         assert!(session.started_at.elapsed().as_secs() < 1);
+        assert_eq!(session.failover_count, 0);
+        assert_eq!(session.original_stream_id, 100);
+    }
+
+    #[test]
+    fn test_stream_session_failover_tracking() {
+        let mut session = StreamSession::new(1, 100, "HD".to_string());
+
+        assert_eq!(session.get_failover_count(), 0);
+        assert!(!session.can_upgrade());
+
+        session.increment_failover();
+        assert_eq!(session.get_failover_count(), 1);
+
+        session.update_stream(101, "SD".to_string());
+        assert_eq!(session.xtream_stream_id, 101);
+        assert_eq!(session.current_quality, "SD");
+        assert_eq!(session.get_failover_count(), 2);
+        assert!(session.can_upgrade()); // Now on backup stream
+    }
+
+    #[test]
+    fn test_stream_session_upgrade() {
+        let mut session = StreamSession::new(1, 100, "4K".to_string());
+        session.update_stream(101, "HD".to_string());
+
+        assert!(session.can_upgrade());
+
+        session.complete_upgrade("4K".to_string());
+        assert_eq!(session.xtream_stream_id, 100);
+        assert_eq!(session.current_quality, "4K");
+        assert!(!session.can_upgrade());
     }
 
     // =========================================================================

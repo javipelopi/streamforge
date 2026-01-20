@@ -10,9 +10,12 @@ use futures_util::StreamExt;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::time::Duration;
 
 use super::epg;
+use super::failover::{
+    get_all_streams_for_channel, log_failover_event, BackupStream, FailoverState, FailureReason,
+    FAILOVER_CONNECT_TIMEOUT, FAILOVER_TOTAL_TIMEOUT,
+};
 use super::hdhr;
 use super::m3u;
 use super::state::AppState;
@@ -307,37 +310,26 @@ pub async fn lineup_status_json() -> impl IntoResponse {
     (headers, Json(status))
 }
 
-/// Stream information retrieved from database for proxying
-#[derive(Debug)]
-struct StreamInfo {
-    xtream_stream_id: i32,
-    qualities: Option<String>,
-    server_url: String,
-    username: String,
-    password_encrypted: Vec<u8>,
-    account_id: i32,
-    account_is_active: i32,
-}
-
-/// Stream proxy endpoint handler (Story 4-4)
+/// Stream proxy endpoint handler (Story 4-4 + Story 4-5 Failover)
 ///
-/// Proxies live streams from Xtream providers to Plex:
+/// Proxies live streams from Xtream providers to Plex with automatic failover:
 /// - Accepts XMLTV channel ID in URL path
-/// - Looks up primary Xtream stream mapping for the channel
-/// - Selects highest available quality (4K > FHD > HD > SD)
+/// - Loads ALL available streams for the channel (primary + backups)
+/// - Tries streams in priority order until one works
+/// - Failover completes in <2 seconds (NFR2)
+/// - Selects highest available quality for each stream (4K > FHD > HD > SD)
 /// - Enforces connection limits (tuner limit from account settings)
-/// - Proxies stream data with minimal buffering (streaming response)
+/// - Logs failover events to event_log table
 ///
 /// Returns:
 /// - 200 OK with video/mp2t stream data on success
 /// - 404 Not Found if channel doesn't exist, is disabled, or has no mapping
-/// - 503 Service Unavailable if tuner limit reached or Xtream server unavailable
+/// - 503 Service Unavailable if tuner limit reached or all streams fail
 pub async fn stream_proxy(
     Path(channel_id): Path<i32>,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     // Step 1: Check connection limit FIRST (before expensive DB/crypto operations)
-    // CODE REVIEW FIX: Moved from Step 4 to Step 1 for performance
     let stream_manager = state.stream_manager();
     if !stream_manager.can_start_stream() {
         eprintln!(
@@ -367,62 +359,145 @@ pub async fn stream_proxy(
         )
     })?;
 
-    // Step 3: Look up primary Xtream stream for XMLTV channel
-    let stream_info = get_primary_stream_for_channel(&mut conn, channel_id).map_err(|e| {
-        eprintln!(
-            "Stream proxy error - channel lookup failed for channel {}: {}",
-            channel_id, e.1
-        );
-        e
-    })?;
+    // Step 3: Check if channel is enabled
+    let is_enabled: Option<i32> = xmltv_channel_settings::table
+        .filter(xmltv_channel_settings::xmltv_channel_id.eq(channel_id))
+        .select(xmltv_channel_settings::is_enabled)
+        .first(&mut conn)
+        .optional()
+        .map_err(|e| {
+            eprintln!("Stream lookup error - settings query failed: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            )
+        })?
+        .flatten();
 
-    // Step 4: Verify account is active
-    if stream_info.account_is_active != 1 {
-        eprintln!(
-            "Stream proxy error - account {} is inactive for channel {}",
-            stream_info.account_id, channel_id
-        );
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Stream unavailable".to_string(),
-        ));
+    if is_enabled != Some(1) {
+        return Err((StatusCode::NOT_FOUND, "Channel not found".to_string()));
     }
 
-    // Step 5: Decrypt password
-    let credential_manager = CredentialManager::new(state.app_data_dir().clone());
-    let password = credential_manager
-        .retrieve_password(
-            &stream_info.account_id.to_string(),
-            &stream_info.password_encrypted,
+    // Step 4: Load ALL available streams for failover (Story 4-5)
+    let available_streams = get_all_streams_for_channel(&mut conn, channel_id).map_err(|e| {
+        eprintln!(
+            "Stream proxy error - stream lookup failed for channel {}: {}",
+            channel_id, e
+        );
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server error".to_string(),
         )
+    })?;
+
+    if available_streams.is_empty() {
+        return Err((StatusCode::NOT_FOUND, "Channel not found".to_string()));
+    }
+
+    // Step 5: Initialize failover state
+    let mut failover_state = FailoverState::new(channel_id, available_streams);
+    let credential_manager = CredentialManager::new(state.app_data_dir().clone());
+
+    // Step 6: Create HTTP client with aggressive failover timeouts
+    let client = reqwest::Client::builder()
+        .connect_timeout(FAILOVER_CONNECT_TIMEOUT)
+        .timeout(FAILOVER_TOTAL_TIMEOUT)
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .build()
         .map_err(|e| {
-            eprintln!(
-                "Stream proxy error - credential retrieval failed for account {}: {}",
-                stream_info.account_id, e
-            );
+            eprintln!("Stream proxy error - HTTP client creation failed: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_string(),
             )
         })?;
 
-    // Step 6: Select best quality
-    let quality = select_best_quality(stream_info.qualities.as_deref());
+    // Step 7: Try streams in order until one works
+    let failover_start = std::time::Instant::now();
+    let mut last_failure_reason: Option<FailureReason> = None;
+    let mut successful_stream: Option<(BackupStream, String, reqwest::Response)> = None;
 
-    // Step 7: Build Xtream stream URL
-    let stream_url = build_stream_url(
-        &stream_info.server_url,
-        &stream_info.username,
-        &password,
-        stream_info.xtream_stream_id,
-    );
+    loop {
+        // Check total failover timeout
+        if failover_start.elapsed() > FAILOVER_TOTAL_TIMEOUT {
+            eprintln!(
+                "Stream proxy error - failover timeout exceeded for channel {}",
+                channel_id
+            );
+            break;
+        }
 
-    // Step 8: Start session tracking
-    let session = StreamSession::new(
-        channel_id,
-        stream_info.xtream_stream_id,
-        quality.clone(),
-    );
+        let current_stream = match failover_state.current_stream() {
+            Some(s) => s.clone(),
+            None => break,
+        };
+
+        // Try to connect to current stream
+        match try_connect_stream(&client, &credential_manager, &current_stream).await {
+            Ok((url, response)) => {
+                // Success! Log failover if we're not on the first stream
+                if failover_state.is_on_backup() {
+                    if let Some(reason) = &last_failure_reason {
+                        let from_stream_id = failover_state.original_stream_id;
+                        let _ = log_failover_event(
+                            &mut conn,
+                            channel_id,
+                            from_stream_id,
+                            Some(current_stream.stream_id),
+                            reason,
+                        );
+                    }
+                }
+
+                successful_stream = Some((current_stream, url, response));
+                break;
+            }
+            Err(reason) => {
+                eprintln!(
+                    "Stream proxy - stream {} failed for channel {}: {}",
+                    current_stream.stream_id, channel_id, reason
+                );
+                last_failure_reason = Some(reason);
+
+                // Try next stream
+                if !failover_state.advance_to_next_stream() {
+                    break; // No more streams
+                }
+            }
+        }
+    }
+
+    // Step 8: Handle result
+    let (stream_info, _stream_url, upstream_response) = match successful_stream {
+        Some(s) => s,
+        None => {
+            // All streams failed - log error event
+            if let Some(reason) = &last_failure_reason {
+                let from_stream_id = failover_state.original_stream_id;
+                let _ = log_failover_event(&mut conn, channel_id, from_stream_id, None, reason);
+            }
+
+            eprintln!(
+                "Stream proxy error - all {} streams failed for channel {}",
+                failover_state.stream_count(),
+                channel_id
+            );
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Stream unavailable".to_string(),
+            ));
+        }
+    };
+
+    // Step 9: Select quality and start session tracking
+    let qualities_json = if stream_info.qualities.is_empty() {
+        None
+    } else {
+        serde_json::to_string(&stream_info.qualities).ok()
+    };
+    let quality = select_best_quality(qualities_json.as_deref());
+
+    let session = StreamSession::new(channel_id, stream_info.stream_id, quality.clone());
     let session_id = stream_manager.start_session(session).ok_or_else(|| {
         eprintln!(
             "Stream proxy error - failed to start session (limit reached) for channel {}",
@@ -434,61 +509,15 @@ pub async fn stream_proxy(
         )
     })?;
 
-    // Step 9: Fetch stream from Xtream provider
-    // CODE REVIEW FIX: Added timeout to prevent indefinite connections
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(300)) // 5-minute max stream connection timeout
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        .build()
-        .map_err(|e| {
-            stream_manager.end_session(&session_id);
-            eprintln!("Stream proxy error - HTTP client creation failed: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_string(),
-            )
-        })?;
-
-    let upstream_response = client.get(&stream_url).send().await.map_err(|e| {
-        stream_manager.end_session(&session_id);
-        eprintln!(
-            "Stream proxy error - upstream fetch failed for {}: {}",
-            stream_url.split('/').take(4).collect::<Vec<_>>().join("/"), // Log URL without credentials
-            e
-        );
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Stream unavailable".to_string(),
-        )
-    })?;
-
-    // Check upstream response status
-    if !upstream_response.status().is_success() {
-        stream_manager.end_session(&session_id);
-        eprintln!(
-            "Stream proxy error - upstream returned status {} for channel {}",
-            upstream_response.status(),
-            channel_id
-        );
-        return Err((
-            StatusCode::BAD_GATEWAY,
-            "Stream source error".to_string(),
-        ));
-    }
-
     // Step 10: Build streaming response
-    // Clone session_id for the cleanup closure
     let cleanup_session_id = session_id.clone();
     let cleanup_manager = stream_manager.clone();
 
-    // Create a stream that will clean up the session when dropped
     let bytes_stream = upstream_response.bytes_stream();
     let stream_with_cleanup = bytes_stream.map(move |result| {
         result.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
     });
 
-    // Wrap in a stream that cleans up session on drop
     let body = Body::from_stream(SessionCleanupStream {
         inner: Box::pin(stream_with_cleanup),
         session_id: cleanup_session_id,
@@ -504,80 +533,57 @@ pub async fn stream_proxy(
     Ok(response)
 }
 
-/// Get primary Xtream stream information for an XMLTV channel
-///
-/// Queries database for:
-/// - Enabled XMLTV channel with valid primary mapping
-/// - Active Xtream account credentials
-///
-/// Returns 404 if channel not found, disabled, or no primary mapping exists.
-fn get_primary_stream_for_channel(
-    conn: &mut crate::db::DbPooledConnection,
-    xmltv_channel_id: i32,
-) -> Result<StreamInfo, (StatusCode, String)> {
-    // Check if channel is enabled
-    let is_enabled: Option<i32> = xmltv_channel_settings::table
-        .filter(xmltv_channel_settings::xmltv_channel_id.eq(xmltv_channel_id))
-        .select(xmltv_channel_settings::is_enabled)
-        .first(conn)
-        .optional()
+/// Try to connect to a stream and return the response if successful
+async fn try_connect_stream(
+    client: &reqwest::Client,
+    credential_manager: &CredentialManager,
+    stream: &BackupStream,
+) -> Result<(String, reqwest::Response), FailureReason> {
+    // Decrypt password
+    let password = credential_manager
+        .retrieve_password(&stream.account_id.to_string(), &stream.password_encrypted)
         .map_err(|e| {
-            eprintln!("Stream lookup error - settings query failed: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_string(),
-            )
-        })?
-        .flatten();
-
-    // Channel must be explicitly enabled (is_enabled = 1)
-    if is_enabled != Some(1) {
-        return Err((StatusCode::NOT_FOUND, "Channel not found".to_string()));
-    }
-
-    // Query for primary stream mapping with account info
-    let result: Option<(i32, Option<String>, String, String, Vec<u8>, i32, i32)> = channel_mappings::table
-        .inner_join(xtream_channels::table.on(
-            channel_mappings::xtream_channel_id.eq(xtream_channels::id.assume_not_null())
-        ))
-        .inner_join(accounts::table.on(
-            xtream_channels::account_id.eq(accounts::id.assume_not_null())
-        ))
-        .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
-        .filter(channel_mappings::is_primary.eq(Some(1)))
-        .select((
-            xtream_channels::stream_id,
-            xtream_channels::qualities,
-            accounts::server_url,
-            accounts::username,
-            accounts::password_encrypted,
-            accounts::id.assume_not_null(),
-            accounts::is_active,
-        ))
-        .first(conn)
-        .optional()
-        .map_err(|e| {
-            eprintln!("Stream lookup error - mapping query failed: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_string(),
-            )
+            eprintln!(
+                "Stream failover - credential decryption failed for account {}: {}",
+                stream.account_id, e
+            );
+            FailureReason::ConnectionError(format!("Credential error: {}", e))
         })?;
 
-    match result {
-        Some((stream_id, qualities, server_url, username, password_encrypted, account_id, is_active)) => {
-            Ok(StreamInfo {
-                xtream_stream_id: stream_id,
-                qualities,
-                server_url,
-                username,
-                password_encrypted,
-                account_id,
-                account_is_active: is_active,
-            })
-        }
-        None => Err((StatusCode::NOT_FOUND, "Channel not found".to_string())),
+    // Select quality
+    let qualities_json = if stream.qualities.is_empty() {
+        None
+    } else {
+        serde_json::to_string(&stream.qualities).ok()
+    };
+    let quality = select_best_quality(qualities_json.as_deref());
+
+    // Build URL
+    let stream_url = build_stream_url(
+        &stream.server_url,
+        &stream.username,
+        &password,
+        stream.stream_id,
+    );
+
+    eprintln!(
+        "Stream failover - trying stream {} (priority {}, quality {})",
+        stream.stream_id, stream.stream_priority, quality
+    );
+
+    // Attempt connection
+    let response = client
+        .get(&stream_url)
+        .send()
+        .await
+        .map_err(|e| FailureReason::from_reqwest_error(&e))?;
+
+    // Check HTTP status
+    if !response.status().is_success() {
+        return Err(FailureReason::from_http_status(response.status()));
     }
+
+    Ok((stream_url, response))
 }
 
 /// Log tuner limit event to event_log table
@@ -834,12 +840,36 @@ fn seed_stream_proxy_data(conn: &mut crate::db::DbPooledConnection) -> Result<us
         records += 1;
     }
 
-    // Seed Xtream channels with various qualities
+    // Seed Xtream channels with various qualities for failover testing
+    // Story 4-5 test data:
+    // - Channel 1: Enabled with primary + 2 backup streams (priority 0, 1, 2)
+    // - Channel 2: Enabled with primary + 1 backup (priority 0, 1)
+    // - Channel 3: Enabled with 3 backups, all same quality
+    // - Channel 4: Enabled with primary only (no backups)
+    // - Channel 5: Enabled with primary (unreachable) + working backup
+    // - Channel 6: Enabled with all streams unreachable
     let xtream_data = [
-        (1001, 1, 1001, "Xtream Ch1", r#"["4K","HD","SD"]"#),
-        (1004, 1, 1004, "Xtream Ch4 4K", r#"["4K","FHD","HD","SD"]"#),
-        (1005, 1, 1005, "Xtream Ch5 HD", r#"["HD","SD"]"#),
-        (1006, 1, 1006, "Xtream Ch6 SD", r#"["SD"]"#),
+        // Channel 1 streams (multiple backups with different priorities)
+        (1001, 1, 1001, "Ch1 Primary", r#"["4K","HD","SD"]"#),
+        (1002, 1, 1002, "Ch1 Backup 1", r#"["HD","SD"]"#),
+        (1003, 1, 1003, "Ch1 Backup 2", r#"["SD"]"#),
+        // Channel 2 streams
+        (1011, 1, 1011, "Ch2 Primary", r#"["HD","SD"]"#),
+        (1012, 1, 1012, "Ch2 Backup", r#"["SD"]"#),
+        // Channel 3 streams (same quality)
+        (1021, 1, 1021, "Ch3 Stream 1", r#"["HD"]"#),
+        (1022, 1, 1022, "Ch3 Stream 2", r#"["HD"]"#),
+        (1023, 1, 1023, "Ch3 Stream 3", r#"["HD"]"#),
+        // Channel 4 - single stream (from account 1)
+        (1031, 1, 1031, "Ch4 Primary Only", r#"["4K","FHD","HD","SD"]"#),
+        // Channel 5 - primary unreachable (account 3), backup working (account 1)
+        (1041, 3, 1041, "Ch5 Primary Unreachable", r#"["HD"]"#),
+        (1042, 1, 1042, "Ch5 Backup Working", r#"["HD","SD"]"#),
+        // Channel 6 - all unreachable (account 3)
+        (1051, 3, 1051, "Ch6 Stream 1 Unreachable", r#"["HD"]"#),
+        (1052, 3, 1052, "Ch6 Stream 2 Unreachable", r#"["HD"]"#),
+        // Additional channels for backward compatibility
+        (1007, 1, 1007, "Xtream Ch7 NoQ", r#"["SD"]"#),
         (1008, 1, 1008, "Xtream Ch8 FHD", r#"["FHD","HD","SD"]"#),
         (1009, 3, 1009, "Xtream Ch9 Unreachable", r#"["HD"]"#),
         (1010, 2, 1010, "Xtream Ch10 Inactive", r#"["HD"]"#),
@@ -856,26 +886,34 @@ fn seed_stream_proxy_data(conn: &mut crate::db::DbPooledConnection) -> Result<us
         records += 1;
     }
 
-    // Channel 7 with NULL qualities
-    diesel::sql_query(
-        "INSERT OR REPLACE INTO xtream_channels (id, account_id, stream_id, name, stream_icon, qualities, category_id, added_at, updated_at)
-         VALUES (1007, 1, 1007, 'Xtream Ch7 NoQ', 'http://icons.local/x1007.png', NULL, 1, datetime('now'), datetime('now'))"
-    )
-    .execute(conn)
-    .map_err(|e| format!("Failed to seed xtream_channel 1007: {}", e))?;
-    records += 1;
-
-    // Seed channel mappings
-    let mappings: [(i32, i32, i32, f64, i32, i32, i32); 9] = [
-        (1, 1, 1001, 0.95, 0, 1, 0),   // Ch1 → primary
-        (3, 3, 1001, 0.85, 0, 0, 1),   // Ch3 → NOT primary
-        (4, 4, 1004, 0.98, 0, 1, 0),   // Ch4 → 4K
-        (5, 5, 1005, 0.97, 0, 1, 0),   // Ch5 → HD
-        (6, 6, 1006, 0.96, 0, 1, 0),   // Ch6 → SD
-        (7, 7, 1007, 0.95, 0, 1, 0),   // Ch7 → NoQ
-        (8, 8, 1008, 0.94, 0, 1, 0),   // Ch8 → FHD
-        (9, 9, 1009, 0.93, 0, 1, 0),   // Ch9 → Unreachable
-        (10, 10, 1010, 0.92, 0, 1, 0), // Ch10 → Inactive
+    // Seed channel mappings for failover testing
+    // (id, xmltv_id, xtream_id, confidence, is_manual, is_primary, stream_priority)
+    let mappings: [(i32, i32, i32, f64, i32, i32, i32); 18] = [
+        // Channel 1: primary + 2 backups
+        (1, 1, 1001, 0.95, 0, 1, 0),   // Primary
+        (2, 1, 1002, 0.90, 0, 0, 1),   // Backup 1
+        (3, 1, 1003, 0.85, 0, 0, 2),   // Backup 2
+        // Channel 2: primary + 1 backup
+        (4, 2, 1011, 0.95, 0, 1, 0),   // Primary
+        (5, 2, 1012, 0.90, 0, 0, 1),   // Backup
+        // Channel 3: 3 streams same quality
+        (6, 3, 1021, 0.95, 0, 1, 0),   // Primary
+        (7, 3, 1022, 0.90, 0, 0, 1),   // Backup 1
+        (8, 3, 1023, 0.85, 0, 0, 2),   // Backup 2
+        // Channel 4: single stream only
+        (9, 4, 1031, 0.98, 0, 1, 0),   // Primary only
+        // Channel 5: unreachable primary, working backup
+        (10, 5, 1041, 0.95, 0, 1, 0),  // Primary (unreachable - account 3)
+        (11, 5, 1042, 0.90, 0, 0, 1),  // Backup (working - account 1)
+        // Channel 6: all unreachable
+        (12, 6, 1051, 0.95, 0, 1, 0),  // Primary (unreachable)
+        (13, 6, 1052, 0.90, 0, 0, 1),  // Backup (also unreachable)
+        // Additional channels for backward compatibility
+        (14, 7, 1007, 0.95, 0, 1, 0),  // Ch7 → NoQ
+        (15, 8, 1008, 0.94, 0, 1, 0),  // Ch8 → FHD
+        (16, 9, 1009, 0.93, 0, 1, 0),  // Ch9 → Unreachable
+        (17, 10, 1010, 0.92, 0, 1, 0), // Ch10 → Inactive
+        (18, 3, 1001, 0.85, 0, 0, 3),  // Legacy Ch3 → NOT primary (old mapping)
     ];
 
     for (id, xmltv_id, xtream_id, confidence, is_manual, is_primary, priority) in &mappings {
