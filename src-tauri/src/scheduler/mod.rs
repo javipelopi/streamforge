@@ -251,6 +251,7 @@ pub fn build_cron_expression(hour: u8, minute: u8) -> String {
 ///
 /// This function is called by the cron job and performs the actual EPG refresh.
 async fn run_scheduled_refresh(db_pool: Arc<RwLock<Option<DbPool>>>) {
+    use crate::commands::epg::{preserve_channel_data, restore_channel_data};
     use crate::db::schema::{xmltv_channels, xmltv_sources};
     use crate::db::{NewProgram, NewXmltvChannel, XmltvSource};
     use crate::xmltv::{fetch_xmltv, parse_xmltv_data};
@@ -327,7 +328,10 @@ async fn run_scheduled_refresh(db_pool: Arc<RwLock<Option<DbPool>>>) {
         // Wrap each source refresh in a transaction for atomicity
         // If the refresh fails mid-way, the old data remains intact
         let tx_result = conn.transaction::<_, diesel::result::Error, _>(|tx_conn| {
-            // Clear existing data for this source
+            // Preserve manual mappings and channel settings before deletion
+            let preserved = preserve_channel_data(tx_conn, source_id)?;
+
+            // Clear existing data for this source (CASCADE deletes mappings/settings)
             diesel::delete(
                 xmltv_channels::table.filter(xmltv_channels::source_id.eq(source_id)),
             )
@@ -405,6 +409,9 @@ async fn run_scheduled_refresh(db_pool: Arc<RwLock<Option<DbPool>>>) {
                     .values(&programs_to_insert)
                     .execute(tx_conn)?;
             }
+
+            // Restore manual mappings and channel settings
+            restore_channel_data(tx_conn, &preserved, &channel_id_map)?;
 
             // Update last_refresh timestamp on the source
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();

@@ -96,7 +96,18 @@ pub fn get_enabled_channels_for_m3u(conn: &mut DbPooledConnection) -> Result<Vec
 
     // Convert to M3uChannel with logo resolution (no additional queries needed!)
     let mut channels = Vec::with_capacity(rows.len());
-    let mut row_index = 1;
+
+    // Find max explicit channel number to avoid collisions with fallback numbering
+    // e.g., if channels have plex_display_order 0,2,5 -> channel numbers 1,3,6
+    // fallback should start at 7, not 1
+    let max_explicit_channel = rows
+        .iter()
+        .filter_map(|r| r.plex_display_order)
+        .map(|o| o + 1)
+        .max()
+        .unwrap_or(0);
+
+    let mut fallback_number = max_explicit_channel + 1;
 
     for row in rows {
         // Logo priority: XMLTV icon -> Xtream fallback -> None
@@ -108,8 +119,15 @@ pub fn get_enabled_channels_for_m3u(conn: &mut DbPooledConnection) -> Result<Vec
             None
         };
 
-        let channel_number = row.plex_display_order.unwrap_or(row_index);
-        row_index += 1;
+        // Convert 0-indexed plex_display_order to 1-indexed channel number
+        let channel_number = match row.plex_display_order {
+            Some(order) => order + 1,
+            None => {
+                let num = fallback_number;
+                fallback_number += 1;
+                num
+            }
+        };
 
         channels.push(M3uChannel {
             xmltv_channel_id: row.id,

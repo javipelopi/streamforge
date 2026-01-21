@@ -215,11 +215,24 @@ pub fn generate_lineup(
     let local_ip = get_local_ip();
 
     let mut lineup = Vec::with_capacity(channels.len());
-    let mut fallback_number = 1;
+
+    // Find max explicit channel number to avoid collisions with fallback numbering
+    // e.g., if channels have plex_display_order 0,2,5 -> channel numbers 1,3,6
+    // fallback should start at 7, not 1
+    let max_explicit_channel = channels
+        .iter()
+        .filter_map(|c| c.plex_display_order)
+        .map(|o| o + 1)
+        .max()
+        .unwrap_or(0);
+
+    let mut fallback_number = max_explicit_channel + 1;
 
     for channel in channels {
+        // Convert 0-indexed plex_display_order to 1-indexed GuideNumber
+        // Plex and most TV systems expect channel numbers starting at 1
         let guide_number = match channel.plex_display_order {
-            Some(order) => order.to_string(),
+            Some(order) => (order + 1).to_string(),
             None => {
                 let num = fallback_number.to_string();
                 fallback_number += 1;
@@ -460,18 +473,27 @@ mod tests {
     #[test]
     fn test_guide_number_handles_null_plex_display_order() {
         // Simulate what would happen with null plex_display_order
-        // Using fallback index numbering
-        let channels_with_null_order = vec![
-            (1, "Channel A", None),    // Should get "1"
-            (2, "Channel B", Some(5)), // Should get "5"
-            (3, "Channel C", None),    // Should get "2"
+        // plex_display_order is 0-indexed in DB, converted to 1-indexed for Plex
+        // Fallback numbers start AFTER max explicit to avoid collisions
+        let channels_with_null_order: Vec<(i32, &str, Option<i32>)> = vec![
+            (1, "Channel A", None),    // Should get "7" (fallback, after max explicit 6)
+            (2, "Channel B", Some(5)), // Should get "6" (5 + 1)
+            (3, "Channel C", None),    // Should get "8" (fallback continues)
         ];
 
-        let mut fallback_number = 1;
+        // Find max explicit channel number (same logic as generate_lineup)
+        let max_explicit_channel = channels_with_null_order
+            .iter()
+            .filter_map(|(_, _, order)| *order)
+            .map(|o| o + 1)
+            .max()
+            .unwrap_or(0);
+
+        let mut fallback_number = max_explicit_channel + 1;
         let guide_numbers: Vec<String> = channels_with_null_order
             .into_iter()
             .map(|(_, _, order)| match order {
-                Some(o) => o.to_string(),
+                Some(o) => (o + 1).to_string(), // Convert 0-indexed to 1-indexed
                 None => {
                     let num = fallback_number.to_string();
                     fallback_number += 1;
@@ -480,6 +502,7 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(guide_numbers, vec!["1", "5", "2"]);
+        // With max explicit = 6, fallback starts at 7
+        assert_eq!(guide_numbers, vec!["7", "6", "8"]);
     }
 }

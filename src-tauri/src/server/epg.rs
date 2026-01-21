@@ -27,6 +27,8 @@ pub struct XmltvChannelOutput {
     pub is_synthetic: bool,
     /// Internal database ID (for program lookup)
     pub internal_id: i32,
+    /// Channel number for Plex sorting (1-indexed, from plex_display_order + 1)
+    pub channel_number: Option<i32>,
 }
 
 /// Output structure for XMLTV programme data
@@ -54,13 +56,13 @@ struct EnabledChannelRow {
     #[diesel(sql_type = Integer)]
     id: i32,
     #[diesel(sql_type = Text)]
-    channel_id: String,
-    #[diesel(sql_type = Text)]
     display_name: String,
     #[diesel(sql_type = Nullable<Text>)]
     icon: Option<String>,
     #[diesel(sql_type = Nullable<Integer>)]
     is_synthetic: Option<i32>,
+    #[diesel(sql_type = Nullable<Integer>)]
+    plex_display_order: Option<i32>,
 }
 
 /// Query result for program data
@@ -100,10 +102,10 @@ pub fn get_enabled_channels_for_epg(
         r#"
         SELECT
             xc.id,
-            xc.channel_id,
             xc.display_name,
             xc.icon,
-            xc.is_synthetic
+            xc.is_synthetic,
+            xcs.plex_display_order
         FROM xmltv_channels xc
         INNER JOIN xmltv_channel_settings xcs ON xc.id = xcs.xmltv_channel_id
         WHERE xcs.is_enabled = 1
@@ -119,14 +121,38 @@ pub fn get_enabled_channels_for_epg(
     )
     .load::<EnabledChannelRow>(conn)?;
 
+    // Find max explicit channel number to avoid collisions with fallback numbering
+    // e.g., if channels have plex_display_order 0,2,5 -> channel numbers 1,3,6
+    // fallback should start at 7, not 1
+    let max_explicit_channel = rows
+        .iter()
+        .filter_map(|r| r.plex_display_order)
+        .map(|o| o + 1)
+        .max()
+        .unwrap_or(0);
+
+    let mut fallback_number = max_explicit_channel + 1;
     let channels = rows
         .into_iter()
-        .map(|row| XmltvChannelOutput {
-            id: row.channel_id,
-            display_name: row.display_name,
-            icon: row.icon.filter(|s| !s.trim().is_empty()),
-            is_synthetic: row.is_synthetic.unwrap_or(0) == 1,
-            internal_id: row.id,
+        .map(|row| {
+            // Convert 0-indexed plex_display_order to 1-indexed channel number
+            let channel_number = match row.plex_display_order {
+                Some(order) => order + 1,
+                None => {
+                    let num = fallback_number;
+                    fallback_number += 1;
+                    num
+                }
+            };
+            XmltvChannelOutput {
+                // Use channel number as ID for Plex EPG matching
+                id: channel_number.to_string(),
+                display_name: row.display_name,
+                icon: row.icon.filter(|s| !s.trim().is_empty()),
+                is_synthetic: row.is_synthetic.unwrap_or(0) == 1,
+                internal_id: row.id,
+                channel_number: Some(channel_number),
+            }
         })
         .collect();
 
@@ -370,7 +396,8 @@ fn write_channel<W: std::io::Write>(
     ch.push_attribute(("id", channel.id.as_str()));
     writer.write_event(Event::Start(ch))?;
 
-    // <display-name>...</display-name>
+    // <display-name>CHANNEL_NAME</display-name>
+    // Channel number is in the id attribute, not display-name (matches xTeve format)
     writer.write_event(Event::Start(BytesStart::new("display-name")))?;
     writer.write_event(Event::Text(BytesText::new(&channel.display_name)))?;
     writer.write_event(Event::End(BytesEnd::new("display-name")))?;
@@ -469,6 +496,7 @@ mod tests {
             icon: icon.map(|s| s.to_string()),
             is_synthetic,
             internal_id,
+            channel_number: Some(internal_id), // Use internal_id as channel number for tests
         }
     }
 
@@ -735,5 +763,71 @@ mod tests {
         let result = parse_db_datetime(dt_str);
 
         assert!(result.is_some());
+    }
+
+    // ============================================================================
+    // Cross-module consistency tests (M3U/EPG/HDHR channel number alignment)
+    // ============================================================================
+
+    #[test]
+    fn test_channel_number_used_as_epg_id_for_plex_matching() {
+        // This test validates that the EPG channel id uses channel_number
+        // which must match M3U's tvg-chno for Plex to correctly match
+        // channels to their EPG data.
+        //
+        // Plex/xTeve matching flow:
+        // 1. M3U playlist has tvg-chno="1" (channel number)
+        // 2. EPG has <channel id="1"> (same channel number)
+        // 3. Plex matches them by this number
+        let channel = XmltvChannelOutput {
+            id: "42".to_string(),  // channel_number as string (matches xTeve format)
+            display_name: "ESPN HD".to_string(),
+            icon: None,
+            is_synthetic: false,
+            internal_id: 100,
+            channel_number: Some(42),
+        };
+
+        // Generate EPG output
+        let result = generate_xmltv_from_data(&[channel], &[]).unwrap();
+
+        // EPG channel id should be "42" (the channel number), matching M3U tvg-chno
+        assert!(result.contains("<channel id=\"42\">"));
+
+        // Only ONE display-name with the channel name (matches xTeve format)
+        // Channel number is NOT in display-name, only in id attribute
+        assert!(result.contains("<display-name>ESPN HD</display-name>"));
+
+        // Should NOT have channel number as display-name
+        assert!(!result.contains("<display-name>42</display-name>"));
+    }
+
+    #[test]
+    fn test_epg_format_matches_xteve() {
+        // xTeve format:
+        // <channel id="66">
+        //     <display-name>ES| M+ Ellas Vamos</display-name>
+        //     <icon src="..."></icon>
+        // </channel>
+        let channel = XmltvChannelOutput {
+            id: "66".to_string(),
+            display_name: "ES| M+ Ellas Vamos".to_string(),
+            icon: Some("https://example.com/icon.png".to_string()),
+            is_synthetic: false,
+            internal_id: 1,
+            channel_number: Some(66),
+        };
+
+        let result = generate_xmltv_from_data(&[channel], &[]).unwrap();
+
+        // Verify xTeve-compatible format
+        assert!(result.contains("<channel id=\"66\">"));
+        assert!(result.contains("<display-name>ES| M+ Ellas Vamos</display-name>"));
+        assert!(result.contains("<icon src=\"https://example.com/icon.png\"/>"));
+
+        // Only one display-name element per channel
+        let channel_section = &result[result.find("<channel id=\"66\">").unwrap()..result.find("</channel>").unwrap()];
+        let display_name_count = channel_section.matches("<display-name>").count();
+        assert_eq!(display_name_count, 1, "Should have exactly one display-name (xTeve format)");
     }
 }
