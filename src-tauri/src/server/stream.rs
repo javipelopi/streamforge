@@ -16,6 +16,8 @@ use uuid::Uuid;
 
 use crate::xtream::quality::qualities_from_json;
 
+use super::buffer::StreamHealth;
+
 /// Quality priority order (highest to lowest)
 /// 4K > FHD > HD > SD
 const QUALITY_PRIORITY: [&str; 4] = ["4K", "FHD", "HD", "SD"];
@@ -35,6 +37,11 @@ pub struct StreamSession {
     pub failover_count: u32,
     /// Original primary stream ID for upgrade retry (Story 4-5)
     pub original_stream_id: i32,
+    // Health monitoring fields (Story 4.7)
+    /// Current health status of the stream
+    pub health_status: Option<StreamHealth>,
+    /// When the last failover occurred
+    pub last_failover_at: Option<Instant>,
 }
 
 impl StreamSession {
@@ -47,7 +54,23 @@ impl StreamSession {
             started_at: Instant::now(),
             failover_count: 0,
             original_stream_id: xtream_stream_id,
+            health_status: Some(StreamHealth::Healthy),
+            last_failover_at: None,
         }
+    }
+
+    /// Update the health status of this session (Story 4.7)
+    pub fn update_health(&mut self, status: StreamHealth) {
+        self.health_status = Some(status);
+    }
+
+    /// Record a mid-stream failover event (Story 4.7)
+    pub fn record_failover(&mut self, new_stream_id: i32, new_quality: String) {
+        self.xtream_stream_id = new_stream_id;
+        self.current_quality = new_quality;
+        self.failover_count += 1;
+        self.last_failover_at = Some(Instant::now());
+        self.health_status = Some(StreamHealth::Healthy); // Reset health after failover
     }
 
     /// Increment the failover count after a successful failover
@@ -252,6 +275,70 @@ mod tests {
         assert_eq!(session.xtream_stream_id, 100);
         assert_eq!(session.current_quality, "4K");
         assert!(!session.can_upgrade());
+    }
+
+    // =========================================================================
+    // StreamSession Health Tests (Story 4.7)
+    // =========================================================================
+
+    #[test]
+    fn test_stream_session_health_status_default() {
+        let session = StreamSession::new(1, 100, "HD".to_string());
+
+        // Should start as healthy
+        assert!(session.health_status.is_some());
+        assert_eq!(session.health_status, Some(StreamHealth::Healthy));
+        assert!(session.last_failover_at.is_none());
+    }
+
+    #[test]
+    fn test_stream_session_update_health() {
+        use std::time::Duration;
+
+        let mut session = StreamSession::new(1, 100, "HD".to_string());
+
+        // Update to stalled
+        session.update_health(StreamHealth::Stalled(Duration::from_secs(3)));
+        match session.health_status {
+            Some(StreamHealth::Stalled(duration)) => {
+                assert_eq!(duration.as_secs(), 3);
+            }
+            _ => panic!("Expected Stalled status"),
+        }
+
+        // Update to failed
+        session.update_health(StreamHealth::Failed);
+        assert_eq!(session.health_status, Some(StreamHealth::Failed));
+    }
+
+    #[test]
+    fn test_stream_session_record_failover() {
+        let mut session = StreamSession::new(1, 100, "HD".to_string());
+
+        assert_eq!(session.failover_count, 0);
+        assert!(session.last_failover_at.is_none());
+
+        // Record failover
+        session.record_failover(101, "SD".to_string());
+
+        assert_eq!(session.xtream_stream_id, 101);
+        assert_eq!(session.current_quality, "SD");
+        assert_eq!(session.failover_count, 1);
+        assert!(session.last_failover_at.is_some());
+        assert_eq!(session.health_status, Some(StreamHealth::Healthy)); // Reset after failover
+    }
+
+    #[test]
+    fn test_stream_session_multiple_failovers() {
+        let mut session = StreamSession::new(1, 100, "4K".to_string());
+
+        session.record_failover(101, "HD".to_string());
+        session.record_failover(102, "SD".to_string());
+
+        assert_eq!(session.xtream_stream_id, 102);
+        assert_eq!(session.current_quality, "SD");
+        assert_eq!(session.failover_count, 2);
+        assert!(session.can_upgrade()); // On backup, can upgrade
     }
 
     // =========================================================================

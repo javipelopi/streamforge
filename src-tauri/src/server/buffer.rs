@@ -21,7 +21,22 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
+use std::time::Duration;
+use tokio::sync::watch;
+
+use super::health::{HealthConfig, StreamHealthMonitor};
 use super::stream::StreamManager;
+
+/// Stream health status for monitoring (Story 4.7)
+#[derive(Debug, Clone, PartialEq)]
+pub enum StreamHealth {
+    /// Stream is receiving data normally
+    Healthy,
+    /// Stream has not received data for the specified duration
+    Stalled(Duration),
+    /// Stream has failed (finished with error or no more data)
+    Failed,
+}
 
 /// MPEG-TS packet size in bytes (fixed by spec)
 const MPEGTS_PACKET_SIZE: usize = 188;
@@ -73,16 +88,23 @@ pub fn check_ffmpeg_available() -> Result<(), io::Error> {
     }
 }
 
-struct BufferState {
-    buffer: VecDeque<Bytes>,
-    total_bytes: usize,
-    bytes_received: usize,
-    bytes_sent: usize,
-    start_time: Option<Instant>,
-    finished: bool,
-    prefill_done: bool,
-    error: Option<io::Error>,
-    waker: Option<Waker>,
+pub(crate) struct BufferState {
+    pub(crate) buffer: VecDeque<Bytes>,
+    pub(crate) total_bytes: usize,
+    pub(crate) bytes_received: usize,
+    pub(crate) bytes_sent: usize,
+    pub(crate) start_time: Option<Instant>,
+    pub(crate) finished: bool,
+    pub(crate) prefill_done: bool,
+    pub(crate) error: Option<io::Error>,
+    pub(crate) waker: Option<Waker>,
+    // Health monitoring fields (Story 4.7)
+    /// Timestamp of last data received from FFmpeg
+    pub(crate) last_data_time: Option<Instant>,
+    /// Flag indicating a stall has been detected
+    pub(crate) stall_detected: bool,
+    /// Timestamp when stall was first detected
+    pub(crate) stall_start_time: Option<Instant>,
 }
 
 pub struct BufferedStream {
@@ -91,6 +113,11 @@ pub struct BufferedStream {
     stderr_handle: tokio::task::JoinHandle<()>,
     session_id: String,
     stream_manager: Arc<StreamManager>,
+    // Health monitoring (Story 4.7)
+    /// Handle to health monitoring task
+    health_monitor_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Receiver for failover signals
+    failover_rx: watch::Receiver<bool>,
 }
 
 impl BufferedStream {
@@ -136,6 +163,10 @@ impl BufferedStream {
             prefill_done: false,
             error: None,
             waker: None,
+            // Health monitoring fields (Story 4.7)
+            last_data_time: None,
+            stall_detected: false,
+            stall_start_time: None,
         }));
 
         let reader_state = state.clone();
@@ -153,12 +184,103 @@ impl BufferedStream {
             Self::stderr_task(stderr, stderr_session_id).await;
         });
 
+        // Set up health monitoring with default config (Story 4.7)
+        let health_monitor = StreamHealthMonitor::new(state.clone(), session_id.clone());
+        let failover_rx = health_monitor.failover_receiver();
+        let health_monitor_handle = Some(health_monitor.start_monitoring());
+
         Ok(Self {
             state,
             reader_handle,
             stderr_handle,
             session_id,
             stream_manager,
+            health_monitor_handle,
+            failover_rx,
+        })
+    }
+
+    /// Create a new BufferedStream with custom health monitoring configuration (Story 4.7)
+    pub fn with_health_config(
+        upstream_url: &str,
+        config: BufferConfig,
+        health_config: HealthConfig,
+        session_id: String,
+        stream_manager: Arc<StreamManager>,
+    ) -> Result<Self, io::Error> {
+        // Verify FFmpeg is available before attempting to spawn
+        check_ffmpeg_available()?;
+
+        let mut child = Command::new("ffmpeg")
+            .args([
+                "-hide_banner",
+                "-loglevel", "warning",
+                "-reconnect", "1",
+                "-reconnect_streamed", "1",
+                "-reconnect_delay_max", "2",
+                "-i", upstream_url,
+                "-c", "copy",
+                "-f", "mpegts",
+                "-fflags", "+genpts",
+                "-mpegts_flags", "+initial_discontinuity",
+                "-",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()?;
+
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        let state = Arc::new(Mutex::new(BufferState {
+            buffer: VecDeque::new(),
+            total_bytes: 0,
+            bytes_received: 0,
+            bytes_sent: 0,
+            start_time: None,
+            finished: false,
+            prefill_done: false,
+            error: None,
+            waker: None,
+            last_data_time: None,
+            stall_detected: false,
+            stall_start_time: None,
+        }));
+
+        let reader_state = state.clone();
+        let prefill_bytes = config.prefill_bytes;
+        let read_size = config.read_buffer_size;
+        let stderr_session_id = session_id.clone();
+
+        // Spawn reader task for stdout
+        let reader_handle = tokio::spawn(async move {
+            Self::reader_task(stdout, child, reader_state, read_size, prefill_bytes).await;
+        });
+
+        // Spawn stderr handler
+        let stderr_handle = tokio::spawn(async move {
+            Self::stderr_task(stderr, stderr_session_id).await;
+        });
+
+        // Set up health monitoring with custom config (Story 4.7)
+        let health_monitor = StreamHealthMonitor::with_config(
+            state.clone(),
+            session_id.clone(),
+            health_config,
+        );
+        let failover_rx = health_monitor.failover_receiver();
+        let health_monitor_handle = Some(health_monitor.start_monitoring());
+
+        Ok(Self {
+            state,
+            reader_handle,
+            stderr_handle,
+            session_id,
+            stream_manager,
+            health_monitor_handle,
+            failover_rx,
         })
     }
 
@@ -219,6 +341,14 @@ impl BufferedStream {
                         guard.start_time = Some(Instant::now());
                     }
 
+                    // Update last_data_time on every successful read (Story 4.7)
+                    guard.last_data_time = Some(Instant::now());
+                    // Reset stall state when data is received
+                    if guard.stall_detected {
+                        guard.stall_detected = false;
+                        guard.stall_start_time = None;
+                    }
+
                     guard.buffer.push_back(chunk);
                     guard.total_bytes += n;
                     guard.bytes_received += n;
@@ -241,6 +371,72 @@ impl BufferedStream {
                 }
             }
         }
+    }
+
+    /// Check the health of the stream (Story 4.7)
+    ///
+    /// Returns the current health status:
+    /// - `Healthy`: Stream is receiving data normally
+    /// - `Stalled(duration)`: No data received for the specified duration
+    /// - `Failed`: Stream has finished or encountered an error
+    pub async fn check_health(&self) -> StreamHealth {
+        let guard = self.state.lock().await;
+
+        // Check if stream has failed
+        if guard.finished || guard.error.is_some() {
+            return StreamHealth::Failed;
+        }
+
+        // Check if we have received any data yet
+        let last_data = match guard.last_data_time {
+            Some(t) => t,
+            None => {
+                // No data received yet - check if we're still waiting for prefill
+                if !guard.prefill_done {
+                    return StreamHealth::Healthy; // Still in prefill, not stalled yet
+                }
+                return StreamHealth::Failed; // Prefill done but no data received - something wrong
+            }
+        };
+
+        // Calculate time since last data
+        let stall_duration = last_data.elapsed();
+        if stall_duration.as_secs() > 0 {
+            // Any measurable gap is considered a stall for monitoring purposes
+            StreamHealth::Stalled(stall_duration)
+        } else {
+            StreamHealth::Healthy
+        }
+    }
+
+    /// Get the internal state for health monitoring (Story 4.7)
+    ///
+    /// Returns a clone of the state Arc for external monitoring.
+    pub(crate) fn get_state(&self) -> Arc<Mutex<BufferState>> {
+        self.state.clone()
+    }
+
+    /// Get a receiver for failover signals (Story 4.7)
+    ///
+    /// The handler can use this to be notified when failover is needed.
+    /// When the receiver receives `true`, the stream has stalled and
+    /// failover should be triggered.
+    ///
+    /// # Usage
+    /// ```ignore
+    /// let mut failover_rx = buffered_stream.failover_receiver();
+    /// tokio::select! {
+    ///     chunk = stream.next() => { /* normal flow */ }
+    ///     _ = failover_rx.changed() => { /* trigger failover */ }
+    /// }
+    /// ```
+    pub fn failover_receiver(&self) -> watch::Receiver<bool> {
+        self.failover_rx.clone()
+    }
+
+    /// Get the session ID for this stream
+    pub fn session_id(&self) -> &str {
+        &self.session_id
     }
 }
 
@@ -306,9 +502,13 @@ impl Stream for BufferedStream {
 
 impl Drop for BufferedStream {
     fn drop(&mut self) {
-        // Abort both FFmpeg output handlers
+        // Abort FFmpeg output handlers
         self.reader_handle.abort();
         self.stderr_handle.abort();
+        // Abort health monitor if running (Story 4.7)
+        if let Some(handle) = self.health_monitor_handle.take() {
+            handle.abort();
+        }
         // End the stream session to free up tuner slot
         self.stream_manager.end_session(&self.session_id);
     }
