@@ -85,17 +85,27 @@ impl From<EpgSourceError> for String {
 // ============================================================================
 
 /// Preserved data from XMLTV channels before refresh
+///
 /// Stores mappings and settings by channel_id (string) so they can be restored
-/// after channels are recreated with new database IDs
-struct PreservedChannelData {
+/// after channels are recreated with new database IDs.
+///
+/// # Usage
+/// This struct is used internally by `preserve_channel_data` and `restore_channel_data`.
+/// These functions must be called within a database transaction to ensure atomicity.
+/// The typical pattern is:
+/// 1. `preserve_channel_data()` - save mappings/settings before delete
+/// 2. Delete existing channels
+/// 3. Insert new channels and build channel_id_map
+/// 4. `restore_channel_data()` - restore mappings/settings with new IDs
+pub(crate) struct PreservedChannelData {
     /// Manual mappings: (channel_id, xtream_channel_id, is_primary, stream_priority)
-    manual_mappings: Vec<(String, i32, i32, i32)>,
+    pub manual_mappings: Vec<(String, i32, i32, i32)>,
     /// Channel settings: (channel_id, is_enabled, plex_display_order)
-    settings: Vec<(String, i32, Option<i32>)>,
+    pub settings: Vec<(String, i32, Option<i32>)>,
 }
 
 /// Save manual mappings and channel settings before deleting XMLTV channels
-fn preserve_channel_data(
+pub(crate) fn preserve_channel_data(
     conn: &mut diesel::SqliteConnection,
     source_id: i32,
 ) -> Result<PreservedChannelData, diesel::result::Error> {
@@ -152,7 +162,7 @@ fn preserve_channel_data(
 }
 
 /// Restore manual mappings and channel settings after inserting new XMLTV channels
-fn restore_channel_data(
+pub(crate) fn restore_channel_data(
     conn: &mut diesel::SqliteConnection,
     preserved: &PreservedChannelData,
     channel_id_map: &HashMap<String, i32>,
