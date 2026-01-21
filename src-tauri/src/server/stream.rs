@@ -163,6 +163,29 @@ impl StreamManager {
     pub fn set_max_connections(&self, max: u32) {
         self.max_connections.store(max, Ordering::Relaxed);
     }
+
+    /// Update a session with a closure (Story 4.7)
+    ///
+    /// Allows updating session state during mid-stream failover.
+    /// Returns true if session was found and updated, false otherwise.
+    pub fn update_session<F>(&self, session_id: &str, f: F) -> bool
+    where
+        F: FnOnce(&mut StreamSession),
+    {
+        if let Some(mut session) = self.active_sessions.get_mut(session_id) {
+            f(&mut session);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Get a clone of a session by ID (Story 4.7)
+    ///
+    /// Returns None if session doesn't exist.
+    pub fn get_session(&self, session_id: &str) -> Option<StreamSession> {
+        self.active_sessions.get(session_id).map(|s| s.clone())
+    }
 }
 
 impl Default for StreamManager {
@@ -412,6 +435,81 @@ mod tests {
         let session2 = StreamSession::new(2, 200, "SD".to_string());
         let id2 = manager.start_session(session2);
         assert!(id2.is_some());
+    }
+
+    // =========================================================================
+    // StreamManager Update Session Tests (Story 4.7)
+    // =========================================================================
+
+    #[test]
+    fn test_update_session_success() {
+        let manager = StreamManager::new(2);
+        let session = StreamSession::new(1, 100, "HD".to_string());
+        let session_id = manager.start_session(session).unwrap();
+
+        // Update the session
+        let updated = manager.update_session(&session_id, |s| {
+            s.failover_count = 5;
+        });
+
+        assert!(updated);
+
+        // Verify the update persisted
+        let retrieved = manager.get_session(&session_id).unwrap();
+        assert_eq!(retrieved.failover_count, 5);
+    }
+
+    #[test]
+    fn test_update_session_not_found() {
+        let manager = StreamManager::new(2);
+
+        let updated = manager.update_session("nonexistent-id", |s| {
+            s.failover_count = 5;
+        });
+
+        assert!(!updated);
+    }
+
+    #[test]
+    fn test_get_session_success() {
+        let manager = StreamManager::new(2);
+        let session = StreamSession::new(1, 100, "HD".to_string());
+        let session_id = manager.start_session(session).unwrap();
+
+        let retrieved = manager.get_session(&session_id);
+        assert!(retrieved.is_some());
+
+        let s = retrieved.unwrap();
+        assert_eq!(s.xmltv_channel_id, 1);
+        assert_eq!(s.xtream_stream_id, 100);
+        assert_eq!(s.current_quality, "HD");
+    }
+
+    #[test]
+    fn test_get_session_not_found() {
+        let manager = StreamManager::new(2);
+
+        let retrieved = manager.get_session("nonexistent-id");
+        assert!(retrieved.is_none());
+    }
+
+    #[test]
+    fn test_update_session_with_record_failover() {
+        let manager = StreamManager::new(2);
+        let session = StreamSession::new(1, 100, "4K".to_string());
+        let session_id = manager.start_session(session).unwrap();
+
+        // Record a failover via update_session (as done in failover.rs)
+        manager.update_session(&session_id, |s| {
+            s.record_failover(101, "HD".to_string());
+        });
+
+        // Verify the failover was recorded
+        let retrieved = manager.get_session(&session_id).unwrap();
+        assert_eq!(retrieved.xtream_stream_id, 101);
+        assert_eq!(retrieved.current_quality, "HD");
+        assert_eq!(retrieved.failover_count, 1);
+        assert!(retrieved.last_failover_at.is_some());
     }
 
     // =========================================================================

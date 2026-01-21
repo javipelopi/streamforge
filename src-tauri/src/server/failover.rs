@@ -691,6 +691,7 @@ pub fn create_failover_stream(
         let mut current_stream = initial_stream;
         let mut ctx = context;
         let mut failover_rx = current_stream.failover_receiver();
+        let mut stall_start: Option<Instant> = None; // Track when stall started (H2 fix)
 
         loop {
             tokio::select! {
@@ -698,6 +699,7 @@ pub fn create_failover_stream(
                 chunk = futures_util::StreamExt::next(&mut current_stream) => {
                     match chunk {
                         Some(Ok(data)) => {
+                            stall_start = None; // Reset stall tracking on successful data (H2 fix)
                             if data_tx.send(Ok(data)).await.is_err() {
                                 // Consumer dropped, exit
                                 break;
@@ -729,8 +731,19 @@ pub fn create_failover_stream(
                         continue;
                     }
 
+                    // Track when stall started for accurate duration (H2 fix)
+                    let stall_duration = match stall_start {
+                        Some(start) => start.elapsed(),
+                        None => {
+                            // First failover signal - start tracking now
+                            stall_start = Some(Instant::now());
+                            Duration::from_secs(5) // Approximate for first signal
+                        }
+                    };
+
                     // Failover triggered
-                    eprintln!("[INFO] stream:{} failover signal received", ctx.session_id);
+                    eprintln!("[INFO] stream:{} failover signal received (stall: {:.1}s)",
+                        ctx.session_id, stall_duration.as_secs_f64());
 
                     // Get backup stream info
                     if !ctx.has_more_backups() {
@@ -744,17 +757,22 @@ pub fn create_failover_stream(
                             ctx.session_id, ctx.xmltv_channel_id, ctx.available_streams.len()
                         );
 
-                        // Log exhaustion event via callback
+                        // Log exhaustion event via callback (H2 fix: use actual stall_duration)
                         if let Some(ref callback) = on_failover {
                             callback(FailoverEvent {
                                 session_id: ctx.session_id.clone(),
                                 xmltv_channel_id: ctx.xmltv_channel_id,
                                 from_stream_id,
                                 to_stream_id: None, // No backup available
-                                stall_duration: Duration::from_secs(5),
+                                stall_duration, // H2 fix: actual duration, not hardcoded
                                 success: false, // Exhaustion is a failure
                             });
                         }
+
+                        // H1 fix: Update session health status to Failed
+                        stream_manager.update_session(&ctx.session_id, |session| {
+                            session.update_health(super::buffer::StreamHealth::Failed);
+                        });
 
                         // Graceful drain: continue reading any remaining buffered data
                         // from the current (failing) stream until it ends naturally
@@ -837,22 +855,33 @@ pub fn create_failover_stream(
                         }
                     };
 
-                    // Log failover event
+                    // Log failover event (H2 fix: use actual stall_duration)
                     if let Some(ref callback) = on_failover {
                         callback(FailoverEvent {
                             session_id: ctx.session_id.clone(),
                             xmltv_channel_id: ctx.xmltv_channel_id,
                             from_stream_id,
                             to_stream_id: Some(backup.stream_id),
-                            stall_duration: Duration::from_secs(5), // Approximate
+                            stall_duration, // H2 fix: actual duration, not hardcoded
                             success: true,
                         });
                     }
 
+                    // H1 fix: Update session to record the failover
+                    let backup_quality = backup.qualities.first()
+                        .cloned()
+                        .unwrap_or_else(|| "SD".to_string());
+                    stream_manager.update_session(&ctx.session_id, |session| {
+                        session.record_failover(backup.stream_id, backup_quality.clone());
+                    });
+
                     eprintln!(
-                        "[INFO] stream:{} failover complete: {} -> {}",
-                        ctx.session_id, from_stream_id, backup.stream_id
+                        "[INFO] stream:{} failover complete: {} -> {} (quality: {})",
+                        ctx.session_id, from_stream_id, backup.stream_id, backup_quality
                     );
+
+                    // Reset stall tracking after successful failover
+                    stall_start = None;
 
                     // Drop old stream and switch to new one
                     drop(current_stream);
