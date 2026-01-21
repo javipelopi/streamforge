@@ -77,6 +77,7 @@ development_status:
   epic-3-retrospective: optional
 
   # Epic 4: Plex Integration & Streaming
+  # Course correction 2026-01-21: Added Story 4.7 for mid-stream health monitoring
   epic-4: in-progress
   4-1-serve-m3u-playlist-endpoint: done
   4-2-serve-xmltv-epg-endpoint: done
@@ -84,6 +85,7 @@ development_status:
   4-4-stream-proxy-with-quality-selection: done
   4-5-automatic-stream-failover: done
   4-6-display-plex-configuration-urls: done
+  4-7-stream-health-monitoring-with-mid-stream-failover: ready-for-dev
   epic-4-retrospective: optional
 
   # Epic 5: EPG Viewer & Discovery

@@ -276,6 +276,8 @@ User can add tuner to Plex and watch live TV with automatic quality failover.
 **FRs covered:** FR27, FR28, FR29, FR30, FR31, FR32, FR33, FR34, FR35, FR36, FR37, FR38
 **NFRs addressed:** NFR1 (stream start), NFR2 (failover time), NFR11 (failover success), NFR12 (Plex versions), NFR21 (local-only)
 
+**Course Correction (2026-01-21):** Added Story 4.7 for mid-stream health monitoring after discovering initial failover implementation only handled connection-time failures.
+
 ---
 
 ### Epic 5: EPG Viewer & Discovery
@@ -1207,6 +1209,54 @@ So that I can easily set up my tuner.
 **When** I view the Plex Integration section
 **Then** I see a warning that the server needs to be started
 **And** URLs show as unavailable
+
+---
+
+### Story 4.7: Stream Health Monitoring with Mid-Stream Failover
+
+*Added via Sprint Change Proposal 2026-01-21 - Mid-Stream Failover*
+
+As a user,
+I want active streams to be monitored for health and automatically recovered,
+So that stream interruptions are handled transparently without manual intervention.
+
+**Context:** The initial failover implementation (Story 4.5) only handles connection-time failures. This story adds continuous health monitoring during active streams to detect and recover from mid-stream failures.
+
+**Acceptance Criteria:**
+
+**Given** an active stream is being proxied through FFmpeg
+**When** the upstream source stops sending data
+**Then** a stall is detected within 3 seconds (configurable)
+**And** the stream health status is updated to "stalled"
+
+**Given** a stream has been stalled for >5 seconds (configurable)
+**When** backup streams are available
+**Then** the proxy switches to the next backup stream
+**And** the FFmpeg buffer continues feeding Plex (hiding the switch)
+**And** a failover event is logged
+
+**Given** a mid-stream failover occurs
+**When** the switch completes
+**Then** Plex playback continues without interruption (FR33)
+**And** total failover time is <2 seconds (NFR2)
+
+**Given** a stream has failed over to a backup source
+**When** the stream session continues
+**Then** the proxy remains on the backup source for the duration of this session
+**And** the next stream request will attempt primary source fresh
+
+**Given** all backup streams fail
+**When** no sources remain
+**Then** the stream ends gracefully
+**And** an error event is logged with full context
+
+**Technical Notes:**
+- Integrate with existing FFmpeg buffer process
+- Use tokio interval for health check loop (every 1 second)
+- Track bytes_received, last_data_time, current_throughput
+- Leverage existing failover logic from Story 4.5
+- Health metrics stored in StreamSession struct
+- Extend StreamSession with: `last_byte_time`, `bytes_per_second`, `stall_detected`
 
 ---
 

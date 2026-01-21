@@ -394,8 +394,11 @@ proxy/
 1. Attempt highest available quality
 2. On failure (timeout 5s, connection error, HTTP error), try next quality tier
 3. Track failures per quality tier
-4. After recovery period (60s), attempt to upgrade quality
+4. Once failed over, remain on backup source for session duration
 5. Log all failover events
+6. **Mid-stream monitoring:** Health check loop tracks bytes/sec every 1s
+7. **Stall detection:** If 0 bytes for >3s, trigger failover (reuse steps 2-4)
+8. **Graceful handoff:** FFmpeg buffer (2-5s) hides switch from Plex
 
 ```rust
 pub struct StreamProxy {
@@ -408,6 +411,10 @@ pub struct StreamSession {
     current_quality: Quality,
     started_at: Instant,
     failover_count: u32,
+    // Mid-stream health monitoring (added 2026-01-21)
+    last_byte_time: Instant,
+    bytes_per_second: f64,
+    stall_detected: bool,
 }
 
 impl StreamProxy {
@@ -836,3 +843,4 @@ GET /lineup.json
 |---------|------|--------|---------|
 | 1.0 | 2026-01-18 | Javier | Initial Architecture creation |
 | 1.1 | 2026-01-19 | Bob (SM) | Course correction: Updated channel_mappings schema, MatchResult struct, data flow to reflect XMLTV channels as primary for Plex lineup |
+| 1.2 | 2026-01-21 | Bob (SM) | Course correction: Added mid-stream health monitoring to failover strategy; extended StreamSession struct |

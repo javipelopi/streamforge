@@ -56,7 +56,7 @@ completedDate: 2026-01-18
 
 | Criteria | Target |
 |----------|--------|
-| **Failover Success Rate** | >99% of stream failures recovered transparently |
+| **Failover Success Rate** | >99% of stream failures recovered transparently (including mid-stream) |
 | **Uptime** | Indefinite continuous operation without restart |
 | **Platform Parity** | Windows, Linux, macOS all meet same quality bar |
 | **Plex Compatibility** | 3 latest Plex versions minimum, broader where feasible |
@@ -287,9 +287,9 @@ He finds a fight on a channel he'd disabled. He enables it. While he's there, he
 
 - FR27: System can proxy stream requests from Plex to Xtream provider
 - FR28: System can select highest available quality tier for each stream
-- FR29: System can detect stream failures (connection drops, errors)
-- FR30: System can automatically failover to next quality tier on failure
-- FR31: System can retry original quality tier after failover recovery period
+- FR29: System can detect stream failures at connection time AND during active streaming (connection drops, errors, stalls, zero throughput)
+- FR30: System can automatically failover to next quality tier on failure, both at connection and mid-stream
+- FR31: Once failed over, system remains on backup source for the duration of the stream session (next stream request will attempt primary fresh)
 - FR32: System can handle multiple concurrent streams up to tuner limit
 - FR33: Plex remains unaware of quality switches and failovers
 
@@ -353,7 +353,7 @@ He finds a fight on a channel he'd disabled. He enables it. While he's there, he
 | **Uptime** | Continuous operation for weeks without restart |
 | **Crash Recovery** | Auto-restart on crash, preserve state |
 | **Data Integrity** | No data loss on unexpected shutdown |
-| **Failover Success** | >99% of stream failures recovered |
+| **Failover Success** | >99% of stream failures recovered (including mid-stream) |
 
 ### Compatibility
 
@@ -428,3 +428,4 @@ He finds a fight on a channel he'd disabled. He enables it. While he's there, he
 |---------|------|--------|---------|
 | 1.0 | 2026-01-18 | Javier | Initial PRD creation |
 | 1.1 | 2026-01-19 | Bob (SM) | Course correction: Updated FR14, FR21, added FR26a to clarify XMLTV channels as primary for Plex lineup |
+| 1.2 | 2026-01-21 | Bob (SM) | Course correction: Updated FR29, FR30, FR31 for mid-stream failover; clarified NFR11 |
