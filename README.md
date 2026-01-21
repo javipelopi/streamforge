@@ -47,6 +47,36 @@ StreamForge acts as a bridge between your Xtream Codes IPTV provider and Plex Me
 - [Node.js](https://nodejs.org/) 18+
 - [Rust](https://rustup.rs/) 1.70+
 - [pnpm](https://pnpm.io/)
+- [FFmpeg](https://ffmpeg.org/) - Required for stream processing
+
+#### Installing FFmpeg
+
+**macOS (Homebrew):**
+```bash
+brew install ffmpeg
+```
+
+**Windows (Chocolatey):**
+```bash
+choco install ffmpeg
+```
+
+**Windows (Scoop):**
+```bash
+scoop install ffmpeg
+```
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt install ffmpeg
+```
+
+**Linux (Fedora):**
+```bash
+sudo dnf install ffmpeg
+```
+
+Verify installation with `ffmpeg -version`.
 
 ### Development
 

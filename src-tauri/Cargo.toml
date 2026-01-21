@@ -44,6 +44,7 @@ sha2 = "0.10"
 # HTTP client for Xtream API
 reqwest = { version = "0.12", features = ["json", "stream"] }
 urlencoding = "2.1"
+bytes = "1"
 
 # XMLTV parsing
 quick-xml = { version = "0.37", features = ["serialize"] }

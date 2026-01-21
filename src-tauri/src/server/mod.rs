@@ -1,3 +1,4 @@
+pub mod buffer;
 pub mod epg;
 pub mod failover;
 pub mod handlers;
