@@ -85,7 +85,7 @@ development_status:
   4-4-stream-proxy-with-quality-selection: done
   4-5-automatic-stream-failover: done
   4-6-display-plex-configuration-urls: done
-  4-7-stream-health-monitoring-with-mid-stream-failover: ready-for-dev
+  4-7-stream-health-monitoring-with-mid-stream-failover: ready-for-review
   epic-4-retrospective: optional
 
   # Epic 5: EPG Viewer & Discovery

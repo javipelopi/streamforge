@@ -3,6 +3,7 @@ pub mod epg;
 pub mod failover;
 pub mod handlers;
 pub mod hdhr;
+pub mod health;
 pub mod m3u;
 pub mod routes;
 pub mod state;

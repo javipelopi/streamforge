@@ -534,6 +534,7 @@ pub async fn stream_proxy(
     // - The verification ensures we don't spawn FFmpeg for a dead stream
     // - The delay between verify and FFmpeg connect is minimal (<100ms typically)
     use super::buffer::{BufferedStream, BufferConfig};
+    use super::failover::{create_failover_stream, FailoverContext};
 
     // Drop the reqwest response - FFmpeg will fetch the stream directly with its own
     // reconnection and timestamp normalization capabilities
@@ -553,7 +554,34 @@ pub async fn stream_proxy(
         )
     })?;
 
-    let body = Body::from_stream(buffered_stream);
+    // Step 11: Wrap in FailoverStream for mid-stream failover capability (Story 4.7)
+    //
+    // If backups are available, wrap the stream to enable seamless failover
+    // during playback if the current stream stalls.
+    let body = if failover_state.has_more_backups() {
+        let failover_context = FailoverContext::new(
+            failover_state.available_streams.clone(),
+            session_id.clone(),
+            channel_id,
+        );
+        // Advance context to current stream index
+        let mut ctx = failover_context;
+        for _ in 0..failover_state.current_stream_idx {
+            ctx.advance();
+        }
+
+        let failover_stream = create_failover_stream(
+            buffered_stream,
+            ctx,
+            stream_manager.clone(),
+            credential_manager,
+            None, // Failover events logged via eprintln
+        );
+        Body::from_stream(failover_stream)
+    } else {
+        // No backups available, use regular stream
+        Body::from_stream(buffered_stream)
+    };
 
     let mut response = Response::new(body);
     *response.status_mut() = StatusCode::OK;

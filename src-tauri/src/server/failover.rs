@@ -1,18 +1,26 @@
 //! Stream failover module for automatic stream recovery
 //!
-//! This module implements the failover functionality (Story 4-5) that:
+//! This module implements the failover functionality (Story 4-5 and 4-7) that:
 //! - Maintains failover state for each streaming session
 //! - Provides backup stream lookup from channel_mappings
 //! - Detects stream failures (timeout, connection error, HTTP error)
 //! - Executes failover to backup streams in priority order
 //! - Supports quality upgrade retry after recovery period (60s)
 //! - Logs failover events to event_log table
+//! - Provides FailoverStream for mid-stream failover (Story 4.7)
 //!
 //! Security note: All error messages returned to clients are opaque
 //! to avoid exposing internal details per FR33 requirements.
 
+use bytes::Bytes;
 use diesel::prelude::*;
+use futures_util::Stream;
+use std::io;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use tokio::sync::mpsc;
 
 use crate::db::schema::{accounts, channel_mappings, xtream_channels};
 use crate::db::DbPooledConnection;
@@ -451,6 +459,413 @@ pub fn log_upgrade_event(
     Ok(())
 }
 
+/// Log a mid-stream failover event to the event_log table (Story 4.7)
+///
+/// Logs failover events that occur during an active stream session,
+/// as opposed to initial connection failover.
+///
+/// # Arguments
+/// * `conn` - Database connection
+/// * `event` - Failover event details
+pub fn log_mid_stream_failover_event(
+    conn: &mut DbPooledConnection,
+    event: &FailoverEvent,
+) -> Result<(), diesel::result::Error> {
+    use crate::db::schema::event_log::dsl::*;
+
+    let level_str = if event.success { "warn" } else { "error" };
+
+    let message_str = match event.to_stream_id {
+        Some(to_id) => format!(
+            "Mid-stream failover for channel {} (stream {} -> {}) after {:.1}s stall",
+            event.xmltv_channel_id,
+            event.from_stream_id,
+            to_id,
+            event.stall_duration.as_secs_f64()
+        ),
+        None => format!(
+            "All streams exhausted for channel {} - session {} failed after {:.1}s stall",
+            event.xmltv_channel_id,
+            event.session_id,
+            event.stall_duration.as_secs_f64()
+        ),
+    };
+
+    let details_json = serde_json::json!({
+        "failover_type": "mid_stream",
+        "session_id": event.session_id,
+        "channel_id": event.xmltv_channel_id,
+        "from_stream_id": event.from_stream_id,
+        "to_stream_id": event.to_stream_id,
+        "stall_duration_secs": event.stall_duration.as_secs_f64(),
+        "success": event.success,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+    });
+
+    diesel::insert_into(event_log)
+        .values((
+            timestamp.eq(chrono::Utc::now().to_rfc3339()),
+            level.eq(level_str),
+            category.eq("stream"),
+            message.eq(&message_str),
+            details.eq(details_json.to_string()),
+            is_read.eq(0),
+        ))
+        .execute(conn)?;
+
+    eprintln!(
+        "Mid-stream failover - {}: {} (session: {})",
+        level_str, message_str, event.session_id
+    );
+
+    Ok(())
+}
+
+// ============================================================================
+// Mid-Stream Failover Stream Wrapper (Story 4.7)
+// ============================================================================
+
+/// Channel capacity for the failover stream data channel
+const FAILOVER_CHANNEL_CAPACITY: usize = 32;
+
+/// A stream wrapper that supports mid-stream failover (Story 4.7)
+///
+/// Uses an mpsc channel to decouple the producer (BufferedStream) from the
+/// consumer (HTTP response). This allows seamlessly switching to a backup
+/// stream without interrupting the response to the client.
+pub struct FailoverStream {
+    /// Receiver for stream data chunks
+    data_rx: mpsc::Receiver<Result<Bytes, io::Error>>,
+    /// Handle to the producer task (for cleanup)
+    producer_handle: tokio::task::JoinHandle<()>,
+    /// Whether the stream has ended
+    finished: bool,
+}
+
+/// Context needed to create backup streams during failover
+#[derive(Clone)]
+pub struct FailoverContext {
+    /// Available backup streams ordered by priority
+    pub available_streams: Vec<BackupStream>,
+    /// Current stream index
+    pub current_idx: usize,
+    /// Session ID for logging
+    pub session_id: String,
+    /// XMLTV channel ID for event logging
+    pub xmltv_channel_id: i32,
+}
+
+impl FailoverContext {
+    /// Create a new failover context
+    pub fn new(
+        available_streams: Vec<BackupStream>,
+        session_id: String,
+        xmltv_channel_id: i32,
+    ) -> Self {
+        Self {
+            available_streams,
+            current_idx: 0,
+            session_id,
+            xmltv_channel_id,
+        }
+    }
+
+    /// Get the current stream
+    pub fn current_stream(&self) -> Option<&BackupStream> {
+        self.available_streams.get(self.current_idx)
+    }
+
+    /// Get the next backup stream (if available)
+    pub fn next_stream(&self) -> Option<&BackupStream> {
+        self.available_streams.get(self.current_idx + 1)
+    }
+
+    /// Move to the next stream
+    pub fn advance(&mut self) -> bool {
+        if self.current_idx + 1 < self.available_streams.len() {
+            self.current_idx += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if there are more backup streams
+    pub fn has_more_backups(&self) -> bool {
+        self.current_idx + 1 < self.available_streams.len()
+    }
+}
+
+impl FailoverStream {
+    /// Create a new FailoverStream wrapping a data receiver
+    ///
+    /// This is used internally by the producer task.
+    pub(crate) fn new(
+        data_rx: mpsc::Receiver<Result<Bytes, io::Error>>,
+        producer_handle: tokio::task::JoinHandle<()>,
+    ) -> Self {
+        Self {
+            data_rx,
+            producer_handle,
+            finished: false,
+        }
+    }
+}
+
+impl Stream for FailoverStream {
+    type Item = Result<Bytes, io::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.finished {
+            return Poll::Ready(None);
+        }
+
+        match Pin::new(&mut self.data_rx).poll_recv(cx) {
+            Poll::Ready(Some(result)) => Poll::Ready(Some(result)),
+            Poll::Ready(None) => {
+                self.finished = true;
+                Poll::Ready(None)
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Drop for FailoverStream {
+    fn drop(&mut self) {
+        // Abort the producer task when the stream is dropped
+        self.producer_handle.abort();
+    }
+}
+
+/// Failover event information for logging
+#[derive(Debug, Clone)]
+pub struct FailoverEvent {
+    /// Session ID
+    pub session_id: String,
+    /// XMLTV channel ID
+    pub xmltv_channel_id: i32,
+    /// Previous stream ID
+    pub from_stream_id: i32,
+    /// New stream ID (None if all streams exhausted)
+    pub to_stream_id: Option<i32>,
+    /// Duration of the stall before failover
+    pub stall_duration: Duration,
+    /// Whether failover was successful
+    pub success: bool,
+}
+
+/// Callback type for failover events
+pub type FailoverCallback = Arc<dyn Fn(FailoverEvent) + Send + Sync>;
+
+/// Create a FailoverStream with mid-stream failover capability (Story 4.7)
+///
+/// This function creates a stream that:
+/// 1. Reads from the initial BufferedStream
+/// 2. Monitors for failover signals
+/// 3. When failover is triggered, creates a new BufferedStream with backup URL
+/// 4. Continues seamlessly from the new stream
+///
+/// # Arguments
+/// * `initial_stream` - The initial BufferedStream to read from
+/// * `context` - Failover context with backup streams
+/// * `stream_manager` - Stream manager for session tracking
+/// * `credential_manager` - For decrypting passwords
+/// * `on_failover` - Optional callback for failover events
+///
+/// # Returns
+/// A FailoverStream that handles mid-stream failover transparently
+pub fn create_failover_stream(
+    initial_stream: super::buffer::BufferedStream,
+    context: FailoverContext,
+    stream_manager: Arc<super::stream::StreamManager>,
+    credential_manager: crate::credentials::CredentialManager,
+    on_failover: Option<FailoverCallback>,
+) -> FailoverStream {
+    use super::buffer::{BufferedStream, BufferConfig};
+    use super::stream::build_stream_url;
+
+    let (data_tx, data_rx) = mpsc::channel(FAILOVER_CHANNEL_CAPACITY);
+
+    let producer_handle = tokio::spawn(async move {
+        let mut current_stream = initial_stream;
+        let mut ctx = context;
+        let mut failover_rx = current_stream.failover_receiver();
+
+        loop {
+            tokio::select! {
+                // Read data from current stream
+                chunk = futures_util::StreamExt::next(&mut current_stream) => {
+                    match chunk {
+                        Some(Ok(data)) => {
+                            if data_tx.send(Ok(data)).await.is_err() {
+                                // Consumer dropped, exit
+                                break;
+                            }
+                        }
+                        Some(Err(e)) => {
+                            // Stream error - try failover
+                            eprintln!("[ERROR] stream:{} read error: {}", ctx.session_id, e);
+                            if !ctx.has_more_backups() {
+                                let _ = data_tx.send(Err(e)).await;
+                                break;
+                            }
+                            // Fall through to failover
+                        }
+                        None => {
+                            // Stream ended normally
+                            break;
+                        }
+                    }
+                }
+                // Monitor failover signal
+                result = failover_rx.changed() => {
+                    if result.is_err() {
+                        // Sender dropped, continue reading
+                        continue;
+                    }
+                    if !*failover_rx.borrow() {
+                        // Signal was false, continue
+                        continue;
+                    }
+
+                    // Failover triggered
+                    eprintln!("[INFO] stream:{} failover signal received", ctx.session_id);
+
+                    // Get backup stream info
+                    if !ctx.has_more_backups() {
+                        // All streams exhausted - handle gracefully (Story 4.7 Task 7)
+                        let from_stream_id = ctx.current_stream()
+                            .map(|s| s.stream_id)
+                            .unwrap_or(0);
+
+                        eprintln!(
+                            "[WARN] stream:{} ALL STREAMS EXHAUSTED - channel:{}, tried:{} streams",
+                            ctx.session_id, ctx.xmltv_channel_id, ctx.available_streams.len()
+                        );
+
+                        // Log exhaustion event via callback
+                        if let Some(ref callback) = on_failover {
+                            callback(FailoverEvent {
+                                session_id: ctx.session_id.clone(),
+                                xmltv_channel_id: ctx.xmltv_channel_id,
+                                from_stream_id,
+                                to_stream_id: None, // No backup available
+                                stall_duration: Duration::from_secs(5),
+                                success: false, // Exhaustion is a failure
+                            });
+                        }
+
+                        // Graceful drain: continue reading any remaining buffered data
+                        // from the current (failing) stream until it ends naturally
+                        eprintln!(
+                            "[INFO] stream:{} draining remaining buffer before termination",
+                            ctx.session_id
+                        );
+
+                        // Read remaining data without checking failover (it would just loop)
+                        loop {
+                            match futures_util::StreamExt::next(&mut current_stream).await {
+                                Some(Ok(data)) => {
+                                    if data_tx.send(Ok(data)).await.is_err() {
+                                        break; // Consumer dropped
+                                    }
+                                }
+                                Some(Err(_)) | None => break, // Stream ended
+                            }
+                        }
+
+                        eprintln!(
+                            "[INFO] stream:{} graceful termination complete",
+                            ctx.session_id
+                        );
+                        break;
+                    }
+
+                    let from_stream_id = ctx.current_stream()
+                        .map(|s| s.stream_id)
+                        .unwrap_or(0);
+
+                    ctx.advance();
+
+                    let backup = match ctx.current_stream() {
+                        Some(s) => s.clone(),
+                        None => {
+                            eprintln!("[ERROR] stream:{} failed to get backup stream", ctx.session_id);
+                            break;
+                        }
+                    };
+
+                    // Decrypt password for backup stream
+                    let password = match credential_manager.retrieve_password(
+                        &backup.account_id.to_string(),
+                        &backup.password_encrypted,
+                    ) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("[ERROR] stream:{} credential error: {}", ctx.session_id, e);
+                            // Try next backup if available
+                            continue;
+                        }
+                    };
+
+                    // Build backup stream URL
+                    let backup_url = build_stream_url(
+                        &backup.server_url,
+                        &backup.username,
+                        &password,
+                        backup.stream_id,
+                    );
+
+                    eprintln!(
+                        "[INFO] stream:{} switching to backup stream {} (priority {})",
+                        ctx.session_id, backup.stream_id, backup.stream_priority
+                    );
+
+                    // Create new BufferedStream with backup URL
+                    let new_stream = match BufferedStream::new(
+                        &backup_url,
+                        BufferConfig::default(),
+                        ctx.session_id.clone(),
+                        stream_manager.clone(),
+                    ) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("[ERROR] stream:{} failed to create backup stream: {}", ctx.session_id, e);
+                            // Try next backup if available
+                            continue;
+                        }
+                    };
+
+                    // Log failover event
+                    if let Some(ref callback) = on_failover {
+                        callback(FailoverEvent {
+                            session_id: ctx.session_id.clone(),
+                            xmltv_channel_id: ctx.xmltv_channel_id,
+                            from_stream_id,
+                            to_stream_id: Some(backup.stream_id),
+                            stall_duration: Duration::from_secs(5), // Approximate
+                            success: true,
+                        });
+                    }
+
+                    eprintln!(
+                        "[INFO] stream:{} failover complete: {} -> {}",
+                        ctx.session_id, from_stream_id, backup.stream_id
+                    );
+
+                    // Drop old stream and switch to new one
+                    drop(current_stream);
+                    current_stream = new_stream;
+                    failover_rx = current_stream.failover_receiver();
+                }
+            }
+        }
+    });
+
+    FailoverStream::new(data_rx, producer_handle)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -817,5 +1232,111 @@ mod tests {
 
         // Now can try upgrade
         assert!(state.try_upgrade_to_primary());
+    }
+
+    // =========================================================================
+    // FailoverContext Tests (Story 4.7)
+    // =========================================================================
+
+    #[test]
+    fn test_failover_context_creation() {
+        let streams = vec![
+            create_test_stream(100, 0),
+            create_test_stream(101, 1),
+            create_test_stream(102, 2),
+        ];
+        let ctx = FailoverContext::new(streams, "test-session".to_string(), 1);
+
+        assert_eq!(ctx.current_idx, 0);
+        assert_eq!(ctx.session_id, "test-session");
+        assert_eq!(ctx.xmltv_channel_id, 1);
+        assert!(ctx.current_stream().is_some());
+        assert_eq!(ctx.current_stream().unwrap().stream_id, 100);
+    }
+
+    #[test]
+    fn test_failover_context_advance() {
+        let streams = vec![
+            create_test_stream(100, 0),
+            create_test_stream(101, 1),
+            create_test_stream(102, 2),
+        ];
+        let mut ctx = FailoverContext::new(streams, "test-session".to_string(), 1);
+
+        // Initial state
+        assert!(ctx.has_more_backups());
+        assert_eq!(ctx.current_stream().unwrap().stream_id, 100);
+
+        // Advance to first backup
+        assert!(ctx.advance());
+        assert_eq!(ctx.current_stream().unwrap().stream_id, 101);
+        assert!(ctx.has_more_backups());
+
+        // Advance to second backup
+        assert!(ctx.advance());
+        assert_eq!(ctx.current_stream().unwrap().stream_id, 102);
+        assert!(!ctx.has_more_backups());
+
+        // Cannot advance further
+        assert!(!ctx.advance());
+        assert_eq!(ctx.current_idx, 2);
+    }
+
+    #[test]
+    fn test_failover_context_next_stream() {
+        let streams = vec![
+            create_test_stream(100, 0),
+            create_test_stream(101, 1),
+        ];
+        let ctx = FailoverContext::new(streams, "test-session".to_string(), 1);
+
+        assert!(ctx.next_stream().is_some());
+        assert_eq!(ctx.next_stream().unwrap().stream_id, 101);
+    }
+
+    #[test]
+    fn test_failover_context_no_next_stream() {
+        let streams = vec![create_test_stream(100, 0)];
+        let ctx = FailoverContext::new(streams, "test-session".to_string(), 1);
+
+        assert!(ctx.next_stream().is_none());
+        assert!(!ctx.has_more_backups());
+    }
+
+    // =========================================================================
+    // FailoverEvent Tests (Story 4.7)
+    // =========================================================================
+
+    #[test]
+    fn test_failover_event_creation() {
+        let event = FailoverEvent {
+            session_id: "test-session".to_string(),
+            xmltv_channel_id: 1,
+            from_stream_id: 100,
+            to_stream_id: Some(101),
+            stall_duration: Duration::from_secs(5),
+            success: true,
+        };
+
+        assert_eq!(event.session_id, "test-session");
+        assert_eq!(event.xmltv_channel_id, 1);
+        assert_eq!(event.from_stream_id, 100);
+        assert_eq!(event.to_stream_id, Some(101));
+        assert!(event.success);
+    }
+
+    #[test]
+    fn test_failover_event_exhaustion() {
+        let event = FailoverEvent {
+            session_id: "test-session".to_string(),
+            xmltv_channel_id: 1,
+            from_stream_id: 102,
+            to_stream_id: None, // All streams exhausted
+            stall_duration: Duration::from_secs(5),
+            success: false,
+        };
+
+        assert!(event.to_stream_id.is_none());
+        assert!(!event.success);
     }
 }
