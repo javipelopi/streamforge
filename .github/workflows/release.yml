@@ -56,6 +56,34 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      - name: Update version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Updating version to $VERSION"
+          # Update tauri.conf.json
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          else
+            sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          fi
+          # Update package.json
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+          else
+            sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+          fi
+          # Update Cargo.toml (first version line only)
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            sed -i '' "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+          else
+            sed -i "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+          fi
+          echo "Updated versions:"
+          grep '"version"' src-tauri/tauri.conf.json
+          grep '"version"' package.json
+          grep '^version = ' src-tauri/Cargo.toml | head -1
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
