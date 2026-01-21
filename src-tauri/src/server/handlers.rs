@@ -6,7 +6,6 @@ use axum::{
     Json,
 };
 use diesel::prelude::*;
-use futures_util::StreamExt;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -485,7 +484,7 @@ pub async fn stream_proxy(
     }
 
     // Step 8: Handle result
-    let (stream_info, _stream_url, upstream_response) = match successful_stream {
+    let (stream_info, stream_url, upstream_response) = match successful_stream {
         Some(s) => s,
         None => {
             // All streams failed - log error event
@@ -526,26 +525,56 @@ pub async fn stream_proxy(
         )
     })?;
 
-    // Step 10: Build streaming response
-    let cleanup_session_id = session_id.clone();
-    let cleanup_manager = stream_manager.clone();
+    // Step 10: Stream through FFmpeg for timestamp normalization and reconnection
+    //
+    // Design note: We verified the stream URL works via reqwest (for failover logic),
+    // then let FFmpeg fetch it directly. This "double connection" approach is intentional:
+    // - FFmpeg needs the raw URL to use its own reconnection logic (-reconnect flags)
+    // - FFmpeg normalizes timestamps and handles MPEG-TS quirks better than raw passthrough
+    // - The verification ensures we don't spawn FFmpeg for a dead stream
+    // - The delay between verify and FFmpeg connect is minimal (<100ms typically)
+    use super::buffer::{BufferedStream, BufferConfig};
 
-    let bytes_stream = upstream_response.bytes_stream();
-    let stream_with_cleanup = bytes_stream.map(move |result| {
-        result.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
-    });
+    // Drop the reqwest response - FFmpeg will fetch the stream directly with its own
+    // reconnection and timestamp normalization capabilities
+    drop(upstream_response);
 
-    let body = Body::from_stream(SessionCleanupStream {
-        inner: Box::pin(stream_with_cleanup),
-        session_id: cleanup_session_id,
-        stream_manager: cleanup_manager,
-    });
+    let buffered_stream = BufferedStream::new(
+        &stream_url,
+        BufferConfig::default(),
+        session_id.clone(),
+        stream_manager.clone(),
+    ).map_err(|e| {
+        stream_manager.end_session(&session_id);
+        eprintln!("Stream proxy error - FFmpeg failed to start: {}", e);
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("Stream processing unavailable: {}", e),
+        )
+    })?;
+
+    let body = Body::from_stream(buffered_stream);
 
     let mut response = Response::new(body);
     *response.status_mut() = StatusCode::OK;
-    response
-        .headers_mut()
-        .insert(header::CONTENT_TYPE, HeaderValue::from_static("video/mp2t"));
+
+    // Headers optimized for Plex HDHomeRun compatibility
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("video/mp2t")
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-cache, no-store, must-revalidate")
+    );
+    response.headers_mut().insert(
+        header::PRAGMA,
+        HeaderValue::from_static("no-cache")
+    );
+    response.headers_mut().insert(
+        header::CONNECTION,
+        HeaderValue::from_static("close")
+    );
 
     Ok(response)
 }
@@ -615,40 +644,6 @@ fn log_tuner_limit_event(conn: &mut crate::db::DbPooledConnection, channel_id: i
         .execute(conn)
     {
         eprintln!("Failed to log tuner limit event: {}", e);
-    }
-}
-
-/// Stream wrapper that cleans up session when dropped
-///
-/// This ensures the stream session is ended when:
-/// - Client disconnects
-/// - Stream ends naturally
-/// - Any error occurs
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use futures_util::Stream;
-use std::sync::Arc;
-
-struct SessionCleanupStream<S> {
-    inner: Pin<Box<S>>,
-    session_id: String,
-    stream_manager: Arc<super::stream::StreamManager>,
-}
-
-impl<S, T, E> Stream for SessionCleanupStream<S>
-where
-    S: Stream<Item = Result<T, E>> + Unpin,
-{
-    type Item = Result<T, E>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.inner.as_mut().poll_next(cx)
-    }
-}
-
-impl<S> Drop for SessionCleanupStream<S> {
-    fn drop(&mut self) {
-        self.stream_manager.end_session(&self.session_id);
     }
 }
 
