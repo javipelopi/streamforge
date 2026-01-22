@@ -2,6 +2,7 @@
  * TV-Style EPG Components
  * Story 5.4: EPG TV-Style Layout Foundation
  * Story 5.5: EPG Channel List Panel
+ * Story 5.6: EPG Schedule Panel
  *
  * Exports all components for the TV-style EPG interface.
  */
@@ -15,3 +16,8 @@ export { EpgDetailsPanelPlaceholder } from './EpgDetailsPanelPlaceholder';
 export { EpgChannelList } from './EpgChannelList';
 export { EpgChannelRow } from './EpgChannelRow';
 export { EpgProgressBar } from './EpgProgressBar';
+
+// Story 5.6: EPG Schedule Panel
+export { EpgSchedulePanel } from './EpgSchedulePanel';
+export { ScheduleHeader } from './ScheduleHeader';
+export { ScheduleRow } from './ScheduleRow';
