@@ -47,7 +47,7 @@ development_status:
   1-4-implement-system-tray-integration: done
   1-5-create-axum-http-server-foundation: done
   1-6-add-auto-start-on-boot-capability: done
-  epic-1-retrospective: optional
+  epic-1-retrospective: skipped
 
   # Epic 2: Account & Source Configuration
   epic-2: done
@@ -57,7 +57,7 @@ development_status:
   2-4-add-xmltv-source-management: done
   2-5-parse-and-store-xmltv-epg-data: done
   2-6-implement-scheduled-epg-refresh: done
-  epic-2-retrospective: optional
+  epic-2-retrospective: skipped
 
   # Epic 3: Channel Discovery & Matching (XMLTV-First) - REWRITTEN
   # Original stories (done)
@@ -74,7 +74,7 @@ development_status:
   3-9-implement-target-lineup-view: done
   3-10-implement-sources-view-xmltv-tab: done
   3-11-implement-sources-view-xtream-tab: done
-  epic-3-retrospective: optional
+  epic-3-retrospective: skipped
 
   # Epic 4: Plex Integration & Streaming
   # Course correction 2026-01-21: Added Story 4.7 for mid-stream health monitoring
@@ -86,11 +86,11 @@ development_status:
   4-5-automatic-stream-failover: done
   4-6-display-plex-configuration-urls: done
   4-7-stream-health-monitoring-with-mid-stream-failover: done
-  epic-4-retrospective: optional
+  epic-4-retrospective: skipped
 
   # Epic 5: EPG Viewer & Discovery
-  epic-5: backlog
-  5-1-epg-grid-browser-with-time-navigation: backlog
+  epic-5: in-progress
+  5-1-epg-grid-browser-with-time-navigation: ready-for-dev
   5-2-epg-search-functionality: backlog
   5-3-program-details-view: backlog
   epic-5-retrospective: optional
