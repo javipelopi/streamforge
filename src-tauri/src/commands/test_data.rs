@@ -402,16 +402,18 @@ pub fn set_xmltv_channel_enabled(
 }
 
 /// Create a test program
-/// Used by epg-search.fixture.ts for test data setup
+/// Used by epg-search.fixture.ts and program-details.fixture.ts for test data setup
 #[tauri::command]
 pub fn create_test_program(
     db: State<DbConnection>,
+    id: Option<i32>,
     xmltv_channel_id: i32,
     title: String,
     start_time: String,
     end_time: String,
     category: Option<String>,
     description: Option<String>,
+    episode_info: Option<String>,
 ) -> Result<SeedResponse, String> {
     if !is_test_mode() {
         return Err("Test data creation is only available in test mode (IPTV_TEST_MODE=1)".to_string());
@@ -423,19 +425,39 @@ pub fn create_test_program(
 
     let category_val = category.as_deref().unwrap_or("");
     let description_val = description.as_deref().unwrap_or("");
+    let episode_info_val = episode_info.as_deref().unwrap_or("");
 
-    diesel::sql_query(format!(
-        "INSERT INTO programs (xmltv_channel_id, title, description, start_time, end_time, category, created_at)
-         VALUES ({}, '{}', '{}', '{}', '{}', '{}', datetime('now'))",
-        xmltv_channel_id,
-        title.replace('\'', "''"),
-        description_val.replace('\'', "''"),
-        start_time,
-        end_time,
-        category_val
-    ))
-    .execute(&mut conn)
-    .map_err(|e| format!("Failed to create test program: {}", e))?;
+    // Build the SQL depending on whether id is provided
+    let sql = if let Some(program_id) = id {
+        format!(
+            "INSERT OR REPLACE INTO programs (id, xmltv_channel_id, title, description, start_time, end_time, category, episode_info, created_at)
+             VALUES ({}, {}, '{}', '{}', '{}', '{}', '{}', '{}', datetime('now'))",
+            program_id,
+            xmltv_channel_id,
+            title.replace('\'', "''"),
+            description_val.replace('\'', "''"),
+            start_time,
+            end_time,
+            category_val,
+            episode_info_val
+        )
+    } else {
+        format!(
+            "INSERT INTO programs (xmltv_channel_id, title, description, start_time, end_time, category, episode_info, created_at)
+             VALUES ({}, '{}', '{}', '{}', '{}', '{}', '{}', datetime('now'))",
+            xmltv_channel_id,
+            title.replace('\'', "''"),
+            description_val.replace('\'', "''"),
+            start_time,
+            end_time,
+            category_val,
+            episode_info_val
+        )
+    };
+
+    diesel::sql_query(sql)
+        .execute(&mut conn)
+        .map_err(|e| format!("Failed to create test program: {}", e))?;
 
     Ok(SeedResponse {
         success: true,
@@ -492,6 +514,107 @@ pub fn delete_test_channel_data(
     Ok(SeedResponse {
         success: true,
         message: format!("Deleted test data for channel {}", channel_id),
+        records_created: records_deleted,
+    })
+}
+
+// ============================================================================
+// Program Details Test Data Commands (Story 5.3)
+// ============================================================================
+
+/// Create a test channel mapping with stream info
+/// Used by program-details.fixture.ts for test data setup
+#[tauri::command]
+pub fn create_test_channel_mapping(
+    db: State<DbConnection>,
+    xmltv_channel_id: i32,
+    stream_name: String,
+    quality_tiers: Vec<String>,
+    is_primary: bool,
+    match_confidence: f32,
+) -> Result<SeedResponse, String> {
+    if !is_test_mode() {
+        return Err("Test data creation is only available in test mode (IPTV_TEST_MODE=1)".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    // Ensure account exists (needed for xtream_channels FK)
+    diesel::sql_query(
+        "INSERT OR IGNORE INTO accounts (id, name, server_url, username, password_encrypted, max_connections, is_active, created_at, updated_at)
+         VALUES (1, 'Test IPTV Provider', 'http://test-xtream.local:8080', 'testuser', X'746573747061737377', 2, 1, datetime('now'), datetime('now'))"
+    )
+    .execute(&mut conn)
+    .map_err(|e| format!("Failed to ensure test account: {}", e))?;
+
+    // Create xtream channel with qualities
+    let qualities_json = serde_json::to_string(&quality_tiers).unwrap_or_else(|_| "[]".to_string());
+    let xtream_id = 2000 + xmltv_channel_id; // Offset to avoid conflicts
+
+    diesel::sql_query(format!(
+        "INSERT OR REPLACE INTO xtream_channels (id, account_id, stream_id, name, stream_icon, qualities, category_id, added_at, updated_at)
+         VALUES ({}, 1, {}, '{}', 'http://icons.local/x{}.png', '{}', 1, datetime('now'), datetime('now'))",
+        xtream_id, xtream_id, stream_name.replace('\'', "''"), xtream_id, qualities_json.replace('\'', "''")
+    ))
+    .execute(&mut conn)
+    .map_err(|e| format!("Failed to create xtream_channel: {}", e))?;
+
+    // Create channel mapping
+    let is_primary_int = if is_primary { 1 } else { 0 };
+    diesel::sql_query(format!(
+        "INSERT OR REPLACE INTO channel_mappings (xmltv_channel_id, xtream_channel_id, match_confidence, is_manual, is_primary, stream_priority, created_at)
+         VALUES ({}, {}, {}, 0, {}, 0, datetime('now'))",
+        xmltv_channel_id, xtream_id, match_confidence, is_primary_int
+    ))
+    .execute(&mut conn)
+    .map_err(|e| format!("Failed to create channel_mapping: {}", e))?;
+
+    Ok(SeedResponse {
+        success: true,
+        message: format!("Created test stream mapping for channel {} with {} qualities", xmltv_channel_id, quality_tiers.len()),
+        records_created: 2,
+    })
+}
+
+/// Delete test stream mapping for a channel
+/// Used by program-details.fixture.ts for cleanup
+#[tauri::command]
+pub fn delete_test_stream_mapping(
+    db: State<DbConnection>,
+    xmltv_channel_id: i32,
+) -> Result<SeedResponse, String> {
+    if !is_test_mode() {
+        return Err("Test data deletion is only available in test mode (IPTV_TEST_MODE=1)".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    let mut records_deleted = 0;
+
+    // Delete channel mappings
+    let mappings_deleted = diesel::delete(
+        channel_mappings::table.filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
+    )
+    .execute(&mut conn)
+    .map_err(|e| format!("Failed to delete channel mappings: {}", e))?;
+    records_deleted += mappings_deleted;
+
+    // Delete xtream channels for this xmltv channel
+    let xtream_id = 2000 + xmltv_channel_id;
+    let xtream_deleted = diesel::delete(
+        xtream_channels::table.filter(xtream_channels::id.eq(xtream_id))
+    )
+    .execute(&mut conn)
+    .map_err(|e| format!("Failed to delete xtream_channel: {}", e))?;
+    records_deleted += xtream_deleted;
+
+    Ok(SeedResponse {
+        success: true,
+        message: format!("Deleted test stream mapping for channel {}", xmltv_channel_id),
         records_created: records_deleted,
     })
 }

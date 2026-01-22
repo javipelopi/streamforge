@@ -313,6 +313,7 @@ pub fn run() {
             commands::epg::set_epg_schedule,
             commands::epg::get_enabled_channels_with_programs,
             commands::epg::search_epg_programs,
+            commands::epg::get_channel_stream_info,
             commands::matcher::run_channel_matching,
             commands::matcher::get_match_stats,
             commands::matcher::get_channel_mappings_for_xmltv,
@@ -354,7 +355,9 @@ pub fn run() {
             commands::test_data::create_test_xmltv_channel,
             commands::test_data::set_xmltv_channel_enabled,
             commands::test_data::create_test_program,
-            commands::test_data::delete_test_channel_data
+            commands::test_data::delete_test_channel_data,
+            commands::test_data::create_test_channel_mapping,
+            commands::test_data::delete_test_stream_mapping
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

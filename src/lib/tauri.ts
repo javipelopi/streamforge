@@ -1371,6 +1371,7 @@ export interface EpgGridProgram {
   endTime: string;
   category?: string;
   description?: string;
+  episodeInfo?: string;
 }
 
 /** Channel data with programs for EPG grid display */
@@ -1505,3 +1506,33 @@ export function formatProgramDuration(startTime: string, endTime: string): strin
 
   return `${hours}h ${minutes}m`;
 }
+
+// ============================================================================
+// Program Details types and functions (Story 5.3)
+// ============================================================================
+
+/** Stream info for program details panel */
+export interface ChannelStreamInfo {
+  streamName: string;
+  qualityTiers: string[];
+  isPrimary: boolean;
+  matchConfidence: number;
+}
+
+/**
+ * Get stream info for an XMLTV channel
+ *
+ * Story 5.3: Program Details View
+ * AC #3: Stream info displays for channels with Xtream mappings
+ *
+ * @param xmltvChannelId - XMLTV channel ID to get stream info for
+ * @returns Stream info or null if no mapping exists
+ */
+export async function getChannelStreamInfo(
+  xmltvChannelId: number
+): Promise<ChannelStreamInfo | null> {
+  return invoke<ChannelStreamInfo | null>('get_channel_stream_info', {
+    xmltvChannelId,
+  });
+}
+
