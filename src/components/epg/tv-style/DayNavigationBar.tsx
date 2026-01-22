@@ -6,7 +6,7 @@
  * Allows navigation between days for EPG schedule viewing.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { DayChip } from './DayChip';
 import { DatePickerButton } from './DatePickerButton';
 import type { DayOption } from '../../../hooks/useEpgDayNavigation';
@@ -42,6 +42,22 @@ export function DayNavigationBar({
   onSelectDate,
 }: DayNavigationBarProps) {
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+
+  // Check if we're on Today (can't go back further)
+  const isToday = selectedDay.id === 'today';
+
+  // Check if selected day is beyond Today/Tomorrow (needs label display)
+  const isOtherDay = selectedDay.id !== 'today' && selectedDay.id !== 'tomorrow';
+
+  // Format the date for display when viewing other days
+  const formattedDate = useMemo(() => {
+    if (!isOtherDay) return '';
+    return selectedDay.date.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    });
+  }, [isOtherDay, selectedDay.date]);
 
   // Handle prev button click
   const handlePrevClick = useCallback(() => {
@@ -87,40 +103,53 @@ export function DayNavigationBar({
       role="tablist"
       aria-label="Day navigation"
     >
-      {/* Prev day button */}
-      <button
-        data-testid="prev-day-button"
-        onClick={handlePrevClick}
-        className="flex items-center justify-center w-8 h-8 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-        aria-label="Previous day"
-        type="button"
-      >
-        <svg
-          className="w-4 h-4"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          aria-hidden="true"
+      {/* Prev day button - hidden when on Today */}
+      {!isToday && (
+        <button
+          data-testid="prev-day-button"
+          onClick={handlePrevClick}
+          className="flex items-center justify-center w-8 h-8 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+          aria-label="Previous day"
+          type="button"
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M15 19l-7-7 7-7"
-          />
-        </svg>
-      </button>
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 19l-7-7 7-7"
+            />
+          </svg>
+        </button>
+      )}
 
-      {/* Day chips container (horizontally scrollable) */}
-      <div className="flex items-center gap-1 overflow-x-auto max-w-md scrollbar-hide">
-        {dayOptions.map((day) => (
-          <DayChip
-            key={day.id}
-            day={day}
-            isSelected={selectedDay.id === day.id}
-            onClick={() => handleDayClick(day.id)}
-          />
-        ))}
+      {/* Day chips - only Today and Tomorrow, arrows for other days */}
+      <div className="flex items-center gap-1">
+        {dayOptions
+          .filter((day) => day.id === 'today' || day.id === 'tomorrow')
+          .map((day) => (
+            <DayChip
+              key={day.id}
+              day={day}
+              isSelected={selectedDay.id === day.id}
+              onClick={() => handleDayClick(day.id)}
+            />
+          ))}
+        {/* Show current date when viewing days beyond Today/Tomorrow */}
+        {isOtherDay && (
+          <span
+            data-testid="current-day-label"
+            className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg"
+          >
+            {formattedDate}
+          </span>
+        )}
       </div>
 
       {/* Next day button */}

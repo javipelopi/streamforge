@@ -135,16 +135,23 @@ export function useEpgSearch(): UseEpgSearchResult {
   /**
    * Handle result selection
    * Returns a time window centered on the program for grid navigation
+   * For channel-only results, returns null (no date navigation needed)
    */
   const onResultSelect = useCallback((result: EpgSearchResult): TimeWindow | null => {
-    // Calculate time window centered on the program
-    const programStartTime = new Date(result.startTime);
-    const timeWindow = createCenteredTimeWindow(programStartTime, 3);
-
     // Hide results after selection
     setIsResultsVisible(false);
     setQuery('');
     setResults([]);
+
+    // For channel-only results, no time window needed
+    // Channel selection is handled directly by onSearchResultSelect callback in EpgTv.tsx
+    if (result.resultType === 'channel') {
+      return null;
+    }
+
+    // For program results, calculate time window and dispatch program selection
+    const programStartTime = new Date(result.startTime!);
+    const timeWindow = createCenteredTimeWindow(programStartTime, 3);
 
     // Dispatch custom event for program selection (Story 5.3 integration)
     if (typeof window !== 'undefined') {

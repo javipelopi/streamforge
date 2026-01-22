@@ -1028,15 +1028,24 @@ pub enum SearchMatchType {
     Description,
 }
 
+/// Result type for search results (program vs channel-only)
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SearchResultType {
+    Program,
+    Channel,
+}
+
 /// Search result for EPG program search
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct EpgSearchResult {
-    pub program_id: i32,
+    pub result_type: SearchResultType,
+    pub program_id: Option<i32>,
     pub title: String,
     pub description: Option<String>,
-    pub start_time: String,
-    pub end_time: String,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
     pub category: Option<String>,
     pub channel_id: i32,
     pub channel_name: String,
@@ -1045,7 +1054,7 @@ pub struct EpgSearchResult {
     pub relevance_score: f64,
 }
 
-/// Search EPG programs by title, description, or channel name
+/// Search EPG programs and channels by title, description, or channel name
 ///
 /// Story 5.2: EPG Search Functionality
 /// AC #2: Search filters by title, description, channel name (enabled channels only)
@@ -1054,8 +1063,9 @@ pub struct EpgSearchResult {
 /// 1. Filters by xmltv_channel_settings.is_enabled = true
 /// 2. Matches title, description, or channel name with LIKE
 /// 3. Returns only future/current programs (end_time > now)
-/// 4. Orders by relevance (title > channel > description) then start_time
-/// 5. Limits results to 50 for performance
+/// 4. Also returns channel-only results for direct channel name matches
+/// 5. Orders by relevance (title > channel > description) then start_time
+/// 6. Limits results to 50 for performance
 #[tauri::command]
 pub async fn search_epg_programs(
     db: State<'_, DbConnection>,
@@ -1078,17 +1088,22 @@ pub async fn search_epg_programs(
     let escaped_query = query.replace('%', r"\%").replace('_', r"\_");
     let like_pattern = format!("%{}%", escaped_query);
 
-    // First get all enabled channel IDs for efficient filtering
-    let enabled_channel_ids: Vec<i32> = xmltv_channels::table
+    // First get all enabled channels for efficient filtering
+    let enabled_channels: Vec<(XmltvChannel, XmltvChannelSettings)> = xmltv_channels::table
         .inner_join(xmltv_channel_settings::table)
         .filter(xmltv_channel_settings::is_enabled.eq(1))
-        .select(xmltv_channels::id.assume_not_null())
-        .load::<i32>(&mut conn)
+        .select((xmltv_channels::all_columns, xmltv_channel_settings::all_columns))
+        .load::<(XmltvChannel, XmltvChannelSettings)>(&mut conn)
         .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
 
-    if enabled_channel_ids.is_empty() {
+    if enabled_channels.is_empty() {
         return Ok(Vec::new());
     }
+
+    let enabled_channel_ids: Vec<i32> = enabled_channels
+        .iter()
+        .filter_map(|(c, _)| c.id)
+        .collect();
 
     // Search programs in enabled channels only
     let results: Vec<(Program, XmltvChannel)> = programs::table
@@ -1108,7 +1123,8 @@ pub async fn search_epg_programs(
 
     // Convert to search results with relevance scoring
     let query_lower = query.to_lowercase();
-    let search_results: Vec<EpgSearchResult> = results
+
+    let program_results: Vec<EpgSearchResult> = results
         .into_iter()
         .map(|(program, channel)| {
             // Determine match type and score
@@ -1130,11 +1146,12 @@ pub async fn search_epg_programs(
             };
 
             EpgSearchResult {
-                program_id: program.id.unwrap_or(0),
+                result_type: SearchResultType::Program,
+                program_id: Some(program.id.unwrap_or(0)),
                 title: program.title,
                 description: program.description,
-                start_time: program.start_time,
-                end_time: program.end_time,
+                start_time: Some(program.start_time),
+                end_time: Some(program.end_time),
                 category: program.category,
                 channel_id: channel.id.unwrap_or(0),
                 channel_name: channel.display_name,
@@ -1145,16 +1162,73 @@ pub async fn search_epg_programs(
         })
         .collect();
 
-    // Sort by relevance (title matches first), then by start time
-    let mut sorted_results = search_results;
-    sorted_results.sort_by(|a, b| {
-        // Higher relevance first
-        b.relevance_score.partial_cmp(&a.relevance_score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.start_time.cmp(&b.start_time))
+    // Search for channel results (channels matching the query - always shown first)
+    let channel_results: Vec<EpgSearchResult> = enabled_channels
+        .into_iter()
+        .filter_map(|(channel, _settings)| {
+            let channel_id = channel.id.unwrap_or(0);
+            let channel_lower = channel.display_name.to_lowercase();
+
+            // Check if channel name matches
+            if !channel_lower.contains(&query_lower) {
+                return None;
+            }
+
+            // Score: exact match = 1.0, partial match = 0.9
+            let relevance_score = if channel_lower == query_lower {
+                1.0
+            } else {
+                0.9
+            };
+
+            Some(EpgSearchResult {
+                result_type: SearchResultType::Channel,
+                program_id: None,
+                title: channel.display_name.clone(),
+                description: None,
+                start_time: None,
+                end_time: None,
+                category: None,
+                channel_id,
+                channel_name: channel.display_name,
+                channel_icon: channel.icon,
+                match_type: SearchMatchType::Channel,
+                relevance_score,
+            })
+        })
+        .collect();
+
+    // Merge program and channel results
+    let mut all_results: Vec<EpgSearchResult> = program_results;
+    all_results.extend(channel_results);
+
+    // Sort by result type (channels first), then by relevance (higher first), then by start time for programs
+    all_results.sort_by(|a, b| {
+        // Channels come before programs
+        let type_order = match (&a.result_type, &b.result_type) {
+            (SearchResultType::Channel, SearchResultType::Program) => std::cmp::Ordering::Less,
+            (SearchResultType::Program, SearchResultType::Channel) => std::cmp::Ordering::Greater,
+            _ => std::cmp::Ordering::Equal,
+        };
+
+        type_order
+            .then_with(|| {
+                // Within same type, higher relevance first
+                b.relevance_score.partial_cmp(&a.relevance_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| {
+                // For same relevance, sort by start_time (programs only)
+                match (&a.start_time, &b.start_time) {
+                    (None, None) => std::cmp::Ordering::Equal,
+                    (None, Some(_)) => std::cmp::Ordering::Less,
+                    (Some(_), None) => std::cmp::Ordering::Greater,
+                    (Some(a_time), Some(b_time)) => a_time.cmp(b_time),
+                }
+            })
     });
 
-    Ok(sorted_results)
+    Ok(all_results)
 }
 
 /// Channel data with programs for EPG grid display
@@ -1430,11 +1504,12 @@ mod tests {
     #[test]
     fn test_epg_search_result_serialization() {
         let result = EpgSearchResult {
-            program_id: 123,
+            result_type: SearchResultType::Program,
+            program_id: Some(123),
             title: "Breaking News".to_string(),
             description: Some("Latest updates".to_string()),
-            start_time: "2026-01-22T20:00:00".to_string(),
-            end_time: "2026-01-22T21:00:00".to_string(),
+            start_time: Some("2026-01-22T20:00:00".to_string()),
+            end_time: Some("2026-01-22T21:00:00".to_string()),
             category: Some("News".to_string()),
             channel_id: 1,
             channel_name: "CNN".to_string(),
@@ -1446,6 +1521,7 @@ mod tests {
         let json = serde_json::to_value(&result).unwrap();
 
         // Verify camelCase serialization
+        assert_eq!(json["resultType"], "program");
         assert_eq!(json["programId"], 123);
         assert_eq!(json["title"], "Breaking News");
         assert_eq!(json["channelId"], 1);
@@ -1454,6 +1530,37 @@ mod tests {
         assert_eq!(json["relevanceScore"], 1.0);
         assert_eq!(json["startTime"], "2026-01-22T20:00:00");
         assert_eq!(json["endTime"], "2026-01-22T21:00:00");
+    }
+
+    #[test]
+    fn test_channel_search_result_serialization() {
+        let result = EpgSearchResult {
+            result_type: SearchResultType::Channel,
+            program_id: None,
+            title: "CNN".to_string(),
+            description: None,
+            start_time: None,
+            end_time: None,
+            category: None,
+            channel_id: 1,
+            channel_name: "CNN".to_string(),
+            channel_icon: Some("http://example.com/cnn.png".to_string()),
+            match_type: SearchMatchType::Channel,
+            relevance_score: 0.9,
+        };
+
+        let json = serde_json::to_value(&result).unwrap();
+
+        // Verify camelCase serialization for channel result
+        assert_eq!(json["resultType"], "channel");
+        assert!(json["programId"].is_null());
+        assert_eq!(json["title"], "CNN");
+        assert_eq!(json["channelId"], 1);
+        assert_eq!(json["channelName"], "CNN");
+        assert_eq!(json["matchType"], "channel");
+        assert_eq!(json["relevanceScore"], 0.9);
+        assert!(json["startTime"].is_null());
+        assert!(json["endTime"].is_null());
     }
 
     #[test]

@@ -3,7 +3,10 @@
  * Story 5.7: EPG Top Bar with Search and Day Navigation
  *
  * Manages day selection state for EPG navigation.
- * Computes day options (Today, Tonight, Tomorrow, + weekdays).
+ * Computes day options (Today, Tomorrow, + weekdays).
+ *
+ * Note: "Tonight" option was removed to simplify UX - users can use
+ * arrow navigation or date picker to view evening programs.
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
@@ -12,7 +15,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
  * Day option representing a selectable day
  */
 export interface DayOption {
-  /** Unique identifier (e.g., "today", "tonight", "tomorrow", "wed") */
+  /** Unique identifier (e.g., "today", "tomorrow", "wed") */
   id: string;
   /** Display label (e.g., "Today", "Tonight", "Tomorrow", "Wed") */
   label: string;
@@ -63,15 +66,6 @@ function startAt6AM(date: Date): Date {
 }
 
 /**
- * Get 6 PM of a date
- */
-function startAt6PM(date: Date): Date {
-  const result = new Date(date);
-  result.setHours(18, 0, 0, 0);
-  return result;
-}
-
-/**
  * Add days to a date
  */
 function addDays(date: Date, days: number): Date {
@@ -99,7 +93,7 @@ function isSameDay(date1: Date, date2: Date): boolean {
 }
 
 /**
- * Compute all day options (Today, Tonight, Tomorrow, + 4 weekdays)
+ * Compute all day options (Today, Tomorrow, + 4 weekdays)
  */
 function computeDayOptions(): DayOption[] {
   const now = new Date();
@@ -113,27 +107,6 @@ function computeDayOptions(): DayOption[] {
     startTime: new Date(now),
     endTime: endOfDay(now),
   });
-
-  // Tonight - 6 PM onwards
-  const tonight = startAt6PM(now);
-  // If it's past 6 PM, tonight starts now
-  if (now.getHours() >= 18) {
-    options.push({
-      id: 'tonight',
-      label: 'Tonight',
-      date: new Date(now),
-      startTime: new Date(now),
-      endTime: endOfDay(now),
-    });
-  } else {
-    options.push({
-      id: 'tonight',
-      label: 'Tonight',
-      date: new Date(tonight),
-      startTime: new Date(tonight),
-      endTime: endOfDay(tonight),
-    });
-  }
 
   // Tomorrow - 6 AM to end of day
   const tomorrow = addDays(now, 1);
@@ -183,7 +156,7 @@ function findDayOptionForDate(
 
   // Check if it matches one of the weekday options
   for (const option of dayOptions) {
-    if (option.id !== 'today' && option.id !== 'tonight' && option.id !== 'tomorrow') {
+    if (option.id !== 'today' && option.id !== 'tomorrow') {
       if (isSameDay(date, option.date)) {
         return option;
       }
@@ -278,14 +251,16 @@ export function useEpgDayNavigation(): UseEpgDayNavigationResult {
    * Navigate to the previous day
    */
   const goToPrevDay = useCallback(() => {
+    // If on today, can't go further back
+    if (selectedDay.id === 'today') {
+      return;
+    }
+
     const currentIndex = dayOptions.findIndex((d) => d.id === selectedDay.id);
 
     if (currentIndex > 0) {
       // Move to previous option
       setSelectedDay(dayOptions[currentIndex - 1]);
-    } else if (currentIndex === 0) {
-      // Already at first option (today), don't go further back
-      // Could potentially go to yesterday, but typically EPG doesn't show past
     } else {
       // Custom date selected, go to previous day
       const prevDate = addDays(selectedDay.date, -1);

@@ -6,7 +6,7 @@
  * Uses TanStack Virtual for efficient rendering with large channel counts.
  */
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import type { KeyboardEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { EpgChannelRow } from './EpgChannelRow';
@@ -32,6 +32,13 @@ export function EpgChannelList({
 }: EpgChannelListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const { channels, isLoading, error } = useEpgChannelList();
+
+  // Auto-select first channel when channels load and none is selected
+  useEffect(() => {
+    if (channels.length > 0 && selectedChannelId === null && onSelectChannel) {
+      onSelectChannel(channels[0].channelId);
+    }
+  }, [channels, selectedChannelId, onSelectChannel]);
 
   // TanStack Virtual setup for efficient list rendering
   const virtualizer = useVirtualizer({

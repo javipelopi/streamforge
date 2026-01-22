@@ -1418,17 +1418,25 @@ export async function getEnabledChannelsWithPrograms(
 /** Match type for search result relevance */
 export type EpgSearchMatchType = 'title' | 'channel' | 'description';
 
-/** Search result for EPG program search */
+/** Result type for search results (program vs channel-only) */
+export type EpgSearchResultType = 'program' | 'channel';
+
+/** Search result for EPG program or channel search */
 export interface EpgSearchResult {
-  programId: number;
+  /** Type of result: 'program' or 'channel' */
+  resultType: EpgSearchResultType;
+  /** Program ID (null for channel-only results) */
+  programId?: number | null;
   title: string;
-  description?: string;
-  startTime: string;
-  endTime: string;
-  category?: string;
+  description?: string | null;
+  /** Start time (null for channel-only results) */
+  startTime?: string | null;
+  /** End time (null for channel-only results) */
+  endTime?: string | null;
+  category?: string | null;
   channelId: number;
   channelName: string;
-  channelIcon?: string;
+  channelIcon?: string | null;
   /** Match type for relevance: 'title', 'channel', 'description' */
   matchType: EpgSearchMatchType;
   /** Match score 0-1 for relevance ordering */
