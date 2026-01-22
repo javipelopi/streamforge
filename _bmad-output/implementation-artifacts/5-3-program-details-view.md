@@ -347,3 +347,26 @@ N/A
 - `src-tauri/src/commands/epg.rs` - Added get_channel_stream_info command, episode_info to EpgGridProgram
 - `src-tauri/src/commands/test_data.rs` - Added create_test_channel_mapping, delete_test_stream_mapping, updated create_test_program
 - `src-tauri/src/lib.rs` - Registered new commands
+
+### Code Review (AI) - 2026-01-22
+
+**Reviewer:** Claude Opus 4.5
+
+**Issues Found:** 5 Medium, 3 Low
+
+**Fixes Applied:**
+1. Removed inconsistent blank lines in `EpgGrid.tsx`
+2. Added missing `episodeInfo` field to `createProgramDetailsData` helper in `ProgramDetailsPanel.tsx`
+3. Added explanatory comments for layout constants in `EpgGrid.tsx`
+
+**Post-Implementation Style Changes Documented:**
+The following UI polish changes were applied after initial implementation:
+- `src/components/epg/EpgCell.tsx` - Enhanced cell styling (hover effects, padding, border radius)
+- `src/components/epg/EpgGrid.tsx` - Increased row height/channel column width for better logo display, alternating row colors, placeholder icon for missing channel logos
+- `src/components/layout/MainLayout.tsx` - Fixed flex layout to enable proper EPG grid scrolling
+- `src/views/EPG.tsx` - Changed wrapper testid from `epg-grid` to `epg-grid-wrapper` to avoid duplicate testid conflict
+
+**Low Issues Deferred:**
+- Issue #6: Scale transform on hover (monitor for visual issues)
+- Issue #7: Implicit padding relationship (acceptable complexity)
+- Issue #8: "TV" placeholder text vs SVG icon (cosmetic preference)

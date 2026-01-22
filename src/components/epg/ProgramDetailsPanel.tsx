@@ -364,6 +364,7 @@ export function createProgramDetailsData(
     endTime: program.endTime,
     description: program.description,
     category: program.category,
+    episodeInfo: program.episodeInfo,
     channelId: channel.channelId,
     channelName: channel.channelName,
     channelIcon: channel.channelIcon,

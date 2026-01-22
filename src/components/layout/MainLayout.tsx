@@ -13,15 +13,15 @@ export function MainLayout() {
   const sidebarOpen = useAppStore((state) => state.sidebarOpen);
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="h-screen flex bg-gray-100">
       <Sidebar />
       <div
-        className={`transition-all duration-300 ${
+        className={`flex-1 flex flex-col transition-all duration-300 ${
           sidebarOpen ? 'ml-64' : 'ml-16'
         }`}
       >
         <Header />
-        <main data-testid="main-content" className="p-6">
+        <main data-testid="main-content" className="flex-1 p-6 min-h-0 flex flex-col">
           <Outlet />
         </main>
       </div>
