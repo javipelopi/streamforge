@@ -11,6 +11,7 @@ import { EpgSearchInput } from './EpgSearchInput';
 import { EpgSearchResults } from './EpgSearchResults';
 import { DayNavigationBar } from './DayNavigationBar';
 import { useEpgSearch } from '../../../hooks/useEpgSearch';
+import { useAppStore } from '../../../stores/appStore';
 import type { DayOption } from '../../../hooks/useEpgDayNavigation';
 import type { EpgSearchResult } from '../../../lib/tauri';
 
@@ -48,6 +49,9 @@ export function EpgTopBar({
   onSelectDate,
   onSearchResultSelect,
 }: EpgTopBarProps) {
+  // Get sidebar state for proper positioning
+  const sidebarOpen = useAppStore((state) => state.sidebarOpen);
+
   // Use the existing EPG search hook
   const {
     query,
@@ -82,7 +86,9 @@ export function EpgTopBar({
   return (
     <div
       data-testid="epg-top-bar"
-      className="fixed top-0 left-0 right-0 z-50 h-14 bg-black/70 backdrop-blur-sm border-b border-white/10 flex items-center justify-between px-4"
+      className={`fixed top-0 right-0 z-40 h-14 bg-black/70 backdrop-blur-sm border-b border-white/10 flex items-center justify-between px-4 transition-all duration-300 ${
+        sidebarOpen ? 'left-64' : 'left-16'
+      }`}
     >
       {/* Left: Search section (AC #1, #2) */}
       <div data-testid="epg-search-section" className="relative flex-shrink-0">

@@ -170,49 +170,106 @@ export function EpgSearchResults({
       {/* Results list */}
       {hasResults && !isSearching && (
         <ul className="py-1">
-          {displayResults.map((result) => (
-            <li key={result.programId}>
-              <button
-                data-testid={`search-result-${result.programId}`}
-                onClick={() => handleResultClick(result)}
-                className="w-full px-4 py-3 text-left hover:bg-white/5 transition-colors focus:outline-none focus:bg-white/5"
-                role="option"
-                aria-selected={false}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  {/* Left: Title and channel */}
-                  <div className="flex-1 min-w-0">
-                    <p
-                      data-testid="result-title"
-                      className="text-white font-semibold text-sm truncate"
-                    >
-                      {result.title}
-                    </p>
-                    <p
-                      data-testid="result-channel"
-                      className="text-xs mt-0.5 truncate"
-                      style={{ color: 'rgb(153, 153, 153)' }}
-                    >
-                      {result.channelName}
-                    </p>
-                  </div>
+          {displayResults.map((result) => {
+            const isChannelResult = result.resultType === 'channel';
+            const resultKey = isChannelResult
+              ? `channel-${result.channelId}`
+              : `program-${result.programId}`;
 
-                  {/* Right: Date/time */}
-                  <div
-                    data-testid="result-datetime"
-                    className="flex-shrink-0 text-right"
-                  >
-                    <p className="text-white/50 text-xs">
-                      {formatDate(result.startTime)}
-                    </p>
-                    <p className="text-white/40 text-xs">
-                      {formatTime(result.startTime)}
-                    </p>
+            return (
+              <li key={resultKey}>
+                <button
+                  data-testid={`search-result-${resultKey}`}
+                  onClick={() => handleResultClick(result)}
+                  className="w-full px-4 py-3 text-left hover:bg-white/5 transition-colors focus:outline-none focus:bg-white/5"
+                  role="option"
+                  aria-selected={false}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    {/* Left: Title/channel name and subtitle */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p
+                          data-testid="result-title"
+                          className="text-white font-semibold text-sm truncate"
+                        >
+                          {result.title}
+                        </p>
+                        {isChannelResult && (
+                          <span
+                            data-testid="result-channel-badge"
+                            className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-blue-500/20 text-blue-400"
+                          >
+                            Channel
+                          </span>
+                        )}
+                      </div>
+                      {!isChannelResult && (
+                        <p
+                          data-testid="result-channel"
+                          className="text-xs mt-0.5 truncate"
+                          style={{ color: 'rgb(153, 153, 153)' }}
+                        >
+                          {result.channelName}
+                        </p>
+                      )}
+                      {isChannelResult && result.channelIcon && (
+                        <p
+                          className="text-xs mt-0.5 text-white/40"
+                        >
+                          View schedule
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Right: Date/time for programs, icon for channels */}
+                    {isChannelResult ? (
+                      <div className="flex-shrink-0">
+                        {result.channelIcon ? (
+                          <img
+                            src={result.channelIcon}
+                            alt=""
+                            className="w-8 h-8 object-contain rounded"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center">
+                            <svg
+                              className="w-4 h-4 text-white/40"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={1.5}
+                                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                              />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div
+                        data-testid="result-datetime"
+                        className="flex-shrink-0 text-right"
+                      >
+                        <p className="text-white/50 text-xs">
+                          {result.startTime && formatDate(result.startTime)}
+                        </p>
+                        <p className="text-white/40 text-xs">
+                          {result.startTime && formatTime(result.startTime)}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                </div>
-              </button>
-            </li>
-          ))}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

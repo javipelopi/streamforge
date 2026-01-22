@@ -127,7 +127,7 @@ export function EpgSearchInput({
         data-testid="epg-search-icon"
         onClick={handleIconClick}
         className="flex items-center justify-center w-10 h-10 text-white hover:text-white/80 transition-colors"
-        aria-label="Search programs"
+        aria-label="Search channels and programs"
         type="button"
       >
         <svg
@@ -162,13 +162,17 @@ export function EpgSearchInput({
             onFocus={handleFocus}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
-            placeholder="Search programs..."
+            placeholder="Search..."
             className="w-full h-10 px-3 pr-10 bg-transparent border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:border-white/40 transition-colors"
             role="combobox"
             aria-expanded={hasText}
             aria-haspopup="listbox"
-            aria-label="Search programs"
+            aria-label="Search channels and programs"
             aria-autocomplete="list"
+            autoCapitalize="off"
+            autoCorrect="off"
+            autoComplete="off"
+            spellCheck={false}
           />
 
           {/* Clear button (visible when has text) */}

@@ -274,10 +274,7 @@ export function DatePickerButton({
 
               const isToday = isSameDay(date, today);
               const isSelected = isSameDay(date, selectedDate);
-              // Allow past dates within last 3 days (EPG may have recent data)
-              const threeDaysAgo = new Date(today);
-              threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-              const isTooFarPast = date < threeDaysAgo;
+              // Don't allow selecting past dates - minimum is today
               const isPast = date < today && !isToday;
 
               return (
@@ -285,7 +282,7 @@ export function DatePickerButton({
                   key={formatDateId(date)}
                   data-testid={`date-picker-day-${formatDateId(date)}`}
                   onClick={() => handleDateClick(date)}
-                  disabled={isTooFarPast}
+                  disabled={isPast}
                   className={`
                     w-8 h-8 rounded-lg text-sm font-medium
                     transition-colors
@@ -294,10 +291,8 @@ export function DatePickerButton({
                         ? 'bg-[#6366f1] text-white'
                         : isToday
                         ? 'bg-white/10 text-white'
-                        : isTooFarPast
-                        ? 'text-white/30 cursor-not-allowed'
                         : isPast
-                        ? 'text-white/60 hover:bg-white/10'
+                        ? 'text-white/30 cursor-not-allowed'
                         : 'text-white hover:bg-white/10'
                     }
                   `}

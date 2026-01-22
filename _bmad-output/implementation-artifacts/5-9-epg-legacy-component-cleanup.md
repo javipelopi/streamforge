@@ -318,3 +318,59 @@ N/A - Cleanup story with straightforward deletions
 - `src/views/index.ts` - Removed EPG export, kept EpgTv
 - `_bmad-output/implementation-artifacts/5-9-epg-legacy-component-cleanup.md` - This story file
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` - Updated story status to review
+
+---
+
+## Post-Completion UX Polish (2026-01-22)
+
+The following UX improvements were applied after Story 5.9 completion:
+
+### Changes Summary
+
+**Search Enhancements:**
+- Added channel-only search results (search can now return channels without programs)
+- Updated `SearchResultType` enum in Rust backend (`program` | `channel`)
+- Modified `EpgSearchResult` to have optional `programId`, `startTime`, `endTime` fields
+- Updated `EpgSearchResults.tsx` to display channel badges and icons
+
+**Day Navigation Simplification:**
+- Removed "Tonight" option from day navigation (users use arrows/picker for evening)
+- Hid prev-day button when already on "Today" (can't navigate to past)
+- Added date label display when viewing days beyond Today/Tomorrow
+- Disabled past dates in date picker (minimum is today)
+
+**Layout Fixes:**
+- Fixed `EpgTopBar` and `EpgBackground` to respect sidebar width
+- Added proper z-index layering (Sidebar z-50, TopBar z-40)
+- Fixed sidebar icon centering when collapsed
+
+**UX Polish:**
+- Auto-select first channel when channel list loads
+- Updated search placeholder to "Search..." (shorter)
+- Added `aria-label` updates for accessibility
+- Added autocomplete/spellcheck disabled attributes to search input
+
+### Files Modified (Post-Completion)
+
+| File | Change |
+|------|--------|
+| `src-tauri/src/commands/epg.rs` | Added `SearchResultType` enum, made fields optional |
+| `src/lib/tauri.ts` | Updated `EpgSearchResult` TypeScript types |
+| `src/hooks/useEpgDayNavigation.ts` | Removed Tonight option, removed dead `startAt6PM` fn |
+| `src/hooks/useEpgSearch.ts` | Handle channel-only results |
+| `src/components/epg/tv-style/DayNavigationBar.tsx` | Hide prev button on Today, show date label |
+| `src/components/epg/tv-style/EpgSearchResults.tsx` | Channel result display with badges |
+| `src/components/epg/tv-style/EpgTopBar.tsx` | Sidebar-aware positioning |
+| `src/components/epg/tv-style/EpgBackground.tsx` | Sidebar-aware positioning |
+| `src/components/epg/tv-style/EpgSearchInput.tsx` | Updated placeholder, accessibility |
+| `src/components/epg/tv-style/EpgChannelList.tsx` | Auto-select first channel |
+| `src/components/epg/tv-style/DatePickerButton.tsx` | Disabled past dates |
+| `src/components/layout/Sidebar.tsx` | Fixed collapsed icon centering, z-index |
+| `src/views/EpgTv.tsx` | Handle channel-only search results |
+
+### Code Review Fixes Applied
+
+- Removed dead `channelSelected` event dispatch (never listened to)
+- Added null checks for `result.startTime` and `result.programId` assertions
+- Removed dead `startAt6PM` function
+- Added documentation for Tonight option removal rationale

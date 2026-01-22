@@ -84,13 +84,17 @@ export function EpgTv() {
   // Handle search result selection (Story 5.7 Task 9.3)
   const handleSearchResultSelect = useCallback(
     (result: EpgSearchResult) => {
-      // Extract date from search result and select that day
-      const resultDate = new Date(result.startTime);
-      selectDate(resultDate);
-
-      // Select the channel and program
-      setSelectedChannelId(result.channelId);
-      setSelectedProgramId(result.programId);
+      if (result.resultType === 'channel') {
+        // Channel-only result: select channel without changing date
+        setSelectedChannelId(result.channelId);
+        setSelectedProgramId(null);
+      } else if (result.startTime && result.programId) {
+        // Program result: navigate to date and select channel + program
+        const resultDate = new Date(result.startTime);
+        selectDate(resultDate);
+        setSelectedChannelId(result.channelId);
+        setSelectedProgramId(result.programId);
+      }
     },
     [selectDate]
   );
