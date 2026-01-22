@@ -1302,6 +1302,64 @@ pub async fn get_channel_stream_info(
     }))
 }
 
+// ============================================================================
+// Program Details Commands (Story 5.8)
+// ============================================================================
+
+/// Channel info for program details panel
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelInfo {
+    pub id: i32,
+    pub display_name: String,
+    pub icon: Option<String>,
+}
+
+/// Program with associated channel information
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProgramWithChannel {
+    pub program: ProgramResponse,
+    pub channel: ChannelInfo,
+}
+
+/// Get program by ID with associated channel information
+///
+/// Story 5.8: EPG Program Details Panel
+/// Task 8.1, 8.2: Add get_program_by_id command
+///
+/// Returns the program with its associated channel data for displaying
+/// in the details panel.
+#[tauri::command]
+pub async fn get_program_by_id(
+    db: State<'_, DbConnection>,
+    program_id: i32,
+) -> Result<Option<ProgramWithChannel>, String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    // Query program with JOIN to xmltv_channels
+    let result: Option<(Program, XmltvChannel)> = programs::table
+        .inner_join(xmltv_channels::table)
+        .filter(programs::id.eq(program_id))
+        .select((programs::all_columns, xmltv_channels::all_columns))
+        .first(&mut conn)
+        .optional()
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    Ok(result.map(|(program, channel)| {
+        ProgramWithChannel {
+            program: ProgramResponse::from(program),
+            channel: ChannelInfo {
+                id: channel.id.unwrap_or(0),
+                display_name: channel.display_name,
+                icon: channel.icon,
+            },
+        }
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

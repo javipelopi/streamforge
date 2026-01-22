@@ -314,6 +314,7 @@ pub fn run() {
             commands::epg::get_enabled_channels_with_programs,
             commands::epg::search_epg_programs,
             commands::epg::get_channel_stream_info,
+            commands::epg::get_program_by_id,
             commands::matcher::run_channel_matching,
             commands::matcher::get_match_stats,
             commands::matcher::get_channel_mappings_for_xmltv,

@@ -6,7 +6,7 @@
  * Computes day options (Today, Tonight, Tomorrow, + weekdays).
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 
 /**
  * Day option representing a selectable day

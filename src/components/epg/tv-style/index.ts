@@ -4,6 +4,7 @@
  * Story 5.5: EPG Channel List Panel
  * Story 5.6: EPG Schedule Panel
  * Story 5.7: EPG Top Bar with Search and Day Navigation
+ * Story 5.8: EPG Program Details Panel
  *
  * Exports all components for the TV-style EPG interface.
  */
@@ -12,6 +13,9 @@ export { EpgMainContent } from './EpgMainContent';
 export { EpgChannelListPlaceholder } from './EpgChannelListPlaceholder';
 // EpgSchedulePanelPlaceholder removed - replaced by EpgSchedulePanel in Story 5.6
 export { EpgDetailsPanelPlaceholder } from './EpgDetailsPanelPlaceholder';
+
+// Story 5.8: EPG Program Details Panel
+export { EpgProgramDetails } from './EpgProgramDetails';
 
 // Story 5.5: EPG Channel List Panel
 export { EpgChannelList } from './EpgChannelList';
