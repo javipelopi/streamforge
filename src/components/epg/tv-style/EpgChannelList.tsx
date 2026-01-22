@@ -79,26 +79,86 @@ export function EpgChannelList({
     [onSelectChannel]
   );
 
-  // Loading state
+  // Loading state - skeleton UI matching channel row layout for TV-style polish
   if (isLoading) {
     return (
       <div
         data-testid="epg-channel-list"
-        className="h-full flex items-center justify-center"
+        className="h-full p-2 flex flex-col gap-2"
       >
-        <div className="text-white/50 text-sm">Loading channels...</div>
+        {/* Render 5 skeleton rows */}
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-4 px-4 py-3 rounded-xl bg-white/5 animate-pulse"
+          >
+            {/* Logo skeleton */}
+            <div className="flex-shrink-0 w-20 h-[60px] rounded bg-white/10" />
+            {/* Content skeleton */}
+            <div className="flex-1 space-y-2">
+              {/* Channel name + time */}
+              <div className="flex items-center gap-3">
+                <div className="h-4 w-32 bg-white/10 rounded" />
+                <div className="h-3 w-24 bg-white/10 rounded" />
+              </div>
+              {/* Program title */}
+              <div className="h-3 w-48 bg-white/10 rounded" />
+              {/* Progress bar */}
+              <div className="h-[3px] w-full bg-white/10 rounded-full" />
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
 
-  // Error state
+  // Error state - user-friendly messages per architecture.md Error Handling Strategy
   if (error) {
+    // Map technical errors to user-friendly messages
+    const getUserFriendlyError = (err: string): { title: string; message: string } => {
+      if (err.toLowerCase().includes('network') || err.toLowerCase().includes('fetch')) {
+        return {
+          title: 'Connection Error',
+          message: 'Unable to load channels. Check your network connection.',
+        };
+      }
+      if (err.toLowerCase().includes('database') || err.toLowerCase().includes('sql')) {
+        return {
+          title: 'Database Error',
+          message: 'Unable to access channel data. Try restarting the app.',
+        };
+      }
+      return {
+        title: 'Error Loading Channels',
+        message: 'An unexpected error occurred. Please try again.',
+      };
+    };
+
+    const friendlyError = getUserFriendlyError(error);
+
     return (
       <div
         data-testid="epg-channel-list"
-        className="h-full flex items-center justify-center p-4"
+        className="h-full flex flex-col items-center justify-center p-4 text-center gap-3"
       >
-        <div className="text-red-400 text-sm text-center">{error}</div>
+        <svg
+          className="w-12 h-12 text-red-400"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+          />
+        </svg>
+        <div>
+          <p className="text-red-400 text-sm font-medium mb-1">{friendlyError.title}</p>
+          <p className="text-white/60 text-xs">{friendlyError.message}</p>
+        </div>
       </div>
     );
   }
@@ -136,15 +196,21 @@ export function EpgChannelList({
 
   const virtualItems = virtualizer.getVirtualItems();
 
+  // Calculate active descendant ID for accessibility
+  const activeDescendantId = selectedChannelId
+    ? `channel-row-${selectedChannelId}`
+    : undefined;
+
   return (
     <div
       ref={parentRef}
       data-testid="epg-channel-list"
-      className="h-full overflow-y-auto focus:outline-none"
+      className="h-full overflow-y-auto focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
       tabIndex={0}
       onKeyDown={handleKeyDown}
       role="listbox"
       aria-label="Channel list"
+      aria-activedescendant={activeDescendantId}
     >
       {/* Virtualized list container */}
       <div
@@ -154,25 +220,27 @@ export function EpgChannelList({
         }}
       >
         {/* Virtualized items */}
-        <div
-          className="absolute top-0 left-0 w-full flex flex-col gap-2 p-2"
-          style={{
-            transform: `translateY(${virtualItems[0]?.start ?? 0}px)`,
-          }}
-        >
-          {virtualItems.map((virtualItem) => {
-            const channel = channels[virtualItem.index];
-            return (
-              <EpgChannelRow
-                key={channel.channelId}
-                channel={channel}
-                isSelected={selectedChannelId === channel.channelId}
-                onClick={() => handleChannelClick(channel.channelId)}
-                data-index={virtualItem.index}
-              />
-            );
-          })}
-        </div>
+        {virtualItems.length > 0 && (
+          <div
+            className="absolute top-0 left-0 w-full flex flex-col gap-2 p-2"
+            style={{
+              transform: `translateY(${virtualItems[0].start}px)`,
+            }}
+          >
+            {virtualItems.map((virtualItem) => {
+              const channel = channels[virtualItem.index];
+              return (
+                <EpgChannelRow
+                  key={channel.channelId}
+                  channel={channel}
+                  isSelected={selectedChannelId === channel.channelId}
+                  onClick={() => handleChannelClick(channel.channelId)}
+                  data-index={virtualItem.index}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
