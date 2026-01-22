@@ -8,6 +8,7 @@ export const ROUTES = {
   TARGET_LINEUP: '/target-lineup',
   SOURCES: '/sources',
   EPG: '/epg',
+  EPG_TV: '/epg-tv',
   ACCOUNTS: '/accounts',
   SETTINGS: '/settings',
   LOGS: '/logs',
