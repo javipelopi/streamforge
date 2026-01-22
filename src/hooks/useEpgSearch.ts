@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { searchEpgPrograms, type EpgSearchResult } from '../lib/tauri';
 import { createCenteredTimeWindow, type TimeWindow } from './useEpgGridData';
 
@@ -22,6 +22,8 @@ export interface UseEpgSearchResult {
   onClear: () => void;
   /** Handler for selecting a search result - returns time window for navigation */
   onResultSelect: (result: EpgSearchResult) => TimeWindow | null;
+  /** Cancel any pending search requests */
+  cancelPendingSearch: () => void;
 }
 
 /**
@@ -36,6 +38,7 @@ export interface UseEpgSearchResult {
  * - Backend search invocation
  * - Result selection with time window calculation
  * - Clear search functionality
+ * - Race condition prevention with AbortController
  *
  * @returns Search state and handlers
  */
@@ -45,12 +48,28 @@ export function useEpgSearch(): UseEpgSearchResult {
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isResultsVisible, setIsResultsVisible] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const latestQueryRef = useRef<string>('');
+
+  /**
+   * Cancel any pending search requests
+   */
+  const cancelPendingSearch = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }, []);
 
   /**
    * Perform search with debounced query
    */
   const onSearch = useCallback(async (searchQuery: string) => {
+    // Cancel any pending searches
+    cancelPendingSearch();
+
     setQuery(searchQuery);
+    latestQueryRef.current = searchQuery;
 
     // Clear results if query is empty
     if (!searchQuery.trim()) {
@@ -63,29 +82,43 @@ export function useEpgSearch(): UseEpgSearchResult {
     setIsSearching(true);
     setError(null);
 
+    // Create abort controller for this search
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const searchResults = await searchEpgPrograms(searchQuery);
-      setResults(searchResults);
-      setIsResultsVisible(true);
+
+      // Only update results if this is still the latest search
+      if (latestQueryRef.current === searchQuery && !controller.signal.aborted) {
+        setResults(searchResults);
+        setIsResultsVisible(true);
+      }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      setError(errorMessage);
-      console.error('EPG search failed:', err);
+      // Don't show error if search was cancelled
+      if (!controller.signal.aborted) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        setError(errorMessage);
+        console.error('EPG search failed:', err);
+      }
     } finally {
-      setIsSearching(false);
+      if (!controller.signal.aborted) {
+        setIsSearching(false);
+      }
     }
-  }, []);
+  }, [cancelPendingSearch]);
 
   /**
    * Clear search state
    */
   const onClear = useCallback(() => {
+    cancelPendingSearch();
     setQuery('');
     setResults([]);
     setIsResultsVisible(false);
     setError(null);
     setIsSearching(false);
-  }, []);
+  }, [cancelPendingSearch]);
 
   /**
    * Handle result selection
@@ -103,7 +136,7 @@ export function useEpgSearch(): UseEpgSearchResult {
 
     // Dispatch custom event for program selection (Story 5.3 integration)
     if (typeof window !== 'undefined') {
-      const event = new CustomEvent('program-selected', {
+      const event = new CustomEvent('programSelected', {
         detail: { programId: result.programId },
       });
       window.dispatchEvent(event);
@@ -121,5 +154,6 @@ export function useEpgSearch(): UseEpgSearchResult {
     onSearch,
     onClear,
     onResultSelect,
+    cancelPendingSearch,
   };
 }
