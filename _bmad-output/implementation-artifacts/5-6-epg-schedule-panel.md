@@ -1,6 +1,6 @@
 # Story 5.6: EPG Schedule Panel
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -325,13 +325,31 @@ N/A - Implementation completed without significant debugging issues.
 
 1. **All 10 tasks completed** - Component structure, data hook, and view integration all implemented
 2. **TypeScript compilation passes** - No type errors
-3. **ESLint passes** - Added missing browser globals to eslint.config.js (HTMLDivElement, KeyboardEvent, AbortController, setTimeout, clearTimeout)
+3. **ESLint passes** - Added missing browser globals to eslint.config.js (HTMLDivElement, KeyboardEvent, AbortController, setTimeout, clearTimeout, setInterval, clearInterval)
 4. **Vite build succeeds** - Production build completes successfully
 5. **Rust tests pass** - All 238 tests pass (no regressions)
-6. **E2E tests** - ATDD tests created in `tests/e2e/epg-schedule-panel.spec.ts` with fixtures and factories. Tests require Tauri runtime to execute fully.
+6. **E2E tests** - ATDD tests documented in story but not created (test infrastructure not set up for Playwright yet)
 7. **Race condition handling** - Used `isFetchingRef` and `isMountedRef` pattern from Story 5.5
 8. **Accessibility** - Added proper ARIA attributes (`role="listbox"`, `aria-selected`, `aria-activedescendant`)
 9. **Auto-scroll** - Implemented with `scrollIntoView({ behavior: 'smooth', block: 'center' })`
+
+### Code Review Fixes Applied (2026-01-22)
+
+**HIGH Severity Issues Fixed:**
+1. **Auto-scroll race condition** - Added 100ms delay in useEffect to ensure ref is populated after render
+2. **Missing cleanup for auto-scroll** - Added cleanup function with `clearTimeout` to prevent memory leaks
+3. **Keyboard navigation scroll** - Added `scrollIntoView` calls when navigating with ArrowUp/ArrowDown keys
+4. **Missing test-id on error state** - Added `data-testid="schedule-error-state"` for test reliability
+5. **Stale NOW indicators** - Added 60-second interval to update NOW/PAST/FUTURE status as time progresses
+
+**MEDIUM Severity Issues Fixed:**
+1. **Missing globals** - Added `setInterval` and `clearInterval` to eslint.config.js
+2. **Unused export** - Removed `EpgSchedulePanelPlaceholder` export from index.ts (replaced by EpgSchedulePanel)
+
+**Known Limitations:**
+- Time window is hard-coded to 6 AM - 6 AM (will be configurable in future stories)
+- No timezone handling for time display (uses system locale)
+- E2E test files documented but not created (Playwright infrastructure not set up yet)
 
 ### File List
 
@@ -342,11 +360,11 @@ N/A - Implementation completed without significant debugging issues.
 - `src/hooks/useChannelSchedule.ts` - Hook for fetching and managing schedule data
 
 **Files Modified:**
-- `src/components/epg/tv-style/index.ts` - Added exports for new components
+- `src/components/epg/tv-style/index.ts` - Added exports for new components, removed unused placeholder export
 - `src/views/EpgTv.tsx` - Integrated EpgSchedulePanel, added selectedProgramId state
-- `eslint.config.js` - Added missing browser globals
+- `eslint.config.js` - Added missing browser globals (setInterval, clearInterval)
+- `src/components/epg/tv-style/EpgSchedulePanel.tsx` - Code review fixes: auto-scroll timing, keyboard scroll, error state test-id
+- `src/hooks/useChannelSchedule.ts` - Code review fix: added live NOW status updates every 60 seconds
 
-**Test Files (ATDD phase, already existed):**
-- `tests/e2e/epg-schedule-panel.spec.ts` - E2E tests for schedule panel
-- `tests/support/fixtures/epg-schedule-panel.fixture.ts` - Test fixtures
-- `tests/support/factories/epg-schedule-panel.factory.ts` - Test data factories
+**Test Files:**
+- E2E test specification documented in story but not implemented (Playwright infrastructure pending)

@@ -54,6 +54,12 @@ function getProgramStatus(program: EpgGridProgram, now: Date = new Date()): Prog
 }
 
 /**
+ * Refresh interval for updating NOW status (1 minute)
+ * Code Review Fix: Live updates for accurate NOW indicator
+ */
+const NOW_STATUS_REFRESH_INTERVAL_MS = 60_000;
+
+/**
  * Get time window for schedule display (6 AM today to 6 AM tomorrow)
  * @returns Start and end time ISO strings
  */
@@ -102,6 +108,7 @@ export function useChannelSchedule(channelId: number | null): UseChannelSchedule
   const isMountedRef = useRef(true);
   const isFetchingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const refreshIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
    * Fetch schedule data for the selected channel
@@ -185,6 +192,31 @@ export function useChannelSchedule(channelId: number | null): UseChannelSchedule
   }, [channelId]);
 
   /**
+   * Update NOW status for existing programs without re-fetching
+   * Code Review Fix: Keep NOW indicator accurate as time progresses
+   */
+  const updateNowStatus = useCallback(() => {
+    if (programs.length === 0) return;
+
+    const now = new Date();
+    let foundCurrentId: number | null = null;
+
+    const updatedPrograms = programs.map((program) => {
+      const status = getProgramStatus(program, now);
+      if (status === 'NOW') {
+        foundCurrentId = program.id;
+      }
+      return {
+        ...program,
+        status,
+      };
+    });
+
+    setPrograms(updatedPrograms);
+    setCurrentProgramId(foundCurrentId);
+  }, [programs]);
+
+  /**
    * Manual refresh function
    */
   const refresh = useCallback(async () => {
@@ -204,6 +236,21 @@ export function useChannelSchedule(channelId: number | null): UseChannelSchedule
       }
     };
   }, [fetchSchedule]);
+
+  // Set up interval to update NOW status every minute (Code Review Fix)
+  useEffect(() => {
+    if (programs.length === 0) return;
+
+    refreshIntervalRef.current = setInterval(() => {
+      updateNowStatus();
+    }, NOW_STATUS_REFRESH_INTERVAL_MS);
+
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    };
+  }, [programs.length, updateNowStatus]);
 
   return {
     programs,
