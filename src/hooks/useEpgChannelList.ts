@@ -71,21 +71,39 @@ export function useEpgChannelList(): UseEpgChannelListResult {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const refreshIntervalRef = useRef<number | null>(null);
+  const isMountedRef = useRef(true);
+  const isFetchingRef = useRef(false);
+
+  // Time window constant
+  const ONE_HOUR_MS = 60 * 60 * 1000;
+  const REFRESH_INTERVAL_MS = 60000;
 
   /**
    * Fetch channel data with current programs
    */
   const fetchChannelList = useCallback(async () => {
+    // Prevent concurrent fetches (race condition fix)
+    if (isFetchingRef.current) {
+      return;
+    }
+
+    isFetchingRef.current = true;
+
     try {
       // Get time window: 1 hour before to 1 hour after current time
       const now = new Date();
-      const startTime = new Date(now.getTime() - 60 * 60 * 1000);
-      const endTime = new Date(now.getTime() + 60 * 60 * 1000);
+      const startTime = new Date(now.getTime() - ONE_HOUR_MS);
+      const endTime = new Date(now.getTime() + ONE_HOUR_MS);
 
       const channelData = await getEnabledChannelsWithPrograms(
         startTime.toISOString(),
         endTime.toISOString()
       );
+
+      // Only update state if component is still mounted (memory leak fix)
+      if (!isMountedRef.current) {
+        return;
+      }
 
       // Transform to channel list items with only current program
       const channelListItems: EpgChannelListItem[] = channelData
@@ -102,13 +120,20 @@ export function useEpgChannelList(): UseEpgChannelListResult {
       setChannels(channelListItems);
       setError(null);
     } catch (err) {
+      if (!isMountedRef.current) {
+        return;
+      }
+
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage);
       console.error('Failed to fetch channel list:', err);
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
+      isFetchingRef.current = false;
     }
-  }, []);
+  }, [ONE_HOUR_MS]);
 
   /**
    * Manual refresh function
@@ -120,20 +145,24 @@ export function useEpgChannelList(): UseEpgChannelListResult {
 
   // Initial fetch and auto-refresh setup
   useEffect(() => {
+    isMountedRef.current = true;
+
     fetchChannelList();
 
     // Set up auto-refresh every 60 seconds (Task 5.5)
+    // Uses fetchChannelList which has race condition protection
     refreshIntervalRef.current = window.setInterval(() => {
       fetchChannelList();
-    }, 60000);
+    }, REFRESH_INTERVAL_MS);
 
     // Cleanup on unmount
     return () => {
+      isMountedRef.current = false;
       if (refreshIntervalRef.current !== null) {
         window.clearInterval(refreshIntervalRef.current);
       }
     };
-  }, [fetchChannelList]);
+  }, [fetchChannelList, REFRESH_INTERVAL_MS]);
 
   return {
     channels,

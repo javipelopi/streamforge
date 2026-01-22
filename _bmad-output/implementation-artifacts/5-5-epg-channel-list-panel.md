@@ -1,6 +1,6 @@
 # Story 5.5: EPG Channel List Panel
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -274,23 +274,34 @@ None - implementation proceeded without issues.
 
 ### Completion Notes List
 
-1. **EpgChannelList Component**: Created virtualized channel list using TanStack Virtual with 96px estimated row height, 5 item overscan, keyboard navigation (up/down arrows), and proper accessibility attributes (role="listbox", aria-selected).
+1. **EpgChannelList Component**: Created virtualized channel list using TanStack Virtual with 96px estimated row height, 5 item overscan, keyboard navigation (up/down arrows), and proper accessibility attributes (role="listbox", aria-selected, aria-activedescendant). Includes skeleton loading state and user-friendly error messages.
 
 2. **EpgChannelRow Component**: Implemented channel row with 80x60px logo container (with first-letter fallback for missing logos), bold white channel name, gray time range, white program title with truncation, and selected state styling with purple tint border/background.
 
 3. **EpgProgressBar Component**: Created progress bar with 3px height, semi-transparent white background, and purple-to-cyan gradient fill. Uses CSS linear-gradient for the fill effect.
 
-4. **useEpgChannelList Hook**: Custom hook that fetches enabled channels with programs, filters to current program only, sorts by plexDisplayOrder, provides loading/error states, and auto-refreshes every 60 seconds.
+4. **useEpgChannelList Hook**: Custom hook that fetches enabled channels with programs, filters to current program only, sorts by plexDisplayOrder, provides loading/error states, and auto-refreshes every 60 seconds. Includes race condition protection (isFetchingRef) and memory leak prevention (isMountedRef).
 
 5. **EpgTv Integration**: Replaced placeholder with functional channel list, added selectedChannelId state, wired onSelectChannel callback, removed temporary toggle button.
 
 6. **Edge Cases Handled**:
-   - Empty channel list displays helpful message
+   - Empty channel list displays helpful message with icon
    - Channels without current program show "No program info available"
    - Missing logos show first letter of channel name
    - Long names truncate with ellipsis
+   - Loading state shows skeleton UI matching channel row layout
+   - Error state shows user-friendly messages per architecture.md Error Handling Strategy
 
 7. **E2E Tests**: 10 E2E tests were created during ATDD RED phase. Tests verify channel list display, progress bar accuracy, selection state, keyboard navigation, virtualization performance, empty state, missing program handling, truncation, missing logo handling, and auto-refresh.
+
+8. **Code Review Fixes (2026-01-22)**: Applied fixes for 7 HIGH and 2 MEDIUM issues found during adversarial code review:
+   - Fixed hook dependency array and race conditions in useEpgChannelList (added isFetchingRef, isMountedRef)
+   - Fixed ARIA accessibility violations (added aria-activedescendant, focus ring)
+   - Fixed virtualization positioning bug on fast scroll (added bounds checking)
+   - Enhanced error messages to be user-friendly per architecture.md
+   - Added skeleton loading UI for polished TV-style experience
+   - Extracted magic numbers to constants (ONE_HOUR_MS, REFRESH_INTERVAL_MS)
+   - All fixes verified with successful build (npm run build)
 
 ### File List
 
@@ -307,4 +318,5 @@ None - implementation proceeded without issues.
 ### Change Log
 
 - 2026-01-22: Story 5.5 implementation complete - EPG Channel List Panel with virtualized list, current program display, selection state, keyboard navigation, and auto-refresh
+- 2026-01-22: Code review fixes applied - Fixed 7 HIGH and 2 MEDIUM issues (race conditions, accessibility, error handling, loading UX)
 
