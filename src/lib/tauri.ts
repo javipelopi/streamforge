@@ -1360,11 +1360,11 @@ export async function getPlexConfig(): Promise<PlexConfig> {
 }
 
 // ============================================================================
-// EPG Grid types and functions (Story 5.1)
+// EPG types and functions (Story 5.1, updated Story 5.9)
 // ============================================================================
 
-/** Program data for EPG grid display */
-export interface EpgGridProgram {
+/** Program data for EPG display */
+export interface EpgProgram {
   id: number;
   title: string;
   startTime: string;
@@ -1374,14 +1374,21 @@ export interface EpgGridProgram {
   episodeInfo?: string;
 }
 
-/** Channel data with programs for EPG grid display */
-export interface EpgGridChannel {
+/** Channel data with programs for EPG display */
+export interface EpgChannel {
   channelId: number;
   channelName: string;
   channelIcon?: string;
   plexDisplayOrder: number;
-  programs: EpgGridProgram[];
+  programs: EpgProgram[];
 }
+
+// Legacy type aliases for backwards compatibility with Rust backend
+// These match the Rust struct names in get_enabled_channels_with_programs command
+/** @deprecated Use EpgProgram instead */
+export type EpgGridProgram = EpgProgram;
+/** @deprecated Use EpgChannel instead */
+export type EpgGridChannel = EpgChannel;
 
 /**
  * Get enabled XMLTV channels with their programs in a time range
@@ -1397,8 +1404,8 @@ export interface EpgGridChannel {
 export async function getEnabledChannelsWithPrograms(
   startTime: string,
   endTime: string
-): Promise<EpgGridChannel[]> {
-  return invoke<EpgGridChannel[]>('get_enabled_channels_with_programs', {
+): Promise<EpgChannel[]> {
+  return invoke<EpgChannel[]>('get_enabled_channels_with_programs', {
     startTime,
     endTime,
   });

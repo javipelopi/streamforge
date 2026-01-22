@@ -1,6 +1,7 @@
 /**
  * Route constants for type-safe navigation
  * Story 1.3: Create React GUI Shell with Routing
+ * Story 5.9: Consolidated EPG routes (legacy grid view removed)
  */
 
 export const ROUTES = {
@@ -8,7 +9,7 @@ export const ROUTES = {
   TARGET_LINEUP: '/target-lineup',
   SOURCES: '/sources',
   EPG: '/epg',
-  EPG_TV: '/epg-tv',
+  EPG_TV: '/epg-tv', // Kept for backwards compatibility, both routes use TV-style EPG
   ACCOUNTS: '/accounts',
   SETTINGS: '/settings',
   LOGS: '/logs',
@@ -41,13 +42,12 @@ export const NAV_ITEMS: NavItem[] = [
     testId: 'sources-nav-item',
     ariaLabel: 'Sources - Browse XMLTV and Xtream channel sources',
   },
-  { label: 'EPG', path: ROUTES.EPG, icon: 'calendar' },
   {
-    label: 'EPG TV',
-    path: ROUTES.EPG_TV,
+    label: 'EPG',
+    path: ROUTES.EPG,
     icon: 'calendar',
-    testId: 'epg-tv-nav-item',
-    ariaLabel: 'EPG TV - TV-style electronic program guide',
+    testId: 'epg-nav-item',
+    ariaLabel: 'EPG - Electronic program guide',
   },
   { label: 'Accounts', path: ROUTES.ACCOUNTS, icon: 'person' },
   { label: 'Settings', path: ROUTES.SETTINGS, icon: 'gear' },

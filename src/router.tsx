@@ -3,12 +3,13 @@
  * Story 1.3: Create React GUI Shell with Routing
  * Story 3-10: Added Sources view route
  * Story 5.4: Added EPG TV view route
+ * Story 5.9: EPG route now uses TV-style EPG (legacy grid view removed)
  *
  * Uses MemoryRouter for Tauri since there's no browser history
  */
 import { createBrowserRouter, createMemoryRouter, RouteObject, Navigate } from 'react-router-dom';
 import { MainLayout } from './components/layout/MainLayout';
-import { Dashboard, TargetLineup, Sources, EPG, EpgTv, Accounts, Settings, Logs } from './views';
+import { Dashboard, TargetLineup, Sources, EpgTv, Accounts, Settings, Logs } from './views';
 import { ROUTES } from './lib/routes';
 
 const routes: RouteObject[] = [
@@ -19,7 +20,7 @@ const routes: RouteObject[] = [
       { index: true, element: <Dashboard /> },
       { path: ROUTES.TARGET_LINEUP.slice(1), element: <TargetLineup /> },
       { path: ROUTES.SOURCES.slice(1), element: <Sources /> },
-      { path: ROUTES.EPG.slice(1), element: <EPG /> },
+      { path: ROUTES.EPG.slice(1), element: <EpgTv /> },
       { path: ROUTES.EPG_TV.slice(1), element: <EpgTv /> },
       { path: ROUTES.ACCOUNTS.slice(1), element: <Accounts /> },
       { path: ROUTES.SETTINGS.slice(1), element: <Settings /> },

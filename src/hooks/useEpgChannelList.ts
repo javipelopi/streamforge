@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getEnabledChannelsWithPrograms, type EpgGridProgram } from '../lib/tauri';
+import { getEnabledChannelsWithPrograms, type EpgProgram } from '../lib/tauri';
 
 /**
  * Channel list item with current program info
@@ -18,7 +18,7 @@ export interface EpgChannelListItem {
   channelIcon?: string;
   plexDisplayOrder: number;
   /** Current program (may be undefined if no program is airing) */
-  currentProgram?: EpgGridProgram;
+  currentProgram?: EpgProgram;
 }
 
 /**
@@ -38,7 +38,7 @@ export interface UseEpgChannelListResult {
 /**
  * Check if a program is currently airing
  */
-function isProgramCurrentlyAiring(program: EpgGridProgram, now: Date = new Date()): boolean {
+function isProgramCurrentlyAiring(program: EpgProgram, now: Date = new Date()): boolean {
   const startTime = new Date(program.startTime);
   const endTime = new Date(program.endTime);
   return startTime <= now && endTime > now;
@@ -48,9 +48,9 @@ function isProgramCurrentlyAiring(program: EpgGridProgram, now: Date = new Date(
  * Find the current program from a list of programs
  */
 function findCurrentProgram(
-  programs: EpgGridProgram[],
+  programs: EpgProgram[],
   now: Date = new Date()
-): EpgGridProgram | undefined {
+): EpgProgram | undefined {
   return programs.find((p) => isProgramCurrentlyAiring(p, now));
 }
 

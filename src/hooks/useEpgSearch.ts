@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { searchEpgPrograms, type EpgSearchResult } from '../lib/tauri';
-import { createCenteredTimeWindow, type TimeWindow } from './useEpgGridData';
+import { createCenteredTimeWindow, type TimeWindow } from './epgTimeUtils';
 
 /**
  * Return type for useEpgSearch hook
