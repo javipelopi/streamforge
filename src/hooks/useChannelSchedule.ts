@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getEnabledChannelsWithPrograms, type EpgGridProgram } from '../lib/tauri';
+import { getEnabledChannelsWithPrograms, type EpgProgram } from '../lib/tauri';
 
 /**
  * Program status relative to current time
@@ -17,7 +17,7 @@ export type ProgramStatus = 'NOW' | 'PAST' | 'FUTURE';
 /**
  * Schedule program with status
  */
-export interface ScheduleProgram extends EpgGridProgram {
+export interface ScheduleProgram extends EpgProgram {
   /** Status relative to current time */
   status: ProgramStatus;
 }
@@ -44,7 +44,7 @@ export interface UseChannelScheduleResult {
  * @param now - Current time (defaults to Date.now())
  * @returns Program status
  */
-function getProgramStatus(program: EpgGridProgram, now: Date = new Date()): ProgramStatus {
+function getProgramStatus(program: EpgProgram, now: Date = new Date()): ProgramStatus {
   const start = new Date(program.startTime);
   const end = new Date(program.endTime);
 

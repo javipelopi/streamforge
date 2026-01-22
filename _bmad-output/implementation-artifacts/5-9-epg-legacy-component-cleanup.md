@@ -1,6 +1,6 @@
 # Story 5.9: EPG Legacy Component Cleanup
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -28,61 +28,61 @@ So that the codebase is clean and doesn't contain dead code.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Identify and audit legacy EPG components (AC: #1)
-  - [ ] 1.1 Audit `src/components/epg/EpgGrid.tsx` for any dependencies or imports
-  - [ ] 1.2 Audit `src/components/epg/EpgCell.tsx` for any dependencies or imports
-  - [ ] 1.3 Audit `src/components/epg/TimeNavigationBar.tsx` for any dependencies or imports
-  - [ ] 1.4 Run `grep -r "EpgGrid\|EpgCell\|TimeNavigationBar" src/` to find all references
-  - [ ] 1.5 Document all files that import these components
+- [x] Task 1: Identify and audit legacy EPG components (AC: #1)
+  - [x] 1.1 Audit `src/components/epg/EpgGrid.tsx` for any dependencies or imports
+  - [x] 1.2 Audit `src/components/epg/EpgCell.tsx` for any dependencies or imports
+  - [x] 1.3 Audit `src/components/epg/TimeNavigationBar.tsx` for any dependencies or imports
+  - [x] 1.4 Run `grep -r "EpgGrid\|EpgCell\|TimeNavigationBar" src/` to find all references
+  - [x] 1.5 Document all files that import these components
 
-- [ ] Task 2: Remove legacy test files (AC: #1)
-  - [ ] 2.1 Delete `tests/e2e/epg-grid.spec.ts` if it only tests superseded grid component
-  - [ ] 2.2 Review `tests/e2e/epg-search.spec.ts` - keep if it tests current search, delete if grid-specific
-  - [ ] 2.3 Verify no other test files reference deleted components
-  - [ ] 2.4 Run test suite to ensure no import errors from deleted files
+- [x] Task 2: Remove legacy test files (AC: #1)
+  - [x] 2.1 Delete `tests/e2e/epg-grid.spec.ts` if it only tests superseded grid component
+  - [x] 2.2 Review `tests/e2e/epg-search.spec.ts` - keep if it tests current search, delete if grid-specific
+  - [x] 2.3 Verify no other test files reference deleted components
+  - [x] 2.4 Run test suite to ensure no import errors from deleted files
 
-- [ ] Task 3: Delete legacy component files (AC: #1)
-  - [ ] 3.1 Delete `src/components/epg/EpgGrid.tsx`
-  - [ ] 3.2 Delete `src/components/epg/EpgCell.tsx`
-  - [ ] 3.3 Delete `src/components/epg/TimeNavigationBar.tsx`
-  - [ ] 3.4 Delete `src/components/epg/tv-style/EpgChannelListPlaceholder.tsx` (placeholder replaced by real component)
-  - [ ] 3.5 Delete `src/components/epg/tv-style/EpgSchedulePanelPlaceholder.tsx` (placeholder replaced by real component)
-  - [ ] 3.6 Delete `src/components/epg/tv-style/EpgDetailsPanelPlaceholder.tsx` (placeholder replaced by real component)
+- [x] Task 3: Delete legacy component files (AC: #1)
+  - [x] 3.1 Delete `src/components/epg/EpgGrid.tsx`
+  - [x] 3.2 Delete `src/components/epg/EpgCell.tsx`
+  - [x] 3.3 Delete `src/components/epg/TimeNavigationBar.tsx`
+  - [x] 3.4 Delete `src/components/epg/tv-style/EpgChannelListPlaceholder.tsx` (placeholder replaced by real component)
+  - [x] 3.5 Delete `src/components/epg/tv-style/EpgSchedulePanelPlaceholder.tsx` (placeholder replaced by real component)
+  - [x] 3.6 Delete `src/components/epg/tv-style/EpgDetailsPanelPlaceholder.tsx` (placeholder replaced by real component)
 
-- [ ] Task 4: Update component index exports (AC: #1, #3)
-  - [ ] 4.1 Remove `EpgGrid` export from `src/components/epg/index.ts`
-  - [ ] 4.2 Remove `EpgCell` export from `src/components/epg/index.ts`
-  - [ ] 4.3 Remove `TimeNavigationBar` export from `src/components/epg/index.ts`
-  - [ ] 4.4 Remove `EpgChannelListPlaceholder` export from `src/components/epg/tv-style/index.ts`
-  - [ ] 4.5 Keep `EpgSearchInput` and `EpgSearchResults` exports in `src/components/epg/index.ts` (may still be used)
+- [x] Task 4: Update component index exports (AC: #1, #3)
+  - [x] 4.1 Remove `EpgGrid` export from `src/components/epg/index.ts`
+  - [x] 4.2 Remove `EpgCell` export from `src/components/epg/index.ts`
+  - [x] 4.3 Remove `TimeNavigationBar` export from `src/components/epg/index.ts`
+  - [x] 4.4 Remove `EpgChannelListPlaceholder` export from `src/components/epg/tv-style/index.ts`
+  - [x] 4.5 Keep `EpgSearchInput` and `EpgSearchResults` exports in `src/components/epg/index.ts` (may still be used)
 
-- [ ] Task 5: Verify/Update ProgramDetailsPanel adaptation (AC: #2)
-  - [ ] 5.1 Check if `src/components/epg/ProgramDetailsPanel.tsx` is still used anywhere
-  - [ ] 5.2 If unused, delete the old `ProgramDetailsPanel.tsx` (replaced by `EpgProgramDetails.tsx` in tv-style)
-  - [ ] 5.3 If used elsewhere, document what needs adaptation
-  - [ ] 5.4 Remove `ProgramDetailsPanel` export from index if deleted
+- [x] Task 5: Verify/Update ProgramDetailsPanel adaptation (AC: #2)
+  - [x] 5.1 Check if `src/components/epg/ProgramDetailsPanel.tsx` is still used anywhere
+  - [x] 5.2 If unused, delete the old `ProgramDetailsPanel.tsx` (replaced by `EpgProgramDetails.tsx` in tv-style)
+  - [x] 5.3 If used elsewhere, document what needs adaptation
+  - [x] 5.4 Remove `ProgramDetailsPanel` export from index if deleted
 
-- [ ] Task 6: Verify EpgSearchInput and EpgSearchResults (AC: #2)
-  - [ ] 6.1 Confirm `src/components/epg/EpgSearchInput.tsx` is superseded by `tv-style/EpgSearchInput.tsx`
-  - [ ] 6.2 Confirm `src/components/epg/EpgSearchResults.tsx` is superseded by `tv-style/EpgSearchResults.tsx`
-  - [ ] 6.3 If old versions are unused, delete them
-  - [ ] 6.4 Update exports in `src/components/epg/index.ts` to only export tv-style versions or remove entirely
+- [x] Task 6: Verify EpgSearchInput and EpgSearchResults (AC: #2)
+  - [x] 6.1 Confirm `src/components/epg/EpgSearchInput.tsx` is superseded by `tv-style/EpgSearchInput.tsx`
+  - [x] 6.2 Confirm `src/components/epg/EpgSearchResults.tsx` is superseded by `tv-style/EpgSearchResults.tsx`
+  - [x] 6.3 If old versions are unused, delete them
+  - [x] 6.4 Update exports in `src/components/epg/index.ts` to only export tv-style versions or remove entirely
 
-- [ ] Task 7: Clean up any remaining imports (AC: #3)
-  - [ ] 7.1 Search codebase for imports from deleted files
-  - [ ] 7.2 Update any files that still import deleted components
-  - [ ] 7.3 Run TypeScript compiler to catch type errors (`npx tsc --noEmit`)
+- [x] Task 7: Clean up any remaining imports (AC: #3)
+  - [x] 7.1 Search codebase for imports from deleted files
+  - [x] 7.2 Update any files that still import deleted components
+  - [x] 7.3 Run TypeScript compiler to catch type errors (`npx tsc --noEmit`)
 
-- [ ] Task 8: Verify build and tests pass (AC: #3)
-  - [ ] 8.1 Run `npm run build` or `pnpm build` to verify no compilation errors
-  - [ ] 8.2 Run `npm run lint` or `pnpm lint` to check for dead code warnings
-  - [ ] 8.3 Run `npm run test` or `pnpm test` to verify all tests pass
-  - [ ] 8.4 Run `npx playwright test` to verify E2E tests pass
+- [x] Task 8: Verify build and tests pass (AC: #3)
+  - [x] 8.1 Run `npm run build` or `pnpm build` to verify no compilation errors
+  - [x] 8.2 Run `npm run lint` or `pnpm lint` to check for dead code warnings (pre-existing issues)
+  - [x] 8.3 Run `npm run test` or `pnpm test` to verify all tests pass
+  - [x] 8.4 Run `npx playwright test` to verify E2E tests pass
 
-- [ ] Task 9: Final verification (AC: #1, #2, #3)
-  - [ ] 9.1 Run `grep -r "EpgGrid\|EpgCell\|TimeNavigationBar\|ProgramDetailsPanel" src/` to confirm no references
-  - [ ] 9.2 Verify `src/views/EpgTv.tsx` only uses tv-style components
-  - [ ] 9.3 Document any remaining legacy components that were kept and why
+- [x] Task 9: Final verification (AC: #1, #2, #3)
+  - [x] 9.1 Run `grep -r "EpgGrid\|EpgCell\|TimeNavigationBar\|ProgramDetailsPanel" src/` to confirm no references
+  - [x] 9.2 Verify `src/views/EpgTv.tsx` only uses tv-style components
+  - [x] 9.3 Document any remaining legacy components that were kept and why
 
 ## Dev Notes
 
