@@ -313,7 +313,7 @@ export function EPG() {
       </div>
 
       {/* EPG Grid */}
-      <div data-testid="epg-grid" className="flex-1 min-h-0">
+      <div data-testid="epg-grid-wrapper" className="flex-1 min-h-0 flex flex-col">
         {data && (
           <EpgGrid
             channels={data.channels}

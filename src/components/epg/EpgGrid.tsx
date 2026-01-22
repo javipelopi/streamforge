@@ -16,11 +16,11 @@ export interface EpgGridProps {
   onProgramClick: (program: EpgGridProgram, channel: EpgGridChannel) => void;
 }
 
-// Constants for grid layout
-const CHANNEL_COLUMN_WIDTH = 160; // Sticky channel name column
-const TIME_SLOT_WIDTH = 120; // Width per 30-minute slot
-const ROW_HEIGHT = 48; // Height per channel row
-const TIME_HEADER_HEIGHT = 40; // Height of time header
+// Constants for grid layout - tuned for visual balance and readability
+const CHANNEL_COLUMN_WIDTH = 200; // Width for channel logo (40px) + name + padding (increased from 160 for better logo display)
+const TIME_SLOT_WIDTH = 120; // Width per 30-minute slot - provides readable time labels
+const ROW_HEIGHT = 64; // Height per channel row (increased from 48 to accommodate 40px logos + vertical padding)
+const TIME_HEADER_HEIGHT = 44; // Height of time header (increased from 40 for visual balance with taller rows)
 const OVERSCAN_COUNT = 5; // Number of extra rows/columns to render for smooth scrolling
 
 /**
@@ -148,7 +148,7 @@ export function EpgGrid({ channels, timeWindow, onProgramClick }: EpgGridProps) 
   );
 
   return (
-    <div data-testid="epg-grid" className="flex flex-col h-full">
+    <div data-testid="epg-grid" className="flex flex-col flex-1 min-h-0">
       {/* Time Header (sticky) */}
       <div
         data-testid="epg-time-header"
@@ -211,12 +211,13 @@ export function EpgGrid({ channels, timeWindow, onProgramClick }: EpgGridProps) 
         >
           {rowVirtualizer.getVirtualItems().map((virtualRow) => {
             const channel = channels[virtualRow.index];
+            const isEvenRow = virtualRow.index % 2 === 0;
 
             return (
               <div
                 key={virtualRow.key}
                 data-testid={`epg-channel-row-${channel.channelId}`}
-                className="absolute flex border-b border-gray-100"
+                className={`absolute flex border-b border-gray-200 ${isEvenRow ? 'bg-white' : 'bg-gray-50'}`}
                 style={{
                   top: virtualRow.start,
                   left: 0,
@@ -227,21 +228,25 @@ export function EpgGrid({ channels, timeWindow, onProgramClick }: EpgGridProps) 
                 {/* Sticky Channel Name Column */}
                 <div
                   data-testid={`epg-channel-name-${channel.channelId}`}
-                  className="flex items-center px-2 bg-white border-r border-gray-200 sticky left-0 z-10"
+                  className={`flex items-center gap-3 px-3 border-r border-gray-200 sticky left-0 z-10 ${isEvenRow ? 'bg-white' : 'bg-gray-50'}`}
                   style={{
                     width: CHANNEL_COLUMN_WIDTH,
                     minWidth: CHANNEL_COLUMN_WIDTH,
                   }}
                 >
-                  {channel.channelIcon && (
+                  {channel.channelIcon ? (
                     <img
                       src={channel.channelIcon}
                       alt=""
-                      className="w-6 h-6 mr-2 object-contain rounded"
+                      className="w-10 h-10 object-contain rounded flex-shrink-0"
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = 'none';
                       }}
                     />
+                  ) : (
+                    <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center flex-shrink-0">
+                      <span className="text-gray-400 text-xs font-medium">TV</span>
+                    </div>
                   )}
                   <span className="text-sm font-medium text-gray-900 truncate">
                     {channel.channelName}
@@ -263,8 +268,8 @@ export function EpgGrid({ channels, timeWindow, onProgramClick }: EpgGridProps) 
                         className="absolute"
                         style={{
                           left: leftOffset,
-                          top: '4px',
-                          height: ROW_HEIGHT - 8,
+                          top: '8px',
+                          height: ROW_HEIGHT - 16,
                         }}
                       >
                         <EpgCell

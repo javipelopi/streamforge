@@ -63,19 +63,21 @@ export function EpgCell({ program, slotWidth, onClick, isCurrentlyAiring }: EpgC
   // Determine cell classes based on state
   const cellClasses = useMemo(() => {
     const baseClasses = [
-      'px-2 py-1',
+      'h-full',
+      'px-3 py-2',
       'text-sm font-medium',
       'border border-gray-200',
-      'rounded-sm',
+      'rounded',
       'truncate',
       'cursor-pointer',
-      'transition-colors',
-      'hover:bg-opacity-80',
+      'transition-all duration-150',
+      'hover:shadow-md hover:scale-[1.02]',
+      'flex items-center',
     ];
 
     // Add airing indicator class
     if (isCurrentlyAiring) {
-      baseClasses.push('current-airing', 'ring-2', 'ring-blue-500', 'bg-blue-100');
+      baseClasses.push('current-airing', 'ring-2', 'ring-blue-500', 'bg-blue-100', 'border-blue-300');
     } else {
       // Category-based coloring
       const categoryColors = getCategoryColor(program.category);
