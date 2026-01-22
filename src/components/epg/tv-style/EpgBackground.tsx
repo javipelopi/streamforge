@@ -10,10 +10,7 @@ export function EpgBackground() {
   return (
     <div
       data-testid="epg-background"
-      className="fixed inset-0 z-0"
-      style={{
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
-      }}
+      className="fixed inset-0 z-0 bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460]"
     />
   );
 }

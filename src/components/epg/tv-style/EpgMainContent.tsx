@@ -22,8 +22,7 @@ export function EpgMainContent({ children }: EpgMainContentProps) {
       {/* Left Panel - Channel List (~30%) */}
       <div
         data-testid="epg-left-panel"
-        className="w-[30%] rounded-lg overflow-hidden flex flex-col"
-        style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
+        className="w-[30%] bg-black/60 rounded-lg overflow-hidden flex flex-col"
       >
         {leftPanel}
       </div>
@@ -31,8 +30,7 @@ export function EpgMainContent({ children }: EpgMainContentProps) {
       {/* Center Panel - Schedule (~30%) */}
       <div
         data-testid="epg-center-panel"
-        className="w-[30%] rounded-lg overflow-hidden flex flex-col"
-        style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+        className="w-[30%] bg-black/50 rounded-lg overflow-hidden flex flex-col"
       >
         {centerPanel}
       </div>
@@ -40,8 +38,7 @@ export function EpgMainContent({ children }: EpgMainContentProps) {
       {/* Right Panel - Details (~40%) */}
       <div
         data-testid="epg-right-panel"
-        className="w-[40%] rounded-lg overflow-hidden flex flex-col"
-        style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+        className="w-[40%] bg-black/50 rounded-lg overflow-hidden flex flex-col"
       >
         {rightPanel}
       </div>

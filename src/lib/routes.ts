@@ -42,6 +42,13 @@ export const NAV_ITEMS: NavItem[] = [
     ariaLabel: 'Sources - Browse XMLTV and Xtream channel sources',
   },
   { label: 'EPG', path: ROUTES.EPG, icon: 'calendar' },
+  {
+    label: 'EPG TV',
+    path: ROUTES.EPG_TV,
+    icon: 'calendar',
+    testId: 'epg-tv-nav-item',
+    ariaLabel: 'EPG TV - TV-style electronic program guide',
+  },
   { label: 'Accounts', path: ROUTES.ACCOUNTS, icon: 'person' },
   { label: 'Settings', path: ROUTES.SETTINGS, icon: 'gear' },
   { label: 'Logs', path: ROUTES.LOGS, icon: 'file' },
