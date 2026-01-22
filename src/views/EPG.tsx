@@ -47,6 +47,7 @@ export function EPG() {
     query: searchQuery,
     results: searchResults,
     isSearching,
+    error: searchError,
     isResultsVisible,
     onSearch,
     onClear: onSearchClear,
@@ -102,9 +103,13 @@ export function EPG() {
   // Search result selection handler - navigates grid to program time
   const handleSearchResultClick = useCallback(
     (result: EpgSearchResult) => {
-      const timeWindow = onResultSelect(result);
-      if (timeWindow) {
-        setTimeWindow(timeWindow.startTime, timeWindow.endTime);
+      try {
+        const timeWindow = onResultSelect(result);
+        if (timeWindow && timeWindow.startTime && timeWindow.endTime) {
+          setTimeWindow(timeWindow.startTime, timeWindow.endTime);
+        }
+      } catch (err) {
+        console.error('Failed to navigate to search result:', err);
       }
     },
     [onResultSelect, setTimeWindow]
@@ -217,6 +222,7 @@ export function EPG() {
               query={searchQuery}
               onResultClick={handleSearchResultClick}
               isLoading={isSearching}
+              error={searchError}
             />
           )}
         </div>

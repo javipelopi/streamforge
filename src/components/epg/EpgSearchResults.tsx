@@ -18,6 +18,8 @@ export interface EpgSearchResultsProps {
   onResultClick: (result: EpgSearchResult) => void;
   /** Whether search is in progress */
   isLoading?: boolean;
+  /** Error message if search failed */
+  error?: string | null;
 }
 
 /**
@@ -63,6 +65,7 @@ export function EpgSearchResults({
   query,
   onResultClick,
   isLoading = false,
+  error = null,
 }: EpgSearchResultsProps) {
   // Handle result click
   const handleResultClick = useCallback(
@@ -126,6 +129,38 @@ export function EpgSearchResults({
             />
           </svg>
           Searching...
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error && query.length > 0) {
+    return (
+      <div
+        data-testid="epg-search-results"
+        className="absolute top-full left-0 right-0 mt-1 bg-white border border-red-200 rounded-lg shadow-lg z-50"
+      >
+        <div
+          data-testid="epg-search-error-state"
+          className="p-4 text-center text-red-600"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-8 w-8 mx-auto mb-2 text-red-400"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          <p className="font-medium">Search failed</p>
+          <p className="text-sm mt-1">{error}</p>
         </div>
       </div>
     );

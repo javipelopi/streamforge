@@ -21,10 +21,20 @@ export interface EpgSearchInputProps {
  */
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const handler = setTimeout(() => {
-      setDebouncedValue(value);
+      if (isMountedRef.current) {
+        setDebouncedValue(value);
+      }
     }, delay);
 
     return () => {
