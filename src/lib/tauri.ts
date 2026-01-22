@@ -1358,3 +1358,47 @@ export interface PlexConfig {
 export async function getPlexConfig(): Promise<PlexConfig> {
   return invoke<PlexConfig>('get_plex_config');
 }
+
+// ============================================================================
+// EPG Grid types and functions (Story 5.1)
+// ============================================================================
+
+/** Program data for EPG grid display */
+export interface EpgGridProgram {
+  id: number;
+  title: string;
+  startTime: string;
+  endTime: string;
+  category?: string;
+  description?: string;
+}
+
+/** Channel data with programs for EPG grid display */
+export interface EpgGridChannel {
+  channelId: number;
+  channelName: string;
+  channelIcon?: string;
+  plexDisplayOrder: number;
+  programs: EpgGridProgram[];
+}
+
+/**
+ * Get enabled XMLTV channels with their programs in a time range
+ *
+ * Story 5.1: EPG Grid Browser with Time Navigation
+ * AC #1: Grid displays enabled XMLTV channels only (Plex preview mode)
+ * AC #3: Efficient rendering with time range filtering
+ *
+ * @param startTime - Start of time window (ISO string)
+ * @param endTime - End of time window (ISO string)
+ * @returns List of enabled channels with their programs
+ */
+export async function getEnabledChannelsWithPrograms(
+  startTime: string,
+  endTime: string
+): Promise<EpgGridChannel[]> {
+  return invoke<EpgGridChannel[]>('get_enabled_channels_with_programs', {
+    startTime,
+    endTime,
+  });
+}

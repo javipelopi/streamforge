@@ -998,6 +998,106 @@ pub async fn set_epg_schedule(
     })
 }
 
+// ============================================================================
+// EPG Grid Commands (Story 5.1)
+// ============================================================================
+
+/// Program data for EPG grid display
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EpgGridProgram {
+    pub id: i32,
+    pub title: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub category: Option<String>,
+    pub description: Option<String>,
+}
+
+/// Channel data with programs for EPG grid display
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EpgGridChannel {
+    pub channel_id: i32,
+    pub channel_name: String,
+    pub channel_icon: Option<String>,
+    pub plex_display_order: i32,
+    pub programs: Vec<EpgGridProgram>,
+}
+
+/// Get all enabled XMLTV channels with their programs in a time range
+///
+/// Story 5.1: EPG Grid Browser with Time Navigation
+/// AC #1: Grid displays enabled XMLTV channels only (Plex preview mode)
+/// AC #3: Efficient rendering with time range filtering
+///
+/// This query:
+/// 1. Filters by xmltv_channel_settings.is_enabled = true
+/// 2. Joins channels with programs
+/// 3. Filters programs by time range (window_start <= end_time AND window_end >= start_time)
+/// 4. Orders by plex_display_order then display_name
+#[tauri::command]
+pub async fn get_enabled_channels_with_programs(
+    db: State<'_, DbConnection>,
+    start_time: String,
+    end_time: String,
+) -> Result<Vec<EpgGridChannel>, String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    // Get all enabled channels with their settings, ordered by display order
+    let enabled_channels: Vec<(XmltvChannel, XmltvChannelSettings)> = xmltv_channels::table
+        .inner_join(xmltv_channel_settings::table)
+        .filter(xmltv_channel_settings::is_enabled.eq(1))
+        .order((
+            xmltv_channel_settings::plex_display_order.asc(),
+            xmltv_channels::display_name.asc(),
+        ))
+        .select((xmltv_channels::all_columns, xmltv_channel_settings::all_columns))
+        .load::<(XmltvChannel, XmltvChannelSettings)>(&mut conn)
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    // For each enabled channel, get programs in the time range
+    let mut result: Vec<EpgGridChannel> = Vec::with_capacity(enabled_channels.len());
+
+    for (channel, settings) in enabled_channels {
+        let channel_id = channel.id.unwrap_or(0);
+
+        // Get programs that overlap with the time window
+        // A program overlaps if: program.start_time < window_end AND program.end_time > window_start
+        let channel_programs: Vec<Program> = programs::table
+            .filter(programs::xmltv_channel_id.eq(channel_id))
+            .filter(programs::start_time.lt(&end_time))
+            .filter(programs::end_time.gt(&start_time))
+            .order(programs::start_time.asc())
+            .load::<Program>(&mut conn)
+            .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+        let programs: Vec<EpgGridProgram> = channel_programs
+            .into_iter()
+            .map(|p| EpgGridProgram {
+                id: p.id.unwrap_or(0),
+                title: p.title,
+                start_time: p.start_time,
+                end_time: p.end_time,
+                category: p.category,
+                description: p.description,
+            })
+            .collect();
+
+        result.push(EpgGridChannel {
+            channel_id,
+            channel_name: channel.display_name,
+            channel_icon: channel.icon,
+            plex_display_order: settings.plex_display_order.unwrap_or(9999),
+            programs,
+        });
+    }
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
