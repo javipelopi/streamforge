@@ -1,6 +1,6 @@
 # Story 5.8: EPG Program Details Panel
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -510,10 +510,46 @@ function parseDuration(startTime: string, endTime: string): string {
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-sonnet-4-5-20250929
 
 ### Debug Log References
 
+N/A - No debugging required
+
 ### Completion Notes List
 
+1. **Backend Implementation**: Created `get_program_by_id` Tauri command in `src-tauri/src/commands/epg.rs` with proper JOIN to fetch program with channel info. Command registered in `src-tauri/src/lib.rs`.
+
+2. **TypeScript Integration**: Added `ProgramWithChannel` interface and `getProgramById` function to `src/lib/tauri.ts` for type-safe frontend-backend communication.
+
+3. **Custom Hook**: Implemented `useProgramDetails` hook with proper cleanup using `isMountedRef` and `AbortController` to prevent race conditions and memory leaks (learned from Story 5.7 review).
+
+4. **Component Implementation**: Created `EpgProgramDetails` component with all required sections: title, episode info, channel badge with status indicator, metadata (time/date/categories), and scrollable description.
+
+5. **Status Logic**: Implemented real-time status calculation (Live Now/Starts in X/Aired) with proper color coding (green/blue/gray).
+
+6. **Accessibility**: Added proper ARIA labels, roles, focus management, and keyboard navigation (Escape key handler).
+
+7. **Loading & Error States**: Implemented skeleton loading state and error handling with user-friendly messages.
+
+8. **Integration**: Replaced `EpgDetailsPanelPlaceholder` with `EpgProgramDetails` in `EpgTv.tsx`, wired up selection state and close handlers.
+
+9. **Test Data Support**: Modified `test_data.rs` to add helper commands for creating test programs with various scenarios (missing description, missing episode info, long titles).
+
+10. **Comprehensive Tests**: ATDD tests cover all ACs with edge cases - empty state, loading, error, long titles, missing data, status indicators, close behavior.
+
+11. **Minor Hook Import Update**: Added `useEffect` import to `useEpgDayNavigation.ts` (Story 5.7 file) - this was a benign change needed for consistency, no functional impact.
+
 ### File List
+
+- `_bmad-output/implementation-artifacts/5-8-epg-program-details-panel.md` - Story file
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` - Updated sprint status
+- `src-tauri/src/commands/epg.rs` - Added `get_program_by_id` command with `ProgramWithChannel` and `ChannelInfo` structs
+- `src-tauri/src/commands/test_data.rs` - Added test data helper commands
+- `src-tauri/src/lib.rs` - Registered `get_program_by_id` command
+- `src/components/epg/tv-style/EpgProgramDetails.tsx` - New component implementation
+- `src/components/epg/tv-style/index.ts` - Added EpgProgramDetails export
+- `src/hooks/useProgramDetails.ts` - New hook for fetching program details
+- `src/lib/tauri.ts` - Added `ProgramWithChannel` interface and `getProgramById` function
+- `src/views/EpgTv.tsx` - Integrated EpgProgramDetails, replaced placeholder
+- `tests/e2e/epg-program-details-panel.spec.ts` - Comprehensive E2E tests for all ACs
