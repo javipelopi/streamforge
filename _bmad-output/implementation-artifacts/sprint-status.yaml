@@ -90,7 +90,7 @@ development_status:
 
   # Epic 5: EPG Viewer & Discovery
   epic-5: in-progress
-  5-1-epg-grid-browser-with-time-navigation: ready-for-dev
+  5-1-epg-grid-browser-with-time-navigation: review
   5-2-epg-search-functionality: backlog
   5-3-program-details-view: backlog
   epic-5-retrospective: optional

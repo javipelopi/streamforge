@@ -311,6 +311,7 @@ pub fn run() {
             commands::epg::get_programs,
             commands::epg::get_epg_schedule,
             commands::epg::set_epg_schedule,
+            commands::epg::get_enabled_channels_with_programs,
             commands::matcher::run_channel_matching,
             commands::matcher::get_match_stats,
             commands::matcher::get_channel_mappings_for_xmltv,
