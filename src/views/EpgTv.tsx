@@ -17,11 +17,11 @@ import { EpgDetailsPanelPlaceholder } from '../components/epg/tv-style/EpgDetail
 
 export function EpgTv() {
   // State for selected program (null initially - no program selected)
-  const [selectedProgram, setSelectedProgram] = useState<unknown>(null);
+  const [selectedProgram, setSelectedProgram] = useState<{ id: string } | null>(null);
 
   // Toggle function for testing visibility (temporary)
   const toggleDetailsVisibility = () => {
-    setSelectedProgram((prev: unknown) => (prev ? null : { id: 'test-program' }));
+    setSelectedProgram((prev) => (prev ? null : { id: 'test-program' }));
   };
 
   return (
@@ -39,6 +39,7 @@ export function EpgTv() {
             data-testid="toggle-details-visibility"
             onClick={toggleDetailsVisibility}
             className="px-3 py-1 text-sm bg-white/20 hover:bg-white/30 text-white rounded transition-colors"
+            aria-label="Toggle program details panel visibility"
           >
             Toggle Details Panel
           </button>

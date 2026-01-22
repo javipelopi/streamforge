@@ -9,7 +9,7 @@
 export function EpgChannelListPlaceholder() {
   return (
     <div className="h-full flex flex-col p-4 overflow-auto">
-      <p className="text-white/70 text-center">
+      <p className="text-white/70 text-center" data-testid="channel-list-placeholder">
         Channel list (Story 5.5)
       </p>
     </div>
