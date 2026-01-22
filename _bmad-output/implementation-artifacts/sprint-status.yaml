@@ -92,7 +92,7 @@ development_status:
   epic-5: in-progress
   5-1-epg-grid-browser-with-time-navigation: done
   5-2-epg-search-functionality: done
-  5-3-program-details-view: backlog
+  5-3-program-details-view: ready-for-dev
   epic-5-retrospective: optional
 
   # Epic 6: Settings, Logging & Updates
