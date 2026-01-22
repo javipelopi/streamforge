@@ -44,6 +44,9 @@ export function EpgSchedulePanel({
     selectedDate
   );
 
+  // Parse selected date for header display
+  const headerDate = selectedDate ? new Date(selectedDate.startTime) : new Date();
+
   // Auto-scroll to current program on initial load and channel change (AC #3)
   useEffect(() => {
     // Add slight delay to ensure ref is populated after render
@@ -199,7 +202,7 @@ export function EpgSchedulePanel({
         data-testid="epg-schedule-panel"
         className="h-full flex flex-col bg-black/50 rounded-lg"
       >
-        <ScheduleHeader />
+        <ScheduleHeader date={headerDate} />
         <div
           data-testid="schedule-no-data"
           className="flex-1 flex items-center justify-center p-4 text-center"
