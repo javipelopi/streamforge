@@ -1,6 +1,6 @@
 # Story 5.4: EPG TV-Style Layout Foundation
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -23,59 +23,59 @@ So that I can browse channels in a lean-back, television-friendly experience.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create gradient background component (AC: #1)
-  - [ ] 1.1 Create `src/components/epg/tv-style/EpgBackground.tsx`
-  - [ ] 1.2 Implement gradient: `linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)`
-  - [ ] 1.3 Set fixed position, covers entire viewport, z-index: 0
-  - [ ] 1.4 Add `data-testid="epg-background"` for testing
+- [x] Task 1: Create gradient background component (AC: #1)
+  - [x] 1.1 Create `src/components/epg/tv-style/EpgBackground.tsx`
+  - [x] 1.2 Implement gradient: `linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)`
+  - [x] 1.3 Set fixed position, covers entire viewport, z-index: 0
+  - [x] 1.4 Add `data-testid="epg-background"` for testing
 
-- [ ] Task 2: Create three-panel layout container (AC: #1)
-  - [ ] 2.1 Create `src/components/epg/tv-style/EpgMainContent.tsx`
-  - [ ] 2.2 Implement flex row layout below top bar (top bar comes in Story 5.7)
-  - [ ] 2.3 Left panel container: ~30% width, `rgba(0, 0, 0, 0.6)` background
-  - [ ] 2.4 Center panel container: ~30% width, `rgba(0, 0, 0, 0.5)` background
-  - [ ] 2.5 Right panel container: ~40% width, `rgba(0, 0, 0, 0.5)` background
-  - [ ] 2.6 Add proper padding and rounded corners (optional, subtle)
-  - [ ] 2.7 Add `data-testid` attributes: `epg-left-panel`, `epg-center-panel`, `epg-right-panel`
+- [x] Task 2: Create three-panel layout container (AC: #1)
+  - [x] 2.1 Create `src/components/epg/tv-style/EpgMainContent.tsx`
+  - [x] 2.2 Implement flex row layout below top bar (top bar comes in Story 5.7)
+  - [x] 2.3 Left panel container: ~30% width, `rgba(0, 0, 0, 0.6)` background
+  - [x] 2.4 Center panel container: ~30% width, `rgba(0, 0, 0, 0.5)` background
+  - [x] 2.5 Right panel container: ~40% width, `rgba(0, 0, 0, 0.5)` background
+  - [x] 2.6 Add proper padding and rounded corners (optional, subtle)
+  - [x] 2.7 Add `data-testid` attributes: `epg-left-panel`, `epg-center-panel`, `epg-right-panel`
 
-- [ ] Task 3: Create placeholder channel list panel (AC: #1, #2)
-  - [ ] 3.1 Create `src/components/epg/tv-style/EpgChannelListPlaceholder.tsx`
-  - [ ] 3.2 Display placeholder text: "Channel list (Story 5.5)"
-  - [ ] 3.3 Apply semi-transparent dark background styling
-  - [ ] 3.4 Maintain scroll container for future virtualized list
+- [x] Task 3: Create placeholder channel list panel (AC: #1, #2)
+  - [x] 3.1 Create `src/components/epg/tv-style/EpgChannelListPlaceholder.tsx`
+  - [x] 3.2 Display placeholder text: "Channel list (Story 5.5)"
+  - [x] 3.3 Apply semi-transparent dark background styling
+  - [x] 3.4 Maintain scroll container for future virtualized list
 
-- [ ] Task 4: Create placeholder schedule panel (AC: #1, #2)
-  - [ ] 4.1 Create `src/components/epg/tv-style/EpgSchedulePanelPlaceholder.tsx`
-  - [ ] 4.2 Display placeholder text: "Schedule panel (Story 5.6)"
-  - [ ] 4.3 Include date header placeholder
-  - [ ] 4.4 Apply semi-transparent dark background styling
+- [x] Task 4: Create placeholder schedule panel (AC: #1, #2)
+  - [x] 4.1 Create `src/components/epg/tv-style/EpgSchedulePanelPlaceholder.tsx`
+  - [x] 4.2 Display placeholder text: "Schedule panel (Story 5.6)"
+  - [x] 4.3 Include date header placeholder
+  - [x] 4.4 Apply semi-transparent dark background styling
 
-- [ ] Task 5: Create placeholder details panel with visibility logic (AC: #2, #3)
-  - [ ] 5.1 Create `src/components/epg/tv-style/EpgDetailsPanelPlaceholder.tsx`
-  - [ ] 5.2 Accept `isVisible` prop to control display
-  - [ ] 5.3 When `isVisible=false`: show gradient background only (empty state)
-  - [ ] 5.4 When `isVisible=true`: show placeholder for details content
-  - [ ] 5.5 Display placeholder text: "Program details (Story 5.8)"
-  - [ ] 5.6 Apply semi-transparent dark background when visible
+- [x] Task 5: Create placeholder details panel with visibility logic (AC: #2, #3)
+  - [x] 5.1 Create `src/components/epg/tv-style/EpgDetailsPanelPlaceholder.tsx`
+  - [x] 5.2 Accept `isVisible` prop to control display
+  - [x] 5.3 When `isVisible=false`: show gradient background only (empty state)
+  - [x] 5.4 When `isVisible=true`: show placeholder for details content
+  - [x] 5.5 Display placeholder text: "Program details (Story 5.8)"
+  - [x] 5.6 Apply semi-transparent dark background when visible
 
-- [ ] Task 6: Create new EPG TV view page (AC: #1, #2, #3)
-  - [ ] 6.1 Create `src/views/EpgTv.tsx` (new view, parallel to existing EPG.tsx)
-  - [ ] 6.2 Compose all layout components: EpgBackground, EpgMainContent, three panels
-  - [ ] 6.3 Add state for `selectedProgram` (null initially)
-  - [ ] 6.4 Wire visibility logic: right panel visible only when selectedProgram is not null
-  - [ ] 6.5 Add temporary toggle button to test right panel visibility
-  - [ ] 6.6 Add `data-testid="epg-tv-view"` to root container
+- [x] Task 6: Create new EPG TV view page (AC: #1, #2, #3)
+  - [x] 6.1 Create `src/views/EpgTv.tsx` (new view, parallel to existing EPG.tsx)
+  - [x] 6.2 Compose all layout components: EpgBackground, EpgMainContent, three panels
+  - [x] 6.3 Add state for `selectedProgram` (null initially)
+  - [x] 6.4 Wire visibility logic: right panel visible only when selectedProgram is not null
+  - [x] 6.5 Add temporary toggle button to test right panel visibility
+  - [x] 6.6 Add `data-testid="epg-tv-view"` to root container
 
-- [ ] Task 7: Add routing for new EPG TV view
-  - [ ] 7.1 Update `src/App.tsx` to add route `/epg-tv` pointing to EpgTv view
-  - [ ] 7.2 Keep existing `/epg` route unchanged (legacy grid view)
-  - [ ] 7.3 Consider future switch: make `/epg` point to new view after all stories complete
+- [x] Task 7: Add routing for new EPG TV view
+  - [x] 7.1 Update `src/router.tsx` to add route `/epg-tv` pointing to EpgTv view
+  - [x] 7.2 Keep existing `/epg` route unchanged (legacy grid view)
+  - [x] 7.3 Consider future switch: make `/epg` point to new view after all stories complete
 
-- [ ] Task 8: Create component exports and structure
-  - [ ] 8.1 Create `src/components/epg/tv-style/index.ts` with all exports
-  - [ ] 8.2 Update `src/components/epg/index.ts` to re-export tv-style components
-  - [ ] 8.3 Ensure TypeScript compilation succeeds
-  - [ ] 8.4 Ensure Vite build succeeds
+- [x] Task 8: Create component exports and structure
+  - [x] 8.1 Create `src/components/epg/tv-style/index.ts` with all exports
+  - [x] 8.2 Update `src/components/epg/index.ts` to re-export tv-style components
+  - [x] 8.3 Ensure TypeScript compilation succeeds
+  - [x] 8.4 Ensure Vite build succeeds
 
 ## Dev Notes
 
@@ -269,10 +269,53 @@ From Story 5.3 code review:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Debug Log References
 
+- All E2E tests pass (5/5)
+- TypeScript compilation: SUCCESS
+- Vite build: SUCCESS
+
 ### Completion Notes List
 
+1. **Task 1 - EpgBackground.tsx**: Created gradient background component with fixed position, diagonal gradient (135deg, #1a1a2e → #16213e → #0f3460), z-index: 0, and data-testid for testing.
+
+2. **Task 2 - EpgMainContent.tsx**: Implemented three-panel flex layout container with proper widths (~30%, ~30%, ~40%), semi-transparent dark backgrounds (rgba(0,0,0,0.6/0.5/0.5)), rounded corners, and data-testid attributes for each panel.
+
+3. **Task 3 - EpgChannelListPlaceholder.tsx**: Created placeholder for left panel with "Channel list (Story 5.5)" text, scroll container prepared for future virtualized list.
+
+4. **Task 4 - EpgSchedulePanelPlaceholder.tsx**: Created placeholder for center panel with date header placeholder and "Schedule panel (Story 5.6)" text.
+
+5. **Task 5 - EpgDetailsPanelPlaceholder.tsx**: Created placeholder for right panel with `isVisible` prop controlling display. When false, shows empty state with gradient showing through. When true, shows "Program details (Story 5.8)" with data-testid="epg-details-content".
+
+6. **Task 6 - EpgTv.tsx**: Created new EPG TV view composing all components, with useState for selectedProgram (null initially), visibility logic for right panel, and temporary toggle button for testing AC3.
+
+7. **Task 7 - Routing**: Added `/epg-tv` route to router.tsx and routes.ts, keeping existing `/epg` route unchanged.
+
+8. **Task 8 - Exports**: Created tv-style/index.ts barrel export, updated components/epg/index.ts to re-export, added EpgTv to views/index.ts. All builds pass.
+
+### Change Log
+
+- 2026-01-22: Initial implementation of Story 5.4 - EPG TV-Style Layout Foundation
+  - Created 6 new components in src/components/epg/tv-style/
+  - Created new EpgTv view in src/views/
+  - Added /epg-tv route
+  - All 5 E2E tests pass
+
 ### File List
+
+**New Files:**
+- src/components/epg/tv-style/EpgBackground.tsx
+- src/components/epg/tv-style/EpgMainContent.tsx
+- src/components/epg/tv-style/EpgChannelListPlaceholder.tsx
+- src/components/epg/tv-style/EpgSchedulePanelPlaceholder.tsx
+- src/components/epg/tv-style/EpgDetailsPanelPlaceholder.tsx
+- src/components/epg/tv-style/index.ts
+- src/views/EpgTv.tsx
+
+**Modified Files:**
+- src/components/epg/index.ts (added tv-style exports)
+- src/views/index.ts (added EpgTv export)
+- src/lib/routes.ts (added EPG_TV route constant)
+- src/router.tsx (added /epg-tv route)
