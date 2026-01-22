@@ -19,6 +19,8 @@ interface EpgSchedulePanelProps {
   selectedProgramId?: number | null;
   /** Callback when a program is selected */
   onSelectProgram?: (programId: number) => void;
+  /** Optional time window for day navigation (Story 5.7) */
+  selectedDate?: { startTime: string; endTime: string };
 }
 
 /**
@@ -33,10 +35,14 @@ export function EpgSchedulePanel({
   selectedChannelId,
   selectedProgramId,
   onSelectProgram,
+  selectedDate,
 }: EpgSchedulePanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const currentProgramRef = useRef<HTMLDivElement>(null);
-  const { programs, isLoading, error, currentProgramId } = useChannelSchedule(selectedChannelId);
+  const { programs, isLoading, error, currentProgramId } = useChannelSchedule(
+    selectedChannelId,
+    selectedDate
+  );
 
   // Auto-scroll to current program on initial load and channel change (AC #3)
   useEffect(() => {

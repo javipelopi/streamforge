@@ -3,6 +3,7 @@
  * Story 5.4: EPG TV-Style Layout Foundation
  * Story 5.5: EPG Channel List Panel
  * Story 5.6: EPG Schedule Panel
+ * Story 5.7: EPG Top Bar with Search and Day Navigation
  *
  * Exports all components for the TV-style EPG interface.
  */
@@ -21,3 +22,11 @@ export { EpgProgressBar } from './EpgProgressBar';
 export { EpgSchedulePanel } from './EpgSchedulePanel';
 export { ScheduleHeader } from './ScheduleHeader';
 export { ScheduleRow } from './ScheduleRow';
+
+// Story 5.7: EPG Top Bar with Search and Day Navigation
+export { EpgTopBar } from './EpgTopBar';
+export { EpgSearchInput } from './EpgSearchInput';
+export { EpgSearchResults } from './EpgSearchResults';
+export { DayNavigationBar } from './DayNavigationBar';
+export { DayChip } from './DayChip';
+export { DatePickerButton } from './DatePickerButton';

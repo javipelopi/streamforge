@@ -61,9 +61,16 @@ const NOW_STATUS_REFRESH_INTERVAL_MS = 60_000;
 
 /**
  * Get time window for schedule display (6 AM today to 6 AM tomorrow)
+ * @param selectedDate - Optional selected date for day navigation (Story 5.7)
  * @returns Start and end time ISO strings
  */
-function getScheduleTimeWindow(): { startTime: string; endTime: string } {
+function getScheduleTimeWindow(selectedDate?: { startTime: string; endTime: string }): { startTime: string; endTime: string } {
+  // If a selected date is provided (from day navigation), use it
+  if (selectedDate) {
+    return selectedDate;
+  }
+
+  // Default: 6 AM today to 6 AM tomorrow
   const now = new Date();
 
   // Start of day at 6 AM
@@ -97,10 +104,17 @@ function getScheduleTimeWindow(): { startTime: string; endTime: string } {
  * - 5.6: Implement helper to determine if program is NOW, PAST, or FUTURE
  * - 5.7: Sort programs by start time ascending
  *
+ * Story 5.7 Enhancement:
+ * - Added optional selectedDate parameter for day navigation
+ *
  * @param channelId - Selected channel ID (null if no channel selected)
+ * @param selectedDate - Optional time window for day navigation (Story 5.7)
  * @returns Schedule data, loading state, error, and refresh function
  */
-export function useChannelSchedule(channelId: number | null): UseChannelScheduleResult {
+export function useChannelSchedule(
+  channelId: number | null,
+  selectedDate?: { startTime: string; endTime: string }
+): UseChannelScheduleResult {
   const [programs, setPrograms] = useState<ScheduleProgram[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,7 +152,7 @@ export function useChannelSchedule(channelId: number | null): UseChannelSchedule
     setError(null);
 
     try {
-      const { startTime, endTime } = getScheduleTimeWindow();
+      const { startTime, endTime } = getScheduleTimeWindow(selectedDate);
       const channelData = await getEnabledChannelsWithPrograms(startTime, endTime);
 
       // Only update state if component is still mounted
@@ -189,7 +203,7 @@ export function useChannelSchedule(channelId: number | null): UseChannelSchedule
       }
       isFetchingRef.current = false;
     }
-  }, [channelId]);
+  }, [channelId, selectedDate]);
 
   /**
    * Update NOW status for existing programs without re-fetching
