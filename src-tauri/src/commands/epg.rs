@@ -1014,6 +1014,148 @@ pub struct EpgGridProgram {
     pub description: Option<String>,
 }
 
+// ============================================================================
+// EPG Search Commands (Story 5.2)
+// ============================================================================
+
+/// Match type for search result relevance
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SearchMatchType {
+    Title,
+    Channel,
+    Description,
+}
+
+/// Search result for EPG program search
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EpgSearchResult {
+    pub program_id: i32,
+    pub title: String,
+    pub description: Option<String>,
+    pub start_time: String,
+    pub end_time: String,
+    pub category: Option<String>,
+    pub channel_id: i32,
+    pub channel_name: String,
+    pub channel_icon: Option<String>,
+    pub match_type: SearchMatchType,
+    pub relevance_score: f64,
+}
+
+/// Search EPG programs by title, description, or channel name
+///
+/// Story 5.2: EPG Search Functionality
+/// AC #2: Search filters by title, description, channel name (enabled channels only)
+///
+/// This query:
+/// 1. Filters by xmltv_channel_settings.is_enabled = true
+/// 2. Matches title, description, or channel name with LIKE
+/// 3. Returns only future/current programs (end_time > now)
+/// 4. Orders by relevance (title > channel > description) then start_time
+/// 5. Limits results to 50 for performance
+#[tauri::command]
+pub async fn search_epg_programs(
+    db: State<'_, DbConnection>,
+    query: String,
+) -> Result<Vec<EpgSearchResult>, String> {
+    // Return empty results for empty query
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    // Current time for filtering past programs
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+
+    // Escape special SQL LIKE characters
+    let escaped_query = query.replace('%', r"\%").replace('_', r"\_");
+    let like_pattern = format!("%{}%", escaped_query);
+
+    // First get all enabled channel IDs for efficient filtering
+    let enabled_channel_ids: Vec<i32> = xmltv_channels::table
+        .inner_join(xmltv_channel_settings::table)
+        .filter(xmltv_channel_settings::is_enabled.eq(1))
+        .select(xmltv_channels::id.assume_not_null())
+        .load::<i32>(&mut conn)
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    if enabled_channel_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Search programs in enabled channels only
+    let results: Vec<(Program, XmltvChannel)> = programs::table
+        .inner_join(xmltv_channels::table)
+        .filter(programs::xmltv_channel_id.eq_any(&enabled_channel_ids))
+        .filter(programs::end_time.gt(&now))
+        .filter(
+            programs::title.like(&like_pattern)
+                .or(programs::description.like(&like_pattern))
+                .or(xmltv_channels::display_name.like(&like_pattern))
+        )
+        .select((programs::all_columns, xmltv_channels::all_columns))
+        .order(programs::start_time.asc())
+        .limit(50)
+        .load::<(Program, XmltvChannel)>(&mut conn)
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    // Convert to search results with relevance scoring
+    let query_lower = query.to_lowercase();
+    let search_results: Vec<EpgSearchResult> = results
+        .into_iter()
+        .map(|(program, channel)| {
+            // Determine match type and score
+            let title_lower = program.title.to_lowercase();
+            let channel_lower = channel.display_name.to_lowercase();
+            let desc_lower = program.description.as_ref()
+                .map(|d| d.to_lowercase())
+                .unwrap_or_default();
+
+            let (match_type, relevance_score) = if title_lower.contains(&query_lower) {
+                (SearchMatchType::Title, 1.0)
+            } else if channel_lower.contains(&query_lower) {
+                (SearchMatchType::Channel, 0.8)
+            } else if desc_lower.contains(&query_lower) {
+                (SearchMatchType::Description, 0.6)
+            } else {
+                // Shouldn't happen due to filter, but handle gracefully
+                (SearchMatchType::Description, 0.5)
+            };
+
+            EpgSearchResult {
+                program_id: program.id.unwrap_or(0),
+                title: program.title,
+                description: program.description,
+                start_time: program.start_time,
+                end_time: program.end_time,
+                category: program.category,
+                channel_id: channel.id.unwrap_or(0),
+                channel_name: channel.display_name,
+                channel_icon: channel.icon,
+                match_type,
+                relevance_score,
+            }
+        })
+        .collect();
+
+    // Sort by relevance (title matches first), then by start time
+    let mut sorted_results = search_results;
+    sorted_results.sort_by(|a, b| {
+        // Higher relevance first
+        b.relevance_score.partial_cmp(&a.relevance_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.start_time.cmp(&b.start_time))
+    });
+
+    Ok(sorted_results)
+}
+
 /// Channel data with programs for EPG grid display
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -1138,5 +1280,68 @@ mod tests {
         assert!(validate_format("json").is_err());
         assert!(validate_format("xml.gz").is_err()); // Note: underscores, not dots
         assert!(validate_format("").is_err());
+    }
+
+    // ============================================================================
+    // EPG Search Tests (Story 5.2)
+    // ============================================================================
+
+    #[test]
+    fn test_search_match_type_serialization() {
+        // Test that match types serialize to camelCase correctly
+        let title_match = SearchMatchType::Title;
+        let channel_match = SearchMatchType::Channel;
+        let desc_match = SearchMatchType::Description;
+
+        assert_eq!(
+            serde_json::to_string(&title_match).unwrap(),
+            "\"title\""
+        );
+        assert_eq!(
+            serde_json::to_string(&channel_match).unwrap(),
+            "\"channel\""
+        );
+        assert_eq!(
+            serde_json::to_string(&desc_match).unwrap(),
+            "\"description\""
+        );
+    }
+
+    #[test]
+    fn test_epg_search_result_serialization() {
+        let result = EpgSearchResult {
+            program_id: 123,
+            title: "Breaking News".to_string(),
+            description: Some("Latest updates".to_string()),
+            start_time: "2026-01-22T20:00:00".to_string(),
+            end_time: "2026-01-22T21:00:00".to_string(),
+            category: Some("News".to_string()),
+            channel_id: 1,
+            channel_name: "CNN".to_string(),
+            channel_icon: Some("http://example.com/cnn.png".to_string()),
+            match_type: SearchMatchType::Title,
+            relevance_score: 1.0,
+        };
+
+        let json = serde_json::to_value(&result).unwrap();
+
+        // Verify camelCase serialization
+        assert_eq!(json["programId"], 123);
+        assert_eq!(json["title"], "Breaking News");
+        assert_eq!(json["channelId"], 1);
+        assert_eq!(json["channelName"], "CNN");
+        assert_eq!(json["matchType"], "title");
+        assert_eq!(json["relevanceScore"], 1.0);
+        assert_eq!(json["startTime"], "2026-01-22T20:00:00");
+        assert_eq!(json["endTime"], "2026-01-22T21:00:00");
+    }
+
+    #[test]
+    fn test_search_match_type_equality() {
+        assert_eq!(SearchMatchType::Title, SearchMatchType::Title);
+        assert_eq!(SearchMatchType::Channel, SearchMatchType::Channel);
+        assert_eq!(SearchMatchType::Description, SearchMatchType::Description);
+        assert_ne!(SearchMatchType::Title, SearchMatchType::Channel);
+        assert_ne!(SearchMatchType::Channel, SearchMatchType::Description);
     }
 }

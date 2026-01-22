@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
 import { EpgGrid } from '../components/epg/EpgGrid';
 import { TimeNavigationBar } from '../components/epg/TimeNavigationBar';
+import { EpgSearchInput } from '../components/epg/EpgSearchInput';
+import { EpgSearchResults } from '../components/epg/EpgSearchResults';
 import {
   useEpgGridData,
   getCurrentTimeWindow,
@@ -9,19 +11,23 @@ import {
   shiftTimeWindow,
   createTimeWindow,
 } from '../hooks/useEpgGridData';
-import type { EpgGridProgram } from '../lib/tauri';
+import { useEpgSearch } from '../hooks/useEpgSearch';
+import type { EpgGridProgram, EpgSearchResult } from '../lib/tauri';
 
 /**
  * EPG View - Electronic Program Guide Browser
  *
  * Story 5.1: EPG Grid Browser with Time Navigation
- * Task 6: Update EPG view page
+ * Story 5.2: EPG Search Functionality
+ * Task 6: Update EPG view page with search integration
  *
  * Features:
  * - Grid with enabled channels, time slots, program cells (AC#1)
  * - Time navigation controls (Now, Tonight, Tomorrow, +/- day, date picker) (AC#2)
  * - Responsive UI with TanStack Virtual (AC#3)
  * - Program cell click opens details panel (AC#4 - event emitted)
+ * - Search input with debounced search (Story 5.2 AC#1)
+ * - Search results with navigation to program (Story 5.2 AC#4)
  * - Loading and empty states
  */
 export function EPG() {
@@ -35,6 +41,17 @@ export function EPG() {
     initialWindow.startTime,
     initialWindow.endTime
   );
+
+  // Search state and handlers
+  const {
+    query: searchQuery,
+    results: searchResults,
+    isSearching,
+    isResultsVisible,
+    onSearch,
+    onClear: onSearchClear,
+    onResultSelect,
+  } = useEpgSearch();
 
   // Time navigation handlers
   const handleNow = useCallback(() => {
@@ -81,6 +98,17 @@ export function EPG() {
     // For now, we just store the selection
     console.log('Program selected:', program);
   }, []);
+
+  // Search result selection handler - navigates grid to program time
+  const handleSearchResultClick = useCallback(
+    (result: EpgSearchResult) => {
+      const timeWindow = onResultSelect(result);
+      if (timeWindow) {
+        setTimeWindow(timeWindow.startTime, timeWindow.endTime);
+      }
+    },
+    [onResultSelect, setTimeWindow]
+  );
 
   // Loading state
   if (isLoading && !data) {
@@ -159,19 +187,43 @@ export function EPG() {
   // Main EPG grid view
   return (
     <div data-testid="epg-view" className="flex flex-col h-full">
-      {data?.timeWindow && (
-        <TimeNavigationBar
-          timeWindow={data.timeWindow}
-          onNow={handleNow}
-          onTonight={handleTonight}
-          onTomorrow={handleTomorrow}
-          onPrevDay={handlePrevDay}
-          onNextDay={handleNextDay}
-          onDateChange={handleDateChange}
-        />
-      )}
+      {/* Header row with navigation and search */}
+      <div className="flex items-center bg-white border-b border-gray-200">
+        {/* Time navigation controls */}
+        {data?.timeWindow && (
+          <TimeNavigationBar
+            timeWindow={data.timeWindow}
+            onNow={handleNow}
+            onTonight={handleTonight}
+            onTomorrow={handleTomorrow}
+            onPrevDay={handlePrevDay}
+            onNextDay={handleNextDay}
+            onDateChange={handleDateChange}
+          />
+        )}
 
-      <div className="flex-1 min-h-0">
+        {/* Search input with results dropdown - positioned after nav bar */}
+        <div className="relative ml-auto pr-3 py-2">
+          <EpgSearchInput
+            value={searchQuery}
+            onSearch={onSearch}
+            onClear={onSearchClear}
+            isLoading={isSearching}
+            placeholder="Search programs..."
+          />
+          {isResultsVisible && (
+            <EpgSearchResults
+              results={searchResults}
+              query={searchQuery}
+              onResultClick={handleSearchResultClick}
+              isLoading={isSearching}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* EPG Grid */}
+      <div data-testid="epg-grid" className="flex-1 min-h-0">
         {data && (
           <EpgGrid
             channels={data.channels}

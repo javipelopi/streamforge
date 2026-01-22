@@ -318,3 +318,180 @@ pub fn clear_stream_proxy_test_data(db: State<DbConnection>) -> Result<SeedRespo
         records_created: 0,
     })
 }
+
+// ============================================================================
+// EPG Search Test Data Commands (Story 5.2)
+// ============================================================================
+
+use crate::db::schema::programs;
+
+/// Create a test XMLTV channel
+/// Used by epg-search.fixture.ts for test data setup
+#[tauri::command]
+pub fn create_test_xmltv_channel(
+    db: State<DbConnection>,
+    id: i32,
+    display_name: String,
+    icon: Option<String>,
+) -> Result<SeedResponse, String> {
+    if !is_test_mode() {
+        return Err("Test data creation is only available in test mode (IPTV_TEST_MODE=1)".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    // Ensure a default source exists
+    diesel::sql_query(
+        "INSERT OR IGNORE INTO xmltv_sources (id, name, url, format, is_active, refresh_hour, created_at, updated_at)
+         VALUES (1, 'Test EPG Source', 'http://test-epg.local/epg.xml', 'xml', 1, 3, datetime('now'), datetime('now'))"
+    )
+    .execute(&mut conn)
+    .map_err(|e| format!("Failed to ensure xmltv_source: {}", e))?;
+
+    // Create the channel
+    let icon_value = icon.as_deref().unwrap_or("");
+    diesel::sql_query(format!(
+        "INSERT OR REPLACE INTO xmltv_channels (id, source_id, channel_id, display_name, icon, is_synthetic, created_at, updated_at)
+         VALUES ({}, 1, 'test.channel.{}', '{}', '{}', 0, datetime('now'), datetime('now'))",
+        id, id, display_name.replace('\'', "''"), icon_value
+    ))
+    .execute(&mut conn)
+    .map_err(|e| format!("Failed to create test xmltv_channel: {}", e))?;
+
+    Ok(SeedResponse {
+        success: true,
+        message: format!("Created test XMLTV channel: {}", display_name),
+        records_created: 1,
+    })
+}
+
+/// Set XMLTV channel enabled/disabled state and display order
+/// Used by epg-search.fixture.ts for test data setup
+#[tauri::command]
+pub fn set_xmltv_channel_enabled(
+    db: State<DbConnection>,
+    channel_id: i32,
+    enabled: bool,
+    plex_display_order: i32,
+) -> Result<SeedResponse, String> {
+    if !is_test_mode() {
+        return Err("Test data modification is only available in test mode (IPTV_TEST_MODE=1)".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    let is_enabled = if enabled { 1 } else { 0 };
+
+    diesel::sql_query(format!(
+        "INSERT OR REPLACE INTO xmltv_channel_settings (xmltv_channel_id, is_enabled, plex_display_order, created_at, updated_at)
+         VALUES ({}, {}, {}, datetime('now'), datetime('now'))",
+        channel_id, is_enabled, plex_display_order
+    ))
+    .execute(&mut conn)
+    .map_err(|e| format!("Failed to set channel settings: {}", e))?;
+
+    Ok(SeedResponse {
+        success: true,
+        message: format!("Set channel {} enabled={}", channel_id, enabled),
+        records_created: 1,
+    })
+}
+
+/// Create a test program
+/// Used by epg-search.fixture.ts for test data setup
+#[tauri::command]
+pub fn create_test_program(
+    db: State<DbConnection>,
+    xmltv_channel_id: i32,
+    title: String,
+    start_time: String,
+    end_time: String,
+    category: Option<String>,
+    description: Option<String>,
+) -> Result<SeedResponse, String> {
+    if !is_test_mode() {
+        return Err("Test data creation is only available in test mode (IPTV_TEST_MODE=1)".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    let category_val = category.as_deref().unwrap_or("");
+    let description_val = description.as_deref().unwrap_or("");
+
+    diesel::sql_query(format!(
+        "INSERT INTO programs (xmltv_channel_id, title, description, start_time, end_time, category, created_at)
+         VALUES ({}, '{}', '{}', '{}', '{}', '{}', datetime('now'))",
+        xmltv_channel_id,
+        title.replace('\'', "''"),
+        description_val.replace('\'', "''"),
+        start_time,
+        end_time,
+        category_val
+    ))
+    .execute(&mut conn)
+    .map_err(|e| format!("Failed to create test program: {}", e))?;
+
+    Ok(SeedResponse {
+        success: true,
+        message: format!("Created test program: {}", title),
+        records_created: 1,
+    })
+}
+
+/// Delete all test data for a specific channel
+/// Used by epg-search.fixture.ts for cleanup
+#[tauri::command]
+pub fn delete_test_channel_data(
+    db: State<DbConnection>,
+    channel_id: i32,
+) -> Result<SeedResponse, String> {
+    if !is_test_mode() {
+        return Err("Test data deletion is only available in test mode (IPTV_TEST_MODE=1)".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    let mut records_deleted = 0;
+
+    // Delete programs for this channel
+    let prog_deleted = diesel::delete(programs::table.filter(programs::xmltv_channel_id.eq(channel_id)))
+        .execute(&mut conn)
+        .map_err(|e| format!("Failed to delete programs: {}", e))?;
+    records_deleted += prog_deleted;
+
+    // Delete channel settings
+    let settings_deleted = diesel::delete(
+        xmltv_channel_settings::table.filter(xmltv_channel_settings::xmltv_channel_id.eq(channel_id))
+    )
+    .execute(&mut conn)
+    .map_err(|e| format!("Failed to delete channel settings: {}", e))?;
+    records_deleted += settings_deleted;
+
+    // Delete channel mappings
+    let mappings_deleted = diesel::delete(
+        channel_mappings::table.filter(channel_mappings::xmltv_channel_id.eq(channel_id))
+    )
+    .execute(&mut conn)
+    .map_err(|e| format!("Failed to delete channel mappings: {}", e))?;
+    records_deleted += mappings_deleted;
+
+    // Delete the channel
+    let channel_deleted = diesel::delete(xmltv_channels::table.filter(xmltv_channels::id.eq(channel_id)))
+        .execute(&mut conn)
+        .map_err(|e| format!("Failed to delete channel: {}", e))?;
+    records_deleted += channel_deleted;
+
+    Ok(SeedResponse {
+        success: true,
+        message: format!("Deleted test data for channel {}", channel_id),
+        records_created: records_deleted,
+    })
+}

@@ -1402,3 +1402,106 @@ export async function getEnabledChannelsWithPrograms(
     endTime,
   });
 }
+
+// ============================================================================
+// EPG Search types and functions (Story 5.2)
+// ============================================================================
+
+/** Match type for search result relevance */
+export type EpgSearchMatchType = 'title' | 'channel' | 'description';
+
+/** Search result for EPG program search */
+export interface EpgSearchResult {
+  programId: number;
+  title: string;
+  description?: string;
+  startTime: string;
+  endTime: string;
+  category?: string;
+  channelId: number;
+  channelName: string;
+  channelIcon?: string;
+  /** Match type for relevance: 'title', 'channel', 'description' */
+  matchType: EpgSearchMatchType;
+  /** Match score 0-1 for relevance ordering */
+  relevanceScore: number;
+}
+
+/**
+ * Search EPG programs by title, description, or channel name
+ *
+ * Story 5.2: EPG Search Functionality
+ * AC #2: Search filters by title, description, channel name (enabled channels only)
+ *
+ * @param query - Search query string
+ * @returns List of matching programs with relevance scores
+ */
+export async function searchEpgPrograms(query: string): Promise<EpgSearchResult[]> {
+  return invoke<EpgSearchResult[]>('search_epg_programs', { query });
+}
+
+/**
+ * Get relevance indicator display text based on search match type
+ *
+ * Story 5.2: AC #3 - Results show relevance indicator
+ *
+ * @param matchType - The match type from search result
+ * @returns Human-readable relevance indicator
+ */
+export function getEpgSearchMatchTypeDisplay(matchType: EpgSearchMatchType): string {
+  switch (matchType) {
+    case 'title':
+      return 'Title match';
+    case 'channel':
+      return 'Channel match';
+    case 'description':
+      return 'Description match';
+    default:
+      return 'Match';
+  }
+}
+
+/**
+ * Get relevance badge color classes based on match type
+ *
+ * @param matchType - The match type from search result
+ * @returns Tailwind CSS classes for the badge
+ */
+export function getMatchTypeBadgeClasses(matchType: EpgSearchMatchType): string {
+  switch (matchType) {
+    case 'title':
+      return 'bg-green-100 text-green-800'; // Highest relevance
+    case 'channel':
+      return 'bg-blue-100 text-blue-800'; // Medium relevance
+    case 'description':
+      return 'bg-gray-100 text-gray-800'; // Lower relevance
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+}
+
+/**
+ * Format program duration from start and end times
+ *
+ * @param startTime - ISO start time string
+ * @param endTime - ISO end time string
+ * @returns Formatted duration string (e.g., "1h 30m")
+ */
+export function formatProgramDuration(startTime: string, endTime: string): string {
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+  const durationMinutes = Math.round((end.getTime() - start.getTime()) / (1000 * 60));
+
+  if (durationMinutes < 60) {
+    return `${durationMinutes}m`;
+  }
+
+  const hours = Math.floor(durationMinutes / 60);
+  const minutes = durationMinutes % 60;
+
+  if (minutes === 0) {
+    return `${hours}h`;
+  }
+
+  return `${hours}h ${minutes}m`;
+}
