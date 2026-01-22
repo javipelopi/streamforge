@@ -242,6 +242,33 @@ test.describe('EPG Program Details Panel', () => {
     await expect(programRow).not.toHaveAttribute('aria-selected', 'true');
   });
 
+  test('should close details panel when clicking close button (AC3)', async ({
+    page,
+    programDetailsData,
+    programDetailsApi,
+  }) => {
+    // GIVEN: User has program details panel visible
+    await page.goto('/epg-tv');
+    await page.getByTestId(`channel-row-${programDetailsData.channelId}`).click();
+    await page.waitForTimeout(500);
+    await programDetailsApi.selectProgram(programDetailsData.programId);
+
+    const detailsPanel = page.getByTestId('epg-program-details');
+    await expect(detailsPanel).toBeVisible();
+
+    // WHEN: User clicks the close button
+    const closeButton = page.getByTestId('details-close-button');
+    await expect(closeButton).toBeVisible();
+    await closeButton.click();
+
+    // THEN: Details panel is closed/hidden
+    await expect(detailsPanel).not.toBeVisible();
+
+    // AND: Program selection is cleared
+    const programRow = page.getByTestId(`schedule-row-${programDetailsData.programId}`);
+    await expect(programRow).not.toHaveAttribute('aria-selected', 'true');
+  });
+
   test('should close details panel when clicking outside (AC3)', async ({
     page,
     programDetailsData,
