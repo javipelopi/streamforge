@@ -104,7 +104,9 @@ function getProgramLeftOffset(
  */
 export function EpgGrid({ channels, timeWindow, onProgramClick }: EpgGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const now = useMemo(() => new Date(), []);
+  // Don't cache 'now' - needs to update for "currently airing" indicator
+  // FIXED: Code review issue #3 - memory leak from cached Date object
+  const now = new Date();
 
   // Generate time slots for the current time window
   const timeSlots = useMemo(() => generateTimeSlots(timeWindow), [timeWindow]);
