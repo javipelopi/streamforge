@@ -12,8 +12,8 @@ export interface EpgGridProps {
   channels: EpgGridChannel[];
   /** Current time window being displayed */
   timeWindow: TimeWindow;
-  /** Handler when a program is clicked */
-  onProgramClick: (program: EpgGridProgram) => void;
+  /** Handler when a program is clicked - includes channel for details panel */
+  onProgramClick: (program: EpgGridProgram, channel: EpgGridChannel) => void;
 }
 
 // Constants for grid layout
@@ -139,10 +139,10 @@ export function EpgGrid({ channels, timeWindow, onProgramClick }: EpgGridProps) 
     overscan: OVERSCAN_COUNT,
   });
 
-  // Handle program click
+  // Handle program click - pass channel for details panel
   const handleProgramClick = useCallback(
-    (program: EpgGridProgram) => {
-      onProgramClick(program);
+    (program: EpgGridProgram, channel: EpgGridChannel) => {
+      onProgramClick(program, channel);
     },
     [onProgramClick]
   );
@@ -270,7 +270,7 @@ export function EpgGrid({ channels, timeWindow, onProgramClick }: EpgGridProps) 
                         <EpgCell
                           program={program}
                           slotWidth={TIME_SLOT_WIDTH}
-                          onClick={() => handleProgramClick(program)}
+                          onClick={() => handleProgramClick(program, channel)}
                           isCurrentlyAiring={isAiring}
                         />
                       </div>

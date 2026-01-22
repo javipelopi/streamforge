@@ -3,6 +3,8 @@ import { EpgGrid } from '../components/epg/EpgGrid';
 import { TimeNavigationBar } from '../components/epg/TimeNavigationBar';
 import { EpgSearchInput } from '../components/epg/EpgSearchInput';
 import { EpgSearchResults } from '../components/epg/EpgSearchResults';
+import { ProgramDetailsPanel } from '../components/epg/ProgramDetailsPanel';
+import type { ProgramDetailsData } from '../components/epg/ProgramDetailsPanel';
 import {
   useEpgGridData,
   getCurrentTimeWindow,
@@ -12,7 +14,8 @@ import {
   createTimeWindow,
 } from '../hooks/useEpgGridData';
 import { useEpgSearch } from '../hooks/useEpgSearch';
-import type { EpgGridProgram, EpgSearchResult } from '../lib/tauri';
+import { getChannelStreamInfo } from '../lib/tauri';
+import type { EpgGridProgram, EpgSearchResult, ChannelStreamInfo, EpgGridChannel } from '../lib/tauri';
 
 /**
  * EPG View - Electronic Program Guide Browser
@@ -33,8 +36,11 @@ import type { EpgGridProgram, EpgSearchResult } from '../lib/tauri';
 export function EPG() {
   // Initialize with current time window (3 hours centered on now)
   const initialWindow = getCurrentTimeWindow(3);
-  // Store selected program for future Story 5.3 (details panel)
-  const [_selectedProgram, setSelectedProgram] = useState<EpgGridProgram | null>(null);
+
+  // Story 5.3: Program details panel state
+  const [selectedProgramDetails, setSelectedProgramDetails] = useState<ProgramDetailsData | null>(null);
+  const [streamInfo, setStreamInfo] = useState<ChannelStreamInfo | null>(null);
+  const [isLoadingStreamInfo, setIsLoadingStreamInfo] = useState(false);
 
   // Fetch EPG data
   const { data, isLoading, error, setTimeWindow } = useEpgGridData(
@@ -92,15 +98,63 @@ export function EPG() {
     [setTimeWindow]
   );
 
-  // Program click handler
-  const handleProgramClick = useCallback((program: EpgGridProgram) => {
-    setSelectedProgram(program);
-    // Note: Story 5.3 will implement the program details panel
-    // For now, we just store the selection
-    console.log('Program selected:', program);
+  // Program click handler - creates ProgramDetailsData from program and channel
+  const handleProgramClick = useCallback(
+    (program: EpgGridProgram, channel?: EpgGridChannel) => {
+      // Find the channel for this program from the data
+      const programChannel =
+        channel ||
+        data?.channels.find((ch) =>
+          ch.programs.some((p) => p.id === program.id)
+        );
+
+      if (!programChannel) {
+        console.error('Could not find channel for program:', program.id);
+        return;
+      }
+
+      // Create ProgramDetailsData combining program and channel info
+      const details: ProgramDetailsData = {
+        id: program.id,
+        title: program.title,
+        startTime: program.startTime,
+        endTime: program.endTime,
+        description: program.description,
+        category: program.category,
+        episodeInfo: program.episodeInfo,
+        channelId: programChannel.channelId,
+        channelName: programChannel.channelName,
+        channelIcon: programChannel.channelIcon,
+      };
+
+      setSelectedProgramDetails(details);
+      setStreamInfo(null);
+      setIsLoadingStreamInfo(true);
+
+      // Fetch stream info for the channel
+      getChannelStreamInfo(programChannel.channelId)
+        .then((info) => {
+          setStreamInfo(info);
+        })
+        .catch((err) => {
+          console.error('Failed to fetch stream info:', err);
+          setStreamInfo(null);
+        })
+        .finally(() => {
+          setIsLoadingStreamInfo(false);
+        });
+    },
+    [data?.channels]
+  );
+
+  // Close details panel handler
+  const handleCloseDetails = useCallback(() => {
+    setSelectedProgramDetails(null);
+    setStreamInfo(null);
+    setIsLoadingStreamInfo(false);
   }, []);
 
-  // Search result selection handler - navigates grid to program time
+  // Search result selection handler - navigates grid to program time and opens details panel
   const handleSearchResultClick = useCallback(
     (result: EpgSearchResult) => {
       try {
@@ -108,6 +162,36 @@ export function EPG() {
         if (timeWindow && timeWindow.startTime && timeWindow.endTime) {
           setTimeWindow(timeWindow.startTime, timeWindow.endTime);
         }
+
+        // Also open the details panel for this program
+        const details: ProgramDetailsData = {
+          id: result.programId,
+          title: result.title,
+          startTime: result.startTime,
+          endTime: result.endTime,
+          description: result.description || undefined,
+          category: result.category || undefined,
+          channelId: result.channelId,
+          channelName: result.channelName,
+          channelIcon: result.channelIcon || undefined,
+        };
+
+        setSelectedProgramDetails(details);
+        setStreamInfo(null);
+        setIsLoadingStreamInfo(true);
+
+        // Fetch stream info for the channel
+        getChannelStreamInfo(result.channelId)
+          .then((info) => {
+            setStreamInfo(info);
+          })
+          .catch((err) => {
+            console.error('Failed to fetch stream info:', err);
+            setStreamInfo(null);
+          })
+          .finally(() => {
+            setIsLoadingStreamInfo(false);
+          });
       } catch (err) {
         console.error('Failed to navigate to search result:', err);
       }
@@ -248,6 +332,14 @@ export function EPG() {
           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
         </div>
       )}
+
+      {/* Story 5.3: Program Details Panel */}
+      <ProgramDetailsPanel
+        program={selectedProgramDetails}
+        onClose={handleCloseDetails}
+        streamInfo={streamInfo}
+        isLoadingStreamInfo={isLoadingStreamInfo}
+      />
     </div>
   );
 }

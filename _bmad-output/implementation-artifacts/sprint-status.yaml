@@ -89,10 +89,10 @@ development_status:
   epic-4-retrospective: skipped
 
   # Epic 5: EPG Viewer & Discovery
-  epic-5: in-progress
+  epic-5: done
   5-1-epg-grid-browser-with-time-navigation: done
   5-2-epg-search-functionality: done
-  5-3-program-details-view: ready-for-dev
+  5-3-program-details-view: review
   epic-5-retrospective: optional
 
   # Epic 6: Settings, Logging & Updates

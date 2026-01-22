@@ -1012,6 +1012,7 @@ pub struct EpgGridProgram {
     pub end_time: String,
     pub category: Option<String>,
     pub description: Option<String>,
+    pub episode_info: Option<String>,
 }
 
 // ============================================================================
@@ -1225,6 +1226,7 @@ pub async fn get_enabled_channels_with_programs(
                 end_time: p.end_time,
                 category: p.category,
                 description: p.description,
+                episode_info: p.episode_info,
             })
             .collect();
 
@@ -1238,6 +1240,66 @@ pub async fn get_enabled_channels_with_programs(
     }
 
     Ok(result)
+}
+
+// ============================================================================
+// Program Details Commands (Story 5.3)
+// ============================================================================
+
+use crate::db::schema::xtream_channels;
+
+/// Stream info for program details panel
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelStreamInfo {
+    pub stream_name: String,
+    pub quality_tiers: Vec<String>,
+    pub is_primary: bool,
+    pub match_confidence: f64,
+}
+
+/// Get stream info for an XMLTV channel
+///
+/// Story 5.3: Program Details View
+/// AC #3: Stream info displays for channels with Xtream mappings
+///
+/// Returns the primary stream mapping for the given XMLTV channel, including
+/// stream name, quality tiers, and match confidence.
+#[tauri::command]
+pub async fn get_channel_stream_info(
+    db: State<'_, DbConnection>,
+    xmltv_channel_id: i32,
+) -> Result<Option<ChannelStreamInfo>, String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    // Query channel_mappings JOIN xtream_channels for the primary mapping
+    // Only return primary mappings (is_primary = 1)
+    let result: Option<(crate::db::ChannelMapping, crate::db::XtreamChannel)> = channel_mappings::table
+        .inner_join(xtream_channels::table)
+        .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
+        .filter(channel_mappings::is_primary.eq(1))
+        .select((channel_mappings::all_columns, xtream_channels::all_columns))
+        .first(&mut conn)
+        .optional()
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    Ok(result.map(|(mapping, stream)| {
+        // Parse qualities JSON array
+        let quality_tiers: Vec<String> = stream
+            .qualities
+            .as_ref()
+            .and_then(|q| serde_json::from_str(q).ok())
+            .unwrap_or_default();
+
+        ChannelStreamInfo {
+            stream_name: stream.name,
+            quality_tiers,
+            is_primary: mapping.is_primary.unwrap_or(0) == 1,
+            match_confidence: mapping.match_confidence.unwrap_or(0.0) as f64,
+        }
+    }))
 }
 
 #[cfg(test)]
