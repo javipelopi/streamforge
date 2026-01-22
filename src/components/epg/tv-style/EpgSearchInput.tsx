@@ -39,6 +39,7 @@ export function EpgSearchInput({
   const [localQuery, setLocalQuery] = useState(query);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
 
   // Sync local query with prop
   useEffect(() => {
@@ -79,7 +80,10 @@ export function EpgSearchInput({
 
       // Debounce search
       debounceRef.current = setTimeout(() => {
-        onSearch(value);
+        // Only call onSearch if component is still mounted
+        if (isMountedRef.current) {
+          onSearch(value);
+        }
       }, DEBOUNCE_MS);
     },
     [onSearch]
@@ -105,7 +109,9 @@ export function EpgSearchInput({
 
   // Cleanup debounce on unmount
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
       }

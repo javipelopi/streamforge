@@ -6,7 +6,7 @@
  * Allows arbitrary date selection for EPG navigation.
  */
 
-import { useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 
 interface DatePickerButtonProps {
   /** Whether the date picker overlay is open */
@@ -82,17 +82,42 @@ export function DatePickerButton({
   const overlayRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  // Current calendar view state (month/year)
-  const viewDate = new Date(selectedDate);
+  // Current calendar view state (month/year) - can be navigated independently
+  const [viewDate, setViewDate] = useState(new Date(selectedDate));
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
   const calendarDays = getCalendarDays(year, month);
+
+  // Reset view date when overlay opens
+  useEffect(() => {
+    if (isOpen) {
+      setViewDate(new Date(selectedDate));
+    }
+  }, [isOpen, selectedDate]);
 
   // Day names for header
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   // Month/year display
   const monthName = viewDate.toLocaleDateString('en-US', { month: 'long' });
+
+  // Navigate to previous month
+  const handlePrevMonth = useCallback(() => {
+    setViewDate((prev) => {
+      const newDate = new Date(prev);
+      newDate.setMonth(newDate.getMonth() - 1);
+      return newDate;
+    });
+  }, []);
+
+  // Navigate to next month
+  const handleNextMonth = useCallback(() => {
+    setViewDate((prev) => {
+      const newDate = new Date(prev);
+      newDate.setMonth(newDate.getMonth() + 1);
+      return newDate;
+    });
+  }, []);
 
   // Handle date click
   const handleDateClick = useCallback(
@@ -181,11 +206,51 @@ export function DatePickerButton({
           aria-label="Date picker"
           aria-modal="true"
         >
-          {/* Month/Year header */}
-          <div className="flex items-center justify-center mb-4">
+          {/* Month/Year header with navigation */}
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={handlePrevMonth}
+              className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+              aria-label="Previous month"
+              type="button"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 19l-7-7 7-7"
+                />
+              </svg>
+            </button>
             <span className="text-white font-medium">
               {monthName} {year}
             </span>
+            <button
+              onClick={handleNextMonth}
+              className="p-1 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+              aria-label="Next month"
+              type="button"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
+            </button>
           </div>
 
           {/* Day names header */}
@@ -209,6 +274,10 @@ export function DatePickerButton({
 
               const isToday = isSameDay(date, today);
               const isSelected = isSameDay(date, selectedDate);
+              // Allow past dates within last 3 days (EPG may have recent data)
+              const threeDaysAgo = new Date(today);
+              threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+              const isTooFarPast = date < threeDaysAgo;
               const isPast = date < today && !isToday;
 
               return (
@@ -216,7 +285,7 @@ export function DatePickerButton({
                   key={formatDateId(date)}
                   data-testid={`date-picker-day-${formatDateId(date)}`}
                   onClick={() => handleDateClick(date)}
-                  disabled={isPast}
+                  disabled={isTooFarPast}
                   className={`
                     w-8 h-8 rounded-lg text-sm font-medium
                     transition-colors
@@ -225,8 +294,10 @@ export function DatePickerButton({
                         ? 'bg-[#6366f1] text-white'
                         : isToday
                         ? 'bg-white/10 text-white'
-                        : isPast
+                        : isTooFarPast
                         ? 'text-white/30 cursor-not-allowed'
+                        : isPast
+                        ? 'text-white/60 hover:bg-white/10'
                         : 'text-white hover:bg-white/10'
                     }
                   `}

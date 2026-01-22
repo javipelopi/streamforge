@@ -203,11 +203,37 @@ function findDayOptionForDate(
  * @returns Day navigation state and handlers
  */
 export function useEpgDayNavigation(): UseEpgDayNavigationResult {
-  // Compute day options once on mount (memoized)
-  const dayOptions = useMemo(() => computeDayOptions(), []);
+  // Recompute day options daily after midnight
+  // Store the current day to detect date changes
+  const [currentDayKey, setCurrentDayKey] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  });
+
+  // Compute day options, recompute when date changes
+  const dayOptions = useMemo(() => {
+    return computeDayOptions();
+  }, [currentDayKey]);
 
   // State for selected day (default to "today")
   const [selectedDay, setSelectedDay] = useState<DayOption>(() => dayOptions[0]);
+
+  // Set up interval to check for date changes (every minute)
+  useEffect(() => {
+    const checkDateChange = () => {
+      const now = new Date();
+      const newDayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+      if (newDayKey !== currentDayKey) {
+        setCurrentDayKey(newDayKey);
+        // Reset selected day to "today" after midnight
+        setSelectedDay(computeDayOptions()[0]);
+      }
+    };
+
+    // Check every minute
+    const intervalId = setInterval(checkDateChange, 60_000);
+    return () => clearInterval(intervalId);
+  }, [currentDayKey]);
 
   /**
    * Select a day by ID
@@ -250,18 +276,13 @@ export function useEpgDayNavigation(): UseEpgDayNavigationResult {
 
   /**
    * Navigate to the previous day
-   * Skips "Tonight" when going from "Tomorrow" to "Today"
    */
   const goToPrevDay = useCallback(() => {
     const currentIndex = dayOptions.findIndex((d) => d.id === selectedDay.id);
 
     if (currentIndex > 0) {
-      // Move to previous option, skipping "tonight" (it's same day as "today")
-      let prevIndex = currentIndex - 1;
-      if (dayOptions[prevIndex].id === 'tonight') {
-        prevIndex = Math.max(0, prevIndex - 1); // Skip to "today"
-      }
-      setSelectedDay(dayOptions[prevIndex]);
+      // Move to previous option
+      setSelectedDay(dayOptions[currentIndex - 1]);
     } else if (currentIndex === 0) {
       // Already at first option (today), don't go further back
       // Could potentially go to yesterday, but typically EPG doesn't show past
@@ -279,18 +300,13 @@ export function useEpgDayNavigation(): UseEpgDayNavigationResult {
 
   /**
    * Navigate to the next day
-   * Skips "Tonight" when going from "Today" to "Tomorrow"
    */
   const goToNextDay = useCallback(() => {
     const currentIndex = dayOptions.findIndex((d) => d.id === selectedDay.id);
 
     if (currentIndex >= 0 && currentIndex < dayOptions.length - 1) {
-      // Move to next option, skipping "tonight" (it's same day as "today")
-      let nextIndex = currentIndex + 1;
-      if (dayOptions[nextIndex].id === 'tonight') {
-        nextIndex = Math.min(dayOptions.length - 1, nextIndex + 1); // Skip to "tomorrow"
-      }
-      setSelectedDay(dayOptions[nextIndex]);
+      // Move to next option
+      setSelectedDay(dayOptions[currentIndex + 1]);
     } else {
       // At last option or custom date, go to next day
       const nextDate = addDays(selectedDay.date, 1);
