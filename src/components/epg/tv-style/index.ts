@@ -9,7 +9,7 @@
 export { EpgBackground } from './EpgBackground';
 export { EpgMainContent } from './EpgMainContent';
 export { EpgChannelListPlaceholder } from './EpgChannelListPlaceholder';
-export { EpgSchedulePanelPlaceholder } from './EpgSchedulePanelPlaceholder';
+// EpgSchedulePanelPlaceholder removed - replaced by EpgSchedulePanel in Story 5.6
 export { EpgDetailsPanelPlaceholder } from './EpgDetailsPanelPlaceholder';
 
 // Story 5.5: EPG Channel List Panel

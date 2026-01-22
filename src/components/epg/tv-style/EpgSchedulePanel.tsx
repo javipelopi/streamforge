@@ -40,12 +40,17 @@ export function EpgSchedulePanel({
 
   // Auto-scroll to current program on initial load and channel change (AC #3)
   useEffect(() => {
-    if (currentProgramRef.current && containerRef.current) {
-      currentProgramRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-      });
-    }
+    // Add slight delay to ensure ref is populated after render
+    const timeoutId = setTimeout(() => {
+      if (currentProgramRef.current && containerRef.current) {
+        currentProgramRef.current.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+      }
+    }, 100);
+
+    return () => clearTimeout(timeoutId);
   }, [currentProgramId, selectedChannelId]);
 
   // Handle keyboard navigation (AC #2, AC #4)
@@ -63,12 +68,25 @@ export function EpgSchedulePanel({
         if (nextIndex !== currentIndex || currentIndex === -1) {
           const nextProgram = programs[nextIndex === -1 ? 0 : nextIndex];
           onSelectProgram(nextProgram.id);
+
+          // Scroll selected item into view
+          setTimeout(() => {
+            const element = document.getElementById(`schedule-row-${nextProgram.id}`);
+            element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }, 50);
         }
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         const prevIndex = currentIndex > 0 ? currentIndex - 1 : 0;
         if (prevIndex !== currentIndex) {
-          onSelectProgram(programs[prevIndex].id);
+          const prevProgram = programs[prevIndex];
+          onSelectProgram(prevProgram.id);
+
+          // Scroll selected item into view
+          setTimeout(() => {
+            const element = document.getElementById(`schedule-row-${prevProgram.id}`);
+            element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }, 50);
         }
       }
     },
@@ -141,7 +159,10 @@ export function EpgSchedulePanel({
         data-testid="epg-schedule-panel"
         className="h-full flex flex-col bg-black/50 rounded-lg"
       >
-        <div className="flex-1 flex flex-col items-center justify-center p-4 text-center gap-3">
+        <div
+          data-testid="schedule-error-state"
+          className="flex-1 flex flex-col items-center justify-center p-4 text-center gap-3"
+        >
           <svg
             className="w-12 h-12 text-red-400"
             fill="none"
