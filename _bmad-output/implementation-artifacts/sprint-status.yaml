@@ -98,7 +98,7 @@ development_status:
   5-5-epg-channel-list-panel: done
   5-6-epg-schedule-panel: done
   5-7-epg-top-bar-search-day-navigation: done
-  5-8-epg-program-details-panel: backlog
+  5-8-epg-program-details-panel: ready-for-dev
   5-9-epg-legacy-component-cleanup: backlog
   epic-5-retrospective: optional
 
