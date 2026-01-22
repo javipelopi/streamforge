@@ -1,6 +1,6 @@
 # Story 5.5: EPG Channel List Panel
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -25,59 +25,59 @@ So that I can quickly see all my channels and their current programs.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create EpgChannelList component structure (AC: #1, #3)
-  - [ ] 1.1 Create `src/components/epg/tv-style/EpgChannelList.tsx`
-  - [ ] 1.2 Integrate TanStack Virtual (`useVirtualizer`) for efficient list rendering
-  - [ ] 1.3 Calculate row heights for consistent virtualization (estimated 96px per row)
-  - [ ] 1.4 Add `data-testid="epg-channel-list"` to container
-  - [ ] 1.5 Add proper scrolling container with `overflow-y-auto`
+- [x] Task 1: Create EpgChannelList component structure (AC: #1, #3)
+  - [x] 1.1 Create `src/components/epg/tv-style/EpgChannelList.tsx`
+  - [x] 1.2 Integrate TanStack Virtual (`useVirtualizer`) for efficient list rendering
+  - [x] 1.3 Calculate row heights for consistent virtualization (estimated 96px per row)
+  - [x] 1.4 Add `data-testid="epg-channel-list"` to container
+  - [x] 1.5 Add proper scrolling container with `overflow-y-auto`
 
-- [ ] Task 2: Create EpgChannelRow component (AC: #1, #2)
-  - [ ] 2.1 Create `src/components/epg/tv-style/EpgChannelRow.tsx`
-  - [ ] 2.2 Implement channel logo display (80×60px, object-fit: contain, rounded corners 4px)
-  - [ ] 2.3 Display channel name (bold, white, 14-16px)
-  - [ ] 2.4 Display current program time range (lighter gray #a0a0a0)
-  - [ ] 2.5 Display current program title (white, 14px, single line with ellipsis)
-  - [ ] 2.6 Add `data-testid="channel-row-{id}"` for each row
+- [x] Task 2: Create EpgChannelRow component (AC: #1, #2)
+  - [x] 2.1 Create `src/components/epg/tv-style/EpgChannelRow.tsx`
+  - [x] 2.2 Implement channel logo display (80×60px, object-fit: contain, rounded corners 4px)
+  - [x] 2.3 Display channel name (bold, white, 14-16px)
+  - [x] 2.4 Display current program time range (lighter gray #a0a0a0)
+  - [x] 2.5 Display current program title (white, 14px, single line with ellipsis)
+  - [x] 2.6 Add `data-testid="channel-row-{id}"` for each row
 
-- [ ] Task 3: Create EpgProgressBar component (AC: #1)
-  - [ ] 3.1 Create `src/components/epg/tv-style/EpgProgressBar.tsx`
-  - [ ] 3.2 Implement progress calculation based on start/end time vs current time
-  - [ ] 3.3 Style: height 3px, bg `rgba(255,255,255,0.2)`, fill gradient (#6366f1 to #22d3ee)
-  - [ ] 3.4 Add rounded ends
-  - [ ] 3.5 Add `data-testid="progress-bar"` for testing
+- [x] Task 3: Create EpgProgressBar component (AC: #1)
+  - [x] 3.1 Create `src/components/epg/tv-style/EpgProgressBar.tsx`
+  - [x] 3.2 Implement progress calculation based on start/end time vs current time
+  - [x] 3.3 Style: height 3px, bg `rgba(255,255,255,0.2)`, fill gradient (#6366f1 to #22d3ee)
+  - [x] 3.4 Add rounded ends
+  - [x] 3.5 Add `data-testid="progress-bar"` for testing
 
-- [ ] Task 4: Implement channel selection state (AC: #2)
-  - [ ] 4.1 Accept `selectedChannelId` and `onSelectChannel` props in EpgChannelList
-  - [ ] 4.2 Apply selected state styling: border `rgba(255,255,255,0.3)`, bg `rgba(99,102,241,0.2)`, border-radius 12px
-  - [ ] 4.3 Emit selection event when channel row is clicked
-  - [ ] 4.4 Support keyboard navigation (up/down arrows) - stretch goal
-  - [ ] 4.5 Add `aria-selected` attribute for accessibility
+- [x] Task 4: Implement channel selection state (AC: #2)
+  - [x] 4.1 Accept `selectedChannelId` and `onSelectChannel` props in EpgChannelList
+  - [x] 4.2 Apply selected state styling: border `rgba(255,255,255,0.3)`, bg `rgba(99,102,241,0.2)`, border-radius 12px
+  - [x] 4.3 Emit selection event when channel row is clicked
+  - [x] 4.4 Support keyboard navigation (up/down arrows) - stretch goal
+  - [x] 4.5 Add `aria-selected` attribute for accessibility
 
-- [ ] Task 5: Create custom hook for channel list data (AC: #1)
-  - [ ] 5.1 Create `src/hooks/useEpgChannelList.ts`
-  - [ ] 5.2 Fetch enabled channels using existing `getEnabledChannelsWithPrograms` Tauri command
-  - [ ] 5.3 Filter to get only the current program for each channel (based on current time)
-  - [ ] 5.4 Provide loading and error states
-  - [ ] 5.5 Add auto-refresh interval (every 60 seconds to update progress bars)
+- [x] Task 5: Create custom hook for channel list data (AC: #1)
+  - [x] 5.1 Create `src/hooks/useEpgChannelList.ts`
+  - [x] 5.2 Fetch enabled channels using existing `getEnabledChannelsWithPrograms` Tauri command
+  - [x] 5.3 Filter to get only the current program for each channel (based on current time)
+  - [x] 5.4 Provide loading and error states
+  - [x] 5.5 Add auto-refresh interval (every 60 seconds to update progress bars)
 
-- [ ] Task 6: Integrate into EpgTv view (AC: #1, #2)
-  - [ ] 6.1 Replace `EpgChannelListPlaceholder` with `EpgChannelList` in `EpgTv.tsx`
-  - [ ] 6.2 Add `selectedChannelId` state to `EpgTv.tsx`
-  - [ ] 6.3 Wire `onSelectChannel` callback to update selected channel state
-  - [ ] 6.4 Pass selected channel ID to center panel (for Story 5.6 integration)
-  - [ ] 6.5 Remove temporary toggle button (no longer needed)
+- [x] Task 6: Integrate into EpgTv view (AC: #1, #2)
+  - [x] 6.1 Replace `EpgChannelListPlaceholder` with `EpgChannelList` in `EpgTv.tsx`
+  - [x] 6.2 Add `selectedChannelId` state to `EpgTv.tsx`
+  - [x] 6.3 Wire `onSelectChannel` callback to update selected channel state
+  - [x] 6.4 Pass selected channel ID to center panel (for Story 5.6 integration)
+  - [x] 6.5 Remove temporary toggle button (no longer needed)
 
-- [ ] Task 7: Update component exports (AC: #1)
-  - [ ] 7.1 Add exports to `src/components/epg/tv-style/index.ts`
-  - [ ] 7.2 Ensure TypeScript compilation succeeds
-  - [ ] 7.3 Ensure Vite build succeeds
+- [x] Task 7: Update component exports (AC: #1)
+  - [x] 7.1 Add exports to `src/components/epg/tv-style/index.ts`
+  - [x] 7.2 Ensure TypeScript compilation succeeds
+  - [x] 7.3 Ensure Vite build succeeds
 
-- [ ] Task 8: Add unit/integration tests
-  - [ ] 8.1 Test channel list renders with mock data
-  - [ ] 8.2 Test channel selection updates state
-  - [ ] 8.3 Test progress bar calculation accuracy
-  - [ ] 8.4 Test virtualization with large channel count (500+ channels)
+- [x] Task 8: Add unit/integration tests
+  - [x] 8.1 Test channel list renders with mock data (E2E tests created in ATDD phase)
+  - [x] 8.2 Test channel selection updates state (E2E tests created in ATDD phase)
+  - [x] 8.3 Test progress bar calculation accuracy (E2E tests created in ATDD phase)
+  - [x] 8.4 Test virtualization with large channel count (500+ channels) (E2E tests created in ATDD phase)
 
 ## Dev Notes
 
@@ -266,11 +266,45 @@ From recent commits:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Debug Log References
 
+None - implementation proceeded without issues.
+
 ### Completion Notes List
 
+1. **EpgChannelList Component**: Created virtualized channel list using TanStack Virtual with 96px estimated row height, 5 item overscan, keyboard navigation (up/down arrows), and proper accessibility attributes (role="listbox", aria-selected).
+
+2. **EpgChannelRow Component**: Implemented channel row with 80x60px logo container (with first-letter fallback for missing logos), bold white channel name, gray time range, white program title with truncation, and selected state styling with purple tint border/background.
+
+3. **EpgProgressBar Component**: Created progress bar with 3px height, semi-transparent white background, and purple-to-cyan gradient fill. Uses CSS linear-gradient for the fill effect.
+
+4. **useEpgChannelList Hook**: Custom hook that fetches enabled channels with programs, filters to current program only, sorts by plexDisplayOrder, provides loading/error states, and auto-refreshes every 60 seconds.
+
+5. **EpgTv Integration**: Replaced placeholder with functional channel list, added selectedChannelId state, wired onSelectChannel callback, removed temporary toggle button.
+
+6. **Edge Cases Handled**:
+   - Empty channel list displays helpful message
+   - Channels without current program show "No program info available"
+   - Missing logos show first letter of channel name
+   - Long names truncate with ellipsis
+
+7. **E2E Tests**: 10 E2E tests were created during ATDD RED phase. Tests verify channel list display, progress bar accuracy, selection state, keyboard navigation, virtualization performance, empty state, missing program handling, truncation, missing logo handling, and auto-refresh.
+
 ### File List
+
+**New Files:**
+- src/components/epg/tv-style/EpgChannelList.tsx
+- src/components/epg/tv-style/EpgChannelRow.tsx
+- src/components/epg/tv-style/EpgProgressBar.tsx
+- src/hooks/useEpgChannelList.ts
+
+**Modified Files:**
+- src/views/EpgTv.tsx (replaced placeholder, added state)
+- src/components/epg/tv-style/index.ts (added exports)
+
+### Change Log
+
+- 2026-01-22: Story 5.5 implementation complete - EPG Channel List Panel with virtualized list, current program display, selection state, keyboard navigation, and auto-refresh
 
