@@ -4,6 +4,7 @@
  * Story 5.5: EPG Channel List Panel
  * Story 5.6: EPG Schedule Panel
  * Story 5.7: EPG Top Bar with Search and Day Navigation
+ * Story 5.8: EPG Program Details Panel
  *
  * TV-style EPG interface with three panels over a cinematic background.
  * - Top: Fixed top bar with search and day navigation
@@ -12,12 +13,12 @@
  * - Right panel (~40%): Program details (when selected)
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { EpgBackground } from '../components/epg/tv-style/EpgBackground';
 import { EpgMainContent } from '../components/epg/tv-style/EpgMainContent';
 import { EpgChannelList } from '../components/epg/tv-style/EpgChannelList';
 import { EpgSchedulePanel } from '../components/epg/tv-style/EpgSchedulePanel';
-import { EpgDetailsPanelPlaceholder } from '../components/epg/tv-style/EpgDetailsPanelPlaceholder';
+import { EpgProgramDetails } from '../components/epg/tv-style/EpgProgramDetails';
 import { EpgTopBar } from '../components/epg/tv-style/EpgTopBar';
 import { useEpgDayNavigation } from '../hooks/useEpgDayNavigation';
 import type { EpgSearchResult } from '../lib/tauri';
@@ -28,6 +29,9 @@ export function EpgTv() {
 
   // State for selected program (Story 5.6 Task 8.3)
   const [selectedProgramId, setSelectedProgramId] = useState<number | null>(null);
+
+  // Ref for the details panel container (Story 5.8 Task 9)
+  const detailsPanelRef = useRef<HTMLDivElement>(null);
 
   // Day navigation state (Story 5.7)
   const {
@@ -50,6 +54,11 @@ export function EpgTv() {
   // Handle program selection (Story 5.6 Task 8.4)
   const handleSelectProgram = useCallback((programId: number) => {
     setSelectedProgramId(programId);
+  }, []);
+
+  // Handle closing program details (Story 5.8 Task 9)
+  const handleCloseDetails = useCallback(() => {
+    setSelectedProgramId(null);
   }, []);
 
   // Handle day selection (Story 5.7 Task 9.2)
@@ -129,8 +138,13 @@ export function EpgTv() {
             onSelectProgram={handleSelectProgram}
             selectedDate={timeWindow}
           />
-          {/* Right panel: Details (Story 5.8) - passes selectedProgramId for integration */}
-          <EpgDetailsPanelPlaceholder isVisible={!!selectedProgramId} />
+          {/* Right panel: Program Details (Story 5.8) */}
+          <div ref={detailsPanelRef} className="relative">
+            <EpgProgramDetails
+              selectedProgramId={selectedProgramId}
+              onClose={handleCloseDetails}
+            />
+          </div>
         </EpgMainContent>
       </div>
     </div>

@@ -1536,3 +1536,30 @@ export async function getChannelStreamInfo(
   });
 }
 
+// ============================================================================
+// Program Details types and functions (Story 5.8)
+// ============================================================================
+
+/** Program with associated channel information */
+export interface ProgramWithChannel {
+  program: Program;
+  channel: {
+    id: number;
+    displayName: string;
+    icon?: string;
+  };
+}
+
+/**
+ * Get program by ID with associated channel information
+ *
+ * Story 5.8: EPG Program Details Panel
+ * Task 8.4: TypeScript binding for getProgramById
+ *
+ * @param programId - Program ID to fetch
+ * @returns Program with channel data, or null if not found
+ */
+export async function getProgramById(programId: number): Promise<ProgramWithChannel | null> {
+  return invoke<ProgramWithChannel | null>('get_program_by_id', { programId });
+}
+

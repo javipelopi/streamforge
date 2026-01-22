@@ -154,6 +154,7 @@ test.describe('EPG Program Details Panel', () => {
     }
 
     // AND: Divider lines separate sections
+    const detailsPanel = page.getByTestId('epg-program-details');
     const dividers = detailsPanel.locator('hr, [role="separator"]');
     const dividerCount = await dividers.count();
     expect(dividerCount).toBeGreaterThan(0);

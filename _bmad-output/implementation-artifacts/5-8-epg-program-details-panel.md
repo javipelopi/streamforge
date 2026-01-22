@@ -1,6 +1,6 @@
 # Story 5.8: EPG Program Details Panel
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -27,88 +27,88 @@ So that I can learn more about selected programs.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create EpgProgramDetails component structure (AC: #1)
-  - [ ] 1.1 Create `src/components/epg/tv-style/EpgProgramDetails.tsx`
-  - [ ] 1.2 Right panel dimensions: ~40% viewport width, full height below top bar
-  - [ ] 1.3 Semi-transparent dark background `rgba(0,0,0,0.5)` / `bg-black/50`
-  - [ ] 1.4 Padding: 32px (p-8 in Tailwind)
-  - [ ] 1.5 Add `data-testid="epg-program-details"` to container
+- [x] Task 1: Create EpgProgramDetails component structure (AC: #1)
+  - [x] 1.1 Create `src/components/epg/tv-style/EpgProgramDetails.tsx`
+  - [x] 1.2 Right panel dimensions: ~40% viewport width, full height below top bar
+  - [x] 1.3 Semi-transparent dark background `rgba(0,0,0,0.5)` / `bg-black/50`
+  - [x] 1.4 Padding: 32px (p-8 in Tailwind)
+  - [x] 1.5 Add `data-testid="epg-program-details"` to container
 
-- [ ] Task 2: Implement program header section (AC: #1)
-  - [ ] 2.1 Program title: bold, 28-32px (`text-2xl md:text-3xl font-bold`), white, max 2 lines with ellipsis
-  - [ ] 2.2 Episode info section (if available): 16px (`text-base`), gray (`text-white/60`)
-  - [ ] 2.3 Format episode info: "Season X, Episode Y" or "S0XE0Y" format
-  - [ ] 2.4 Add `data-testid="program-title"` and `data-testid="episode-info"`
+- [x] Task 2: Implement program header section (AC: #1)
+  - [x] 2.1 Program title: bold, 28-32px (`text-2xl md:text-3xl font-bold`), white, max 2 lines with ellipsis
+  - [x] 2.2 Episode info section (if available): 16px (`text-base`), gray (`text-white/60`)
+  - [x] 2.3 Format episode info: "Season X, Episode Y" or "S0XE0Y" format
+  - [x] 2.4 Add `data-testid="program-title"` and `data-testid="episode-info"`
 
-- [ ] Task 3: Implement channel badge section (AC: #1)
-  - [ ] 3.1 Channel logo: 48x36px, rounded corners
-  - [ ] 3.2 Channel name: bold, 16px (`text-base font-bold`), white
-  - [ ] 3.3 Status indicator: "Live Now" (green), "Starts in X min" (blue), or "Aired at X" (gray)
-  - [ ] 3.4 Status colors: Live=#22c55e, Upcoming=#3b82f6, Aired=#6b7280
-  - [ ] 3.5 Add `data-testid="channel-badge"` and `data-testid="program-status"`
+- [x] Task 3: Implement channel badge section (AC: #1)
+  - [x] 3.1 Channel logo: 48x36px, rounded corners
+  - [x] 3.2 Channel name: bold, 16px (`text-base font-bold`), white
+  - [x] 3.3 Status indicator: "Live Now" (green), "Starts in X min" (blue), or "Aired at X" (gray)
+  - [x] 3.4 Status colors: Live=#22c55e, Upcoming=#3b82f6, Aired=#6b7280
+  - [x] 3.5 Add `data-testid="channel-badge"` and `data-testid="program-status"`
 
-- [ ] Task 4: Implement program metadata section (AC: #1)
-  - [ ] 4.1 Time range with clock icon (Lucide `Clock` icon), 14px, white
-  - [ ] 4.2 Full date with calendar icon (Lucide `Calendar` icon), 14px, gray
-  - [ ] 4.3 Category/genre tags as small rounded chips with muted colors
-  - [ ] 4.4 Divider lines between sections (border-white/10)
-  - [ ] 4.5 Add `data-testid="program-time"`, `data-testid="program-date"`, `data-testid="program-categories"`
+- [x] Task 4: Implement program metadata section (AC: #1)
+  - [x] 4.1 Time range with clock icon (Lucide `Clock` icon), 14px, white
+  - [x] 4.2 Full date with calendar icon (Lucide `Calendar` icon), 14px, gray
+  - [x] 4.3 Category/genre tags as small rounded chips with muted colors
+  - [x] 4.4 Divider lines between sections (border-white/10)
+  - [x] 4.5 Add `data-testid="program-time"`, `data-testid="program-date"`, `data-testid="program-categories"`
 
-- [ ] Task 5: Implement program description section (AC: #1)
-  - [ ] 5.1 Description text: 14-16px (`text-sm md:text-base`), light gray (`text-white/70`)
-  - [ ] 5.2 Line height: 1.5 (`leading-relaxed`)
-  - [ ] 5.3 Scrollable if content exceeds available space (`overflow-y-auto`)
-  - [ ] 5.4 Handle missing description gracefully ("No description available")
-  - [ ] 5.5 Add `data-testid="program-description"`
+- [x] Task 5: Implement program description section (AC: #1)
+  - [x] 5.1 Description text: 14-16px (`text-sm md:text-base`), light gray (`text-white/70`)
+  - [x] 5.2 Line height: 1.5 (`leading-relaxed`)
+  - [x] 5.3 Scrollable if content exceeds available space (`overflow-y-auto`)
+  - [x] 5.4 Handle missing description gracefully ("No description available")
+  - [x] 5.5 Add `data-testid="program-description"`
 
-- [ ] Task 6: Implement empty state (AC: #2)
-  - [ ] 6.1 When `selectedProgramId` is null, show empty state
-  - [ ] 6.2 Empty state message: "Select a program to see details"
-  - [ ] 6.3 Subtle styling: centered text, muted color
-  - [ ] 6.4 Alternative: hide panel entirely when no selection (defer to EpgMainContent layout)
-  - [ ] 6.5 Add `data-testid="details-empty-state"`
+- [x] Task 6: Implement empty state (AC: #2)
+  - [x] 6.1 When `selectedProgramId` is null, show empty state
+  - [x] 6.2 Empty state message: "Select a program to see details"
+  - [x] 6.3 Subtle styling: centered text, muted color
+  - [x] 6.4 Alternative: hide panel entirely when no selection (defer to EpgMainContent layout)
+  - [x] 6.5 Add `data-testid="details-empty-state"`
 
-- [ ] Task 7: Create useProgramDetails hook (AC: #1, #2)
-  - [ ] 7.1 Create `src/hooks/useProgramDetails.ts`
-  - [ ] 7.2 Accept `programId: number | null` parameter
-  - [ ] 7.3 Fetch program details from backend when programId changes
-  - [ ] 7.4 Return: `{ program, channel, isLoading, error }`
-  - [ ] 7.5 Handle null programId (return null program)
-  - [ ] 7.6 Use existing `Program` and `XmltvChannel` types from `src/lib/tauri.ts`
+- [x] Task 7: Create useProgramDetails hook (AC: #1, #2)
+  - [x] 7.1 Create `src/hooks/useProgramDetails.ts`
+  - [x] 7.2 Accept `programId: number | null` parameter
+  - [x] 7.3 Fetch program details from backend when programId changes
+  - [x] 7.4 Return: `{ program, channel, isLoading, error }`
+  - [x] 7.5 Handle null programId (return null program)
+  - [x] 7.6 Use existing `Program` and `XmltvChannel` types from `src/lib/tauri.ts`
 
-- [ ] Task 8: Add Tauri command for program details (AC: #1)
-  - [ ] 8.1 Add `get_program_by_id` command to `src-tauri/src/commands/epg.rs`
-  - [ ] 8.2 Return program with associated channel information
-  - [ ] 8.3 Add TypeScript binding in `src/lib/tauri.ts`
-  - [ ] 8.4 Type: `getProgramById(programId: number): Promise<ProgramWithChannel | null>`
-  - [ ] 8.5 Register command in `main.rs`
+- [x] Task 8: Add Tauri command for program details (AC: #1)
+  - [x] 8.1 Add `get_program_by_id` command to `src-tauri/src/commands/epg.rs`
+  - [x] 8.2 Return program with associated channel information
+  - [x] 8.3 Add TypeScript binding in `src/lib/tauri.ts`
+  - [x] 8.4 Type: `getProgramById(programId: number): Promise<ProgramWithChannel | null>`
+  - [x] 8.5 Register command in `main.rs`
 
-- [ ] Task 9: Implement close/deselect behavior (AC: #3)
-  - [ ] 9.1 Handle Escape key to clear selection (dispatch to EpgTv view)
-  - [ ] 9.2 Optional: Add close (X) button in top-right corner
-  - [ ] 9.3 Click outside panel clears selection (handled at EpgTv view level)
-  - [ ] 9.4 Add `data-testid="details-close-button"` if close button added
+- [x] Task 9: Implement close/deselect behavior (AC: #3)
+  - [x] 9.1 Handle Escape key to clear selection (dispatch to EpgTv view)
+  - [x] 9.2 Optional: Add close (X) button in top-right corner
+  - [x] 9.3 Click outside panel clears selection (handled at EpgTv view level)
+  - [x] 9.4 Add `data-testid="details-close-button"` if close button added
 
-- [ ] Task 10: Replace placeholder in EpgTv view (AC: #1, #2, #3)
-  - [ ] 10.1 Replace `EpgDetailsPanelPlaceholder` with `EpgProgramDetails`
-  - [ ] 10.2 Pass `selectedProgramId` and `onClose` callback
-  - [ ] 10.3 Wire Escape key handler to clear `selectedProgramId`
-  - [ ] 10.4 Update EpgMainContent if panel visibility logic changes
+- [x] Task 10: Replace placeholder in EpgTv view (AC: #1, #2, #3)
+  - [x] 10.1 Replace `EpgDetailsPanelPlaceholder` with `EpgProgramDetails`
+  - [x] 10.2 Pass `selectedProgramId` and `onClose` callback
+  - [x] 10.3 Wire Escape key handler to clear `selectedProgramId`
+  - [x] 10.4 Update EpgMainContent if panel visibility logic changes
 
-- [ ] Task 11: Update component exports (AC: #1)
-  - [ ] 11.1 Add exports to `src/components/epg/tv-style/index.ts`
-  - [ ] 11.2 Add export to `src/hooks/index.ts` if exists
-  - [ ] 11.3 Ensure TypeScript compilation succeeds
-  - [ ] 11.4 Ensure Vite build succeeds
+- [x] Task 11: Update component exports (AC: #1)
+  - [x] 11.1 Add exports to `src/components/epg/tv-style/index.ts`
+  - [x] 11.2 Add export to `src/hooks/index.ts` if exists
+  - [x] 11.3 Ensure TypeScript compilation succeeds
+  - [x] 11.4 Ensure Vite build succeeds
 
-- [ ] Task 12: Add unit/integration tests
-  - [ ] 12.1 Test details panel renders with all program fields
-  - [ ] 12.2 Test empty state when no program selected
-  - [ ] 12.3 Test status indicator logic (Live Now, Starts in, Aired)
-  - [ ] 12.4 Test Escape key closes panel
-  - [ ] 12.5 Test close button click (if implemented)
-  - [ ] 12.6 Test loading state while fetching program
-  - [ ] 12.7 Test error handling for invalid program ID
+- [x] Task 12: Add unit/integration tests
+  - [x] 12.1 Test details panel renders with all program fields (ATDD tests exist)
+  - [x] 12.2 Test empty state when no program selected (ATDD tests exist)
+  - [x] 12.3 Test status indicator logic (Live Now, Starts in, Aired) (ATDD tests exist)
+  - [x] 12.4 Test Escape key closes panel (ATDD tests exist)
+  - [x] 12.5 Test close button click (if implemented) (ATDD tests exist)
+  - [x] 12.6 Test loading state while fetching program (implemented)
+  - [x] 12.7 Test error handling for invalid program ID (implemented)
 
 ## Dev Notes
 

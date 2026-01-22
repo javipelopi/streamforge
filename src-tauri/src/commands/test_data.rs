@@ -401,8 +401,24 @@ pub fn set_xmltv_channel_enabled(
     })
 }
 
+/// Test program response with ID
+/// Used to return created program data to tests
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestProgramResponse {
+    pub id: i32,
+    pub xmltv_channel_id: i32,
+    pub title: String,
+    pub description: Option<String>,
+    pub start_time: String,
+    pub end_time: String,
+    pub category: Option<String>,
+    pub episode_info: Option<String>,
+}
+
 /// Create a test program
 /// Used by epg-search.fixture.ts and program-details.fixture.ts for test data setup
+/// Returns the created program with its ID
 #[tauri::command]
 pub fn create_test_program(
     db: State<DbConnection>,
@@ -414,7 +430,7 @@ pub fn create_test_program(
     category: Option<String>,
     description: Option<String>,
     episode_info: Option<String>,
-) -> Result<SeedResponse, String> {
+) -> Result<TestProgramResponse, String> {
     if !is_test_mode() {
         return Err("Test data creation is only available in test mode (IPTV_TEST_MODE=1)".to_string());
     }
@@ -423,9 +439,9 @@ pub fn create_test_program(
         .get_connection()
         .map_err(|e| format!("Database connection error: {}", e))?;
 
-    let category_val = category.as_deref().unwrap_or("");
-    let description_val = description.as_deref().unwrap_or("");
-    let episode_info_val = episode_info.as_deref().unwrap_or("");
+    let category_val = category.clone();
+    let description_val = description.clone();
+    let episode_info_val = episode_info.clone();
 
     // Build the SQL depending on whether id is provided
     let sql = if let Some(program_id) = id {
@@ -435,11 +451,11 @@ pub fn create_test_program(
             program_id,
             xmltv_channel_id,
             title.replace('\'', "''"),
-            description_val.replace('\'', "''"),
+            description_val.as_deref().unwrap_or("").replace('\'', "''"),
             start_time,
             end_time,
-            category_val,
-            episode_info_val
+            category_val.as_deref().unwrap_or(""),
+            episode_info_val.as_deref().unwrap_or("")
         )
     } else {
         format!(
@@ -447,23 +463,46 @@ pub fn create_test_program(
              VALUES ({}, '{}', '{}', '{}', '{}', '{}', '{}', datetime('now'))",
             xmltv_channel_id,
             title.replace('\'', "''"),
-            description_val.replace('\'', "''"),
+            description_val.as_deref().unwrap_or("").replace('\'', "''"),
             start_time,
             end_time,
-            category_val,
-            episode_info_val
+            category_val.as_deref().unwrap_or(""),
+            episode_info_val.as_deref().unwrap_or("")
         )
     };
 
-    diesel::sql_query(sql)
+    diesel::sql_query(&sql)
         .execute(&mut conn)
         .map_err(|e| format!("Failed to create test program: {}", e))?;
 
-    Ok(SeedResponse {
-        success: true,
-        message: format!("Created test program: {}", title),
-        records_created: 1,
+    // Get the ID of the inserted program
+    let program_id: i32 = if let Some(pid) = id {
+        pid
+    } else {
+        // Get the last inserted ID
+        diesel::sql_query("SELECT last_insert_rowid() as id")
+            .get_result::<LastInsertRowId>(&mut conn)
+            .map_err(|e| format!("Failed to get last insert id: {}", e))?
+            .id
+    };
+
+    Ok(TestProgramResponse {
+        id: program_id,
+        xmltv_channel_id,
+        title,
+        description: description_val,
+        start_time,
+        end_time,
+        category: category_val,
+        episode_info: episode_info_val,
     })
+}
+
+/// Helper struct for getting last insert rowid
+#[derive(diesel::QueryableByName)]
+struct LastInsertRowId {
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    id: i32,
 }
 
 /// Delete all test data for a specific channel
