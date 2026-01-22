@@ -24,6 +24,8 @@ export interface UseEpgSearchResult {
   onResultSelect: (result: EpgSearchResult) => TimeWindow | null;
   /** Cancel any pending search requests */
   cancelPendingSearch: () => void;
+  /** Hide search results dropdown (e.g., on Escape key) */
+  hideResults: () => void;
 }
 
 /**
@@ -99,6 +101,8 @@ export function useEpgSearch(): UseEpgSearchResult {
       if (!controller.signal.aborted) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         setError(errorMessage);
+        // Show dropdown even on error so user sees the error message
+        setIsResultsVisible(true);
         console.error('EPG search failed:', err);
       }
     } finally {
@@ -119,6 +123,14 @@ export function useEpgSearch(): UseEpgSearchResult {
     setError(null);
     setIsSearching(false);
   }, [cancelPendingSearch]);
+
+  /**
+   * Hide search results dropdown without clearing query
+   * Used when pressing Escape to close dropdown but keep search text
+   */
+  const hideResults = useCallback(() => {
+    setIsResultsVisible(false);
+  }, []);
 
   /**
    * Handle result selection
@@ -155,5 +167,6 @@ export function useEpgSearch(): UseEpgSearchResult {
     onClear,
     onResultSelect,
     cancelPendingSearch,
+    hideResults,
   };
 }

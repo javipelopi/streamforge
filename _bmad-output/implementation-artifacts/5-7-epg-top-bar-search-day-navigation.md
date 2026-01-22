@@ -1,6 +1,6 @@
 # Story 5.7: EPG Top Bar with Search and Day Navigation
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -25,101 +25,101 @@ So that I can find programs and browse different days.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create EpgTopBar component structure (AC: #1)
-  - [ ] 1.1 Create `src/components/epg/tv-style/EpgTopBar.tsx`
-  - [ ] 1.2 Fixed position at top, full width, height ~56px
-  - [ ] 1.3 Semi-transparent dark background `rgba(0,0,0,0.7)` / `bg-black/70`
-  - [ ] 1.4 Subtle bottom border for visual separation
-  - [ ] 1.5 Flex layout: search on left, day navigation on right
-  - [ ] 1.6 Add `data-testid="epg-top-bar"` to container
+- [x] Task 1: Create EpgTopBar component structure (AC: #1)
+  - [x] 1.1 Create `src/components/epg/tv-style/EpgTopBar.tsx`
+  - [x] 1.2 Fixed position at top, full width, height ~56px
+  - [x] 1.3 Semi-transparent dark background `rgba(0,0,0,0.7)` / `bg-black/70`
+  - [x] 1.4 Subtle bottom border for visual separation
+  - [x] 1.5 Flex layout: search on left, day navigation on right
+  - [x] 1.6 Add `data-testid="epg-top-bar"` to container
 
-- [ ] Task 2: Create EpgSearchInput component (AC: #1, #2)
-  - [ ] 2.1 Create `src/components/epg/tv-style/EpgSearchInput.tsx`
-  - [ ] 2.2 Magnifying glass icon (20px) clickable to expand input
-  - [ ] 2.3 Input field: expands on focus, ~300px max width, placeholder "Search programs..."
-  - [ ] 2.4 Clear button (X icon) when input has text
-  - [ ] 2.5 Style matching dark theme (transparent bg, white text, light border on focus)
-  - [ ] 2.6 Add `data-testid="epg-search-input"` for testing
+- [x] Task 2: Create EpgSearchInput component (AC: #1, #2)
+  - [x] 2.1 Create `src/components/epg/tv-style/EpgSearchInput.tsx`
+  - [x] 2.2 Magnifying glass icon (20px) clickable to expand input
+  - [x] 2.3 Input field: expands on focus, ~300px max width, placeholder "Search programs..."
+  - [x] 2.4 Clear button (X icon) when input has text
+  - [x] 2.5 Style matching dark theme (transparent bg, white text, light border on focus)
+  - [x] 2.6 Add `data-testid="epg-search-input"` for testing
 
-- [ ] Task 3: Create EpgSearchResults dropdown (AC: #2)
-  - [ ] 3.1 Create `src/components/epg/tv-style/EpgSearchResults.tsx`
-  - [ ] 3.2 Dropdown below search input, max 8 results
-  - [ ] 3.3 Semi-transparent dark background matching panel style
-  - [ ] 3.4 Each result shows: program title (bold), channel name, date/time
-  - [ ] 3.5 Hover state: subtle highlight `rgba(255,255,255,0.05)`
-  - [ ] 3.6 Click handler for result selection
-  - [ ] 3.7 Loading spinner while searching
-  - [ ] 3.8 "No results found" empty state
-  - [ ] 3.9 Add `data-testid="epg-search-results"` and `data-testid="search-result-{programId}"`
+- [x] Task 3: Create EpgSearchResults dropdown (AC: #2)
+  - [x] 3.1 Create `src/components/epg/tv-style/EpgSearchResults.tsx`
+  - [x] 3.2 Dropdown below search input, max 8 results
+  - [x] 3.3 Semi-transparent dark background matching panel style
+  - [x] 3.4 Each result shows: program title (bold), channel name, date/time
+  - [x] 3.5 Hover state: subtle highlight `rgba(255,255,255,0.05)`
+  - [x] 3.6 Click handler for result selection
+  - [x] 3.7 Loading spinner while searching
+  - [x] 3.8 "No results found" empty state
+  - [x] 3.9 Add `data-testid="epg-search-results"` and `data-testid="search-result-{programId}"`
 
-- [ ] Task 4: Implement search functionality with useEpgSearch hook (AC: #2)
-  - [ ] 4.1 Wire existing `useEpgSearch` hook from `src/hooks/useEpgSearch.ts`
-  - [ ] 4.2 Debounce search to 300ms (already implemented in hook)
-  - [ ] 4.3 Display results in dropdown
-  - [ ] 4.4 Handle result selection: emit event with channelId, programId, and date
-  - [ ] 4.5 Clear search after selection
-  - [ ] 4.6 Close dropdown on Escape key or click outside
+- [x] Task 4: Implement search functionality with useEpgSearch hook (AC: #2)
+  - [x] 4.1 Wire existing `useEpgSearch` hook from `src/hooks/useEpgSearch.ts`
+  - [x] 4.2 Debounce search to 300ms (already implemented in hook)
+  - [x] 4.3 Display results in dropdown
+  - [x] 4.4 Handle result selection: emit event with channelId, programId, and date
+  - [x] 4.5 Clear search after selection
+  - [x] 4.6 Close dropdown on Escape key or click outside
 
-- [ ] Task 5: Create DayNavigationBar component (AC: #1, #3)
-  - [ ] 5.1 Create `src/components/epg/tv-style/DayNavigationBar.tsx`
-  - [ ] 5.2 Horizontal layout: Prev arrow, day chips, Next arrow, date picker icon
-  - [ ] 5.3 Day chips: "Today", "Tonight", "Tomorrow", then day names (Wed, Thu, Fri...)
-  - [ ] 5.4 Chips horizontally scrollable if needed
-  - [ ] 5.5 Add `data-testid="day-navigation-bar"` and `data-testid="day-chip-{day}"`
+- [x] Task 5: Create DayNavigationBar component (AC: #1, #3)
+  - [x] 5.1 Create `src/components/epg/tv-style/DayNavigationBar.tsx`
+  - [x] 5.2 Horizontal layout: Prev arrow, day chips, Next arrow, date picker icon
+  - [x] 5.3 Day chips: "Today", "Tonight", "Tomorrow", then day names (Wed, Thu, Fri...)
+  - [x] 5.4 Chips horizontally scrollable if needed
+  - [x] 5.5 Add `data-testid="day-navigation-bar"` and `data-testid="day-chip-{day}"`
 
-- [ ] Task 6: Create DayChip component (AC: #3)
-  - [ ] 6.1 Create `src/components/epg/tv-style/DayChip.tsx`
-  - [ ] 6.2 Default state: semi-transparent bg, white text, subtle border
-  - [ ] 6.3 Selected state: solid purple background (#6366f1), white text
-  - [ ] 6.4 Hover state: lighter purple background `rgba(99,102,241,0.3)`
-  - [ ] 6.5 Click handler to select day
-  - [ ] 6.6 Add `aria-selected` for accessibility
+- [x] Task 6: Create DayChip component (AC: #3)
+  - [x] 6.1 Create `src/components/epg/tv-style/DayChip.tsx`
+  - [x] 6.2 Default state: semi-transparent bg, white text, subtle border
+  - [x] 6.3 Selected state: solid purple background (#6366f1), white text
+  - [x] 6.4 Hover state: lighter purple background `rgba(99,102,241,0.3)`
+  - [x] 6.5 Click handler to select day
+  - [x] 6.6 Add `aria-selected` for accessibility
 
-- [ ] Task 7: Create DatePickerButton and overlay (AC: #4)
-  - [ ] 7.1 Create `src/components/epg/tv-style/DatePickerButton.tsx`
-  - [ ] 7.2 Calendar icon button matching dark theme
-  - [ ] 7.3 On click, open calendar overlay/modal
-  - [ ] 7.4 Use Radix UI DatePicker or simple custom calendar
-  - [ ] 7.5 Date selection triggers day navigation
-  - [ ] 7.6 Close overlay on selection or click outside
-  - [ ] 7.7 Add `data-testid="date-picker-button"` and `data-testid="date-picker-overlay"`
+- [x] Task 7: Create DatePickerButton and overlay (AC: #4)
+  - [x] 7.1 Create `src/components/epg/tv-style/DatePickerButton.tsx`
+  - [x] 7.2 Calendar icon button matching dark theme
+  - [x] 7.3 On click, open calendar overlay/modal
+  - [x] 7.4 Use custom calendar (no external dependency)
+  - [x] 7.5 Date selection triggers day navigation
+  - [x] 7.6 Close overlay on selection or click outside
+  - [x] 7.7 Add `data-testid="date-picker-button"` and `data-testid="date-picker-overlay"`
 
-- [ ] Task 8: Create useEpgDayNavigation hook (AC: #3)
-  - [ ] 8.1 Create `src/hooks/useEpgDayNavigation.ts`
-  - [ ] 8.2 State: `selectedDate` (Date object)
-  - [ ] 8.3 Compute day chips array (Today, Tonight, Tomorrow, next 4 days)
-  - [ ] 8.4 Functions: `selectDay(date)`, `goToPrevDay()`, `goToNextDay()`
-  - [ ] 8.5 "Today" = current date starting at current time
-  - [ ] 8.6 "Tonight" = current date starting at 6 PM
-  - [ ] 8.7 "Tomorrow" and day names = that date starting at 6 AM
-  - [ ] 8.8 Export time window (startTime, endTime) for schedule fetching
+- [x] Task 8: Create useEpgDayNavigation hook (AC: #3)
+  - [x] 8.1 Create `src/hooks/useEpgDayNavigation.ts`
+  - [x] 8.2 State: `selectedDate` (Date object)
+  - [x] 8.3 Compute day chips array (Today, Tonight, Tomorrow, next 4 days)
+  - [x] 8.4 Functions: `selectDay(date)`, `goToPrevDay()`, `goToNextDay()`
+  - [x] 8.5 "Today" = current date starting at current time
+  - [x] 8.6 "Tonight" = current date starting at 6 PM
+  - [x] 8.7 "Tomorrow" and day names = that date starting at 6 AM
+  - [x] 8.8 Export time window (startTime, endTime) for schedule fetching
 
-- [ ] Task 9: Integrate top bar into EpgTv view (AC: #1, #2, #3)
-  - [ ] 9.1 Add EpgTopBar to `src/views/EpgTv.tsx` above EpgMainContent
-  - [ ] 9.2 Wire day navigation state to schedule panel
-  - [ ] 9.3 Wire search result selection to channel/program selection
-  - [ ] 9.4 Pass selected date to useChannelSchedule hook
-  - [ ] 9.5 Ensure top bar doesn't push content (overlay/fixed positioning)
+- [x] Task 9: Integrate top bar into EpgTv view (AC: #1, #2, #3)
+  - [x] 9.1 Add EpgTopBar to `src/views/EpgTv.tsx` above EpgMainContent
+  - [x] 9.2 Wire day navigation state to schedule panel
+  - [x] 9.3 Wire search result selection to channel/program selection
+  - [x] 9.4 Pass selected date to useChannelSchedule hook
+  - [x] 9.5 Ensure top bar doesn't push content (overlay/fixed positioning)
 
-- [ ] Task 10: Update useChannelSchedule to accept date parameter (AC: #3)
-  - [ ] 10.1 Modify `src/hooks/useChannelSchedule.ts` to accept `selectedDate` prop
-  - [ ] 10.2 Calculate time window based on selectedDate instead of always "today"
-  - [ ] 10.3 Refetch when selectedDate changes
-  - [ ] 10.4 Update ScheduleHeader to display the selected date
+- [x] Task 10: Update useChannelSchedule to accept date parameter (AC: #3)
+  - [x] 10.1 Modify `src/hooks/useChannelSchedule.ts` to accept `selectedDate` prop
+  - [x] 10.2 Calculate time window based on selectedDate instead of always "today"
+  - [x] 10.3 Refetch when selectedDate changes
+  - [x] 10.4 Update ScheduleHeader to display the selected date
 
-- [ ] Task 11: Update component exports (AC: #1)
-  - [ ] 11.1 Add exports to `src/components/epg/tv-style/index.ts`
-  - [ ] 11.2 Ensure TypeScript compilation succeeds
-  - [ ] 11.3 Ensure Vite build succeeds
+- [x] Task 11: Update component exports (AC: #1)
+  - [x] 11.1 Add exports to `src/components/epg/tv-style/index.ts`
+  - [x] 11.2 Ensure TypeScript compilation succeeds
+  - [x] 11.3 Ensure Vite build succeeds
 
-- [ ] Task 12: Add unit/integration tests
-  - [ ] 12.1 Test top bar renders with search and day navigation
-  - [ ] 12.2 Test search input expands/collapses correctly
-  - [ ] 12.3 Test search results display and selection
-  - [ ] 12.4 Test day chip selection updates schedule
-  - [ ] 12.5 Test prev/next day navigation
-  - [ ] 12.6 Test date picker opens and selects date
-  - [ ] 12.7 Test keyboard navigation (Escape closes search)
+- [x] Task 12: Add unit/integration tests
+  - [x] 12.1 Test top bar renders with search and day navigation
+  - [x] 12.2 Test search input expands/collapses correctly
+  - [x] 12.3 Test search results display and selection
+  - [x] 12.4 Test day chip selection updates schedule
+  - [x] 12.5 Test prev/next day navigation
+  - [x] 12.6 Test date picker opens and selects date
+  - [x] 12.7 Test keyboard navigation (Escape closes search)
 
 ## Dev Notes
 
@@ -422,10 +422,49 @@ When a search result is selected OR a day is changed, the following must happen:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Debug Log References
 
+N/A
+
 ### Completion Notes List
 
+1. **All 15 ATDD tests pass** for Story 5.7 EPG Top Bar with Search and Day Navigation
+2. Implementation follows TV-style EPG design patterns from Stories 5.4, 5.5, 5.6
+3. Search functionality uses existing `useEpgSearch` hook with 300ms debounce
+4. Day navigation implements Today/Tonight/Tomorrow plus 4 weekday chips
+5. Date picker overlay allows arbitrary date selection with calendar UI
+6. All components use proper accessibility attributes (aria-selected, role="tab", etc.)
+7. TypeScript compilation passes with no errors
+8. Vite build succeeds
+9. Components follow the established pattern with data-testid attributes for testing
+
+### Test Results Summary
+
+- **epg-top-bar.spec.ts**: 15/15 passed
+  - AC1: Display top bar with search and day navigation (2 tests)
+  - AC2: Search with debounced results and selection (6 tests)
+  - AC3: Day chip selection updates schedule (3 tests)
+  - AC4: Date picker overlay for arbitrary date selection (4 tests)
+
 ### File List
+
+**New Files Created:**
+- `src/components/epg/tv-style/EpgTopBar.tsx` - Main top bar component
+- `src/components/epg/tv-style/EpgSearchInput.tsx` - Expandable search input
+- `src/components/epg/tv-style/EpgSearchResults.tsx` - Search results dropdown
+- `src/components/epg/tv-style/DayNavigationBar.tsx` - Day navigation container
+- `src/components/epg/tv-style/DayChip.tsx` - Individual day chip button
+- `src/components/epg/tv-style/DatePickerButton.tsx` - Calendar button with overlay
+- `src/hooks/useEpgDayNavigation.ts` - Day navigation state hook
+- `tests/e2e/epg-top-bar.spec.ts` - ATDD E2E tests (15 tests)
+- `tests/support/fixtures/epg-top-bar.fixture.ts` - Test fixtures
+- `tests/support/factories/epg-top-bar.factory.ts` - Test data factories
+
+**Modified Files:**
+- `src/views/EpgTv.tsx` - Integrated EpgTopBar component
+- `src/hooks/useChannelSchedule.ts` - Added selectedDate parameter for day navigation
+- `src/hooks/useEpgSearch.ts` - Minor updates for integration
+- `src/components/epg/tv-style/index.ts` - Added new component exports
+- `src/components/epg/tv-style/EpgSchedulePanel.tsx` - Updated for day navigation integration

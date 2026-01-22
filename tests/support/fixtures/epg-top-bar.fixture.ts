@@ -1,15 +1,151 @@
-import { test as base } from '@playwright/test';
+import { test as base, type Page } from '@playwright/test';
 import {
   createDayOptions,
   createTopBarTestData,
   type EpgTopBarTestData,
 } from '../factories/epg-top-bar.factory';
+import { injectTauriMock } from '../mocks/tauri.mock';
+
+/**
+ * Inject shared Tauri mocks for EPG top bar testing
+ * Includes search and channel/schedule data mocks
+ */
+async function injectEpgTopBarMocks(page: Page): Promise<void> {
+  await injectTauriMock(page, {
+    commands: {
+      // Mock search_epg_programs command - returns search results matching test data
+      search_epg_programs: (args: { query: string }) => {
+        const query = (args.query || '').toLowerCase();
+
+        // Return empty for specific no-match query
+        if (!query || query === 'zzz-no-match-xyz') {
+          return [];
+        }
+
+        // Create mock results using consistent IDs with test data
+        // Test data uses channelId * 1000 + index + 1 for program IDs
+        const now = new Date();
+        const mockPrograms = [
+          {
+            programId: 100001,
+            title: 'Program 1',
+            description: 'First program of the day',
+            startTime: now.toISOString(),
+            endTime: new Date(now.getTime() + 3600000).toISOString(),
+            category: 'News',
+            channelId: 100,
+            channelName: 'Test Channel 100',
+            channelIcon: null,
+            matchType: 'title',
+            relevanceScore: 1.0,
+          },
+          {
+            programId: 100002,
+            title: 'Program 2',
+            description: 'Second program of the day',
+            startTime: new Date(now.getTime() + 3600000).toISOString(),
+            endTime: new Date(now.getTime() + 7200000).toISOString(),
+            category: 'News',
+            channelId: 100,
+            channelName: 'Test Channel 100',
+            channelIcon: null,
+            matchType: 'title',
+            relevanceScore: 0.9,
+          },
+          {
+            programId: 100003,
+            title: 'Program 3',
+            description: 'Third program',
+            startTime: new Date(now.getTime() + 7200000).toISOString(),
+            endTime: new Date(now.getTime() + 10800000).toISOString(),
+            category: 'Entertainment',
+            channelId: 100,
+            channelName: 'Test Channel 100',
+            channelIcon: null,
+            matchType: 'title',
+            relevanceScore: 0.8,
+          },
+          {
+            programId: 101001,
+            title: 'News Hour',
+            description: 'Evening news coverage',
+            startTime: now.toISOString(),
+            endTime: new Date(now.getTime() + 3600000).toISOString(),
+            category: 'News',
+            channelId: 101,
+            channelName: 'Test Channel 101',
+            channelIcon: null,
+            matchType: 'title',
+            relevanceScore: 0.85,
+          },
+        ];
+
+        // Filter by query - match title, description, or channel name
+        return mockPrograms.filter(
+          (p) =>
+            p.title.toLowerCase().includes(query) ||
+            p.description.toLowerCase().includes(query) ||
+            p.channelName.toLowerCase().includes(query)
+        );
+      },
+      // Mock get_enabled_channels_with_programs for schedule loading
+      get_enabled_channels_with_programs: () => {
+        const now = new Date();
+        return [
+          {
+            channelId: 100,
+            channelName: 'Test Channel 100',
+            channelIcon: null,
+            plexDisplayOrder: 1,
+            programs: [
+              {
+                id: 100001,
+                title: 'Program 1',
+                description: 'First program of the day',
+                startTime: now.toISOString(),
+                endTime: new Date(now.getTime() + 3600000).toISOString(),
+                category: 'News',
+              },
+              {
+                id: 100002,
+                title: 'Program 2',
+                description: 'Second program',
+                startTime: new Date(now.getTime() + 3600000).toISOString(),
+                endTime: new Date(now.getTime() + 7200000).toISOString(),
+                category: 'News',
+              },
+            ],
+          },
+          {
+            channelId: 101,
+            channelName: 'Test Channel 101',
+            channelIcon: null,
+            plexDisplayOrder: 2,
+            programs: [
+              {
+                id: 101001,
+                title: 'News Hour',
+                description: 'Evening news coverage',
+                startTime: now.toISOString(),
+                endTime: new Date(now.getTime() + 3600000).toISOString(),
+                category: 'News',
+              },
+            ],
+          },
+        ];
+      },
+    },
+  });
+}
 
 /**
  * Fixture for managing EPG top bar data (Story 5.7)
  *
  * Provides pre-populated day options, searchable programs, and test channels
  * with automatic cleanup after tests complete.
+ *
+ * IMPORTANT: All tests in files using this fixture will automatically get
+ * Tauri mocks injected via the page fixture override below.
  */
 export const test = base.extend<{
   epgTopBarData: EpgTopBarTestData;
@@ -20,9 +156,16 @@ export const test = base.extend<{
     selectDayChip: (dayId: string) => Promise<void>;
     selectDate: (date: Date) => Promise<void>;
     clearSearch: () => Promise<void>;
-    getVisibleSearchResults: () => Promise<number>;
+    getVisibleSearchResults: () => Promise<string[]>;
   };
 }>({
+  // Override the base page fixture to always inject Tauri mocks
+  // This ensures mocks are available even for tests that don't use other fixtures
+  page: async ({ page }, use) => {
+    await injectEpgTopBarMocks(page);
+    await use(page);
+  },
+
   epgTopBarData: async ({ page }, use) => {
     // Setup: Create test data with day options, channels, and programs
     const testData = createTopBarTestData({
@@ -30,58 +173,16 @@ export const test = base.extend<{
       programsPerChannel: 20,
     });
 
-    // Seed test data into the app via Tauri commands
-    await page.evaluate(
-      async (data) => {
-        // @ts-ignore - Tauri invoke available in Tauri context
-        const { invoke } = window.__TAURI__;
-
-        // Create test channels
-        for (const channel of data.channels) {
-          await invoke('create_test_xmltv_channel', {
-            id: channel.id,
-            displayName: channel.name,
-            icon: channel.icon || null,
-          });
-
-          await invoke('set_xmltv_channel_enabled', {
-            channelId: channel.id,
-            enabled: true,
-            plexDisplayOrder: channel.id - 99, // Order by ID
-          });
-        }
-
-        // Create programs for each channel
-        for (const program of data.programs) {
-          await invoke('create_test_program', {
-            xmltvChannelId: program.channelId,
-            title: program.title,
-            startTime: program.startTime,
-            endTime: program.endTime,
-            category: program.category,
-            description: program.description,
-          });
-        }
-      },
-      testData
-    );
-
+    // Note: Mocks are now injected by page fixture override above
     // Provide to test
     await use(testData);
 
-    // Cleanup: Delete all test data
-    await page.evaluate(async (data) => {
-      // @ts-ignore
-      const { invoke } = window.__TAURI__;
-
-      // Delete each channel and its programs
-      for (const channel of data.channels) {
-        await invoke('delete_test_channel_data', { channelId: channel.id });
-      }
-    }, testData);
+    // No cleanup needed - mocks are reset per test
   },
 
   epgTopBarApi: async ({ page }, use) => {
+    // Note: Mocks are now injected by page fixture override above
+
     const api = {
       /**
        * Expand search input by clicking icon or focusing
@@ -105,8 +206,13 @@ export const test = base.extend<{
        * Type a search query and wait for results
        */
       searchPrograms: async (query: string): Promise<void> => {
+        // First expand the search input by clicking the icon
+        const searchIcon = page.getByTestId('epg-search-icon');
+        await searchIcon.click();
+        await page.waitForTimeout(100); // Wait for expand animation
+
+        // Then fill the input
         const searchInput = page.getByTestId('epg-search-input');
-        await searchInput.click();
         await searchInput.fill(query);
         await page.waitForTimeout(400); // Wait for debounce (300ms) + buffer
       },
@@ -149,19 +255,27 @@ export const test = base.extend<{
       },
 
       /**
-       * Get count of visible search results
+       * Get visible search results as an array of locators
        */
-      getVisibleSearchResults: async (): Promise<number> => {
+      getVisibleSearchResults: async (): Promise<string[]> => {
         const resultsDropdown = page.getByTestId('epg-search-results');
         const isVisible = await resultsDropdown.isVisible().catch(() => false);
 
         if (!isVisible) {
-          return 0;
+          return [];
         }
 
-        // Count result rows
+        // Get all result row testids
         const results = page.locator('[data-testid^="search-result-"]');
-        return await results.count();
+        const count = await results.count();
+        const testIds: string[] = [];
+        for (let i = 0; i < count; i++) {
+          const testId = await results.nth(i).getAttribute('data-testid');
+          if (testId) {
+            testIds.push(testId);
+          }
+        }
+        return testIds;
       },
     };
 
