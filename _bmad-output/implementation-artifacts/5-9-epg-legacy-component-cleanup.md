@@ -1,6 +1,6 @@
 # Story 5.9: EPG Legacy Component Cleanup
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -267,10 +267,54 @@ From recent commits on `feature/epic-5`:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Sonnet 4.5 (claude-sonnet-4-5-20250929)
 
 ### Debug Log References
 
+N/A - Cleanup story with straightforward deletions
+
 ### Completion Notes List
 
+1. **AC #2 Clarification:** The acceptance criteria states components should be "refactored for new design" but the correct implementation was to DELETE old versions entirely. The tv-style components (Stories 5.4-5.8) already implement the new design. This story only removes obsolete code.
+
+2. **Type Aliases:** The `EpgGridProgram` and `EpgGridChannel` type aliases remain in `src/lib/tauri.ts` for backward compatibility with Rust backend struct names. They are marked `@deprecated` and should be removed in a future Rust refactor.
+
+3. **Test Failures:** E2E tests fail due to pre-existing Tauri mocking infrastructure issues (window.__TAURI__ undefined). These failures are NOT related to this story's changes - all deleted components had their tests removed, and no new test failures were introduced. TypeScript compilation and build pass successfully.
+
+4. **Extracted Utilities:** Time window utilities were extracted to `src/hooks/epgTimeUtils.ts` during cleanup to preserve reusable logic from `useEpgGridData.ts`.
+
+5. **Route Consolidation:** Both `/epg` and `/epg-tv` routes now point to the same `EpgTv` component, ensuring backward compatibility while using the new TV-style implementation.
+
 ### File List
+
+**Deleted Files (14 files):**
+- `src/components/epg/EpgGrid.tsx` - Legacy horizontal grid component
+- `src/components/epg/EpgCell.tsx` - Legacy grid cell component
+- `src/components/epg/TimeNavigationBar.tsx` - Legacy time navigation
+- `src/components/epg/ProgramDetailsPanel.tsx` - Old details panel (replaced by EpgProgramDetails)
+- `src/components/epg/EpgSearchInput.tsx` - Old search input (replaced by tv-style version)
+- `src/components/epg/EpgSearchResults.tsx` - Old search results (replaced by tv-style version)
+- `src/components/epg/tv-style/EpgChannelListPlaceholder.tsx` - Placeholder removed
+- `src/components/epg/tv-style/EpgSchedulePanelPlaceholder.tsx` - Placeholder removed
+- `src/components/epg/tv-style/EpgDetailsPanelPlaceholder.tsx` - Placeholder removed
+- `src/hooks/useEpgGridData.ts` - Legacy grid data hook (utilities extracted to epgTimeUtils)
+- `src/views/EPG.tsx` - Legacy EPG view (replaced by EpgTv)
+- `tests/component/epg-grid.test.tsx` - Legacy grid component tests
+- `tests/e2e/epg-grid.spec.ts` - Legacy grid E2E tests
+- `tests/support/fixtures/epg-grid.fixture.ts` - Legacy grid test fixture
+
+**Created Files (1 file):**
+- `src/hooks/epgTimeUtils.ts` - Extracted time window utilities (32 lines)
+
+**Modified Files (11 files):**
+- `src/components/epg/index.ts` - Removed legacy component exports
+- `src/components/epg/tv-style/index.ts` - Updated comments for Story 5.9
+- `src/hooks/useChannelSchedule.ts` - Updated to use epgTimeUtils
+- `src/hooks/useEpgChannelList.ts` - Updated type references
+- `src/hooks/useEpgSearch.ts` - Updated type references
+- `src/lib/routes.ts` - Consolidated EPG routes
+- `src/lib/tauri.ts` - Renamed types from EpgGridProgram/EpgGridChannel to EpgProgram/EpgChannel (with backward-compatible aliases)
+- `src/router.tsx` - Updated EPG route to use EpgTv, added Story 5.9 comment
+- `src/views/index.ts` - Removed EPG export, kept EpgTv
+- `_bmad-output/implementation-artifacts/5-9-epg-legacy-component-cleanup.md` - This story file
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` - Updated story status to review
