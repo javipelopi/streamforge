@@ -374,3 +374,59 @@ The following UX improvements were applied after Story 5.9 completion:
 - Added null checks for `result.startTime` and `result.programId` assertions
 - Removed dead `startAt6PM` function
 - Added documentation for Tonight option removal rationale
+
+---
+
+## Post-Completion UX Polish (2026-01-23)
+
+Additional visual polish for immersive full-screen EPG experience.
+
+### Intentional Design Decisions
+
+**Channel Name Removed from Channel Row (Intentional):**
+- The channel name was removed from `EpgChannelRow` to create a cleaner, more focused layout
+- Rationale: The channel logo and current program info provide sufficient identification
+- The channel name is redundant since the logo already identifies the channel
+- This creates more space for program information which is the primary focus
+
+**Rounded Corners Removed (Intentional):**
+- Removed `rounded-lg` from all EPG panel containers for a full-screen, edge-to-edge aesthetic
+- Affects: `EpgMainContent`, `EpgSchedulePanel`, `EpgProgramDetails`
+- Rationale: Creates an immersive TV-like experience where panels flow seamlessly together
+- Matches the design direction of modern streaming app interfaces
+
+### Bug Fixes
+
+**Full-Screen Layout Fix:**
+- Fixed parent layout (`MainLayout`) to properly support full-screen views
+- EPG view now uses zero-padding content area (no header, no margins)
+- Removed fragile negative margin/calc() hack from `EpgTv.tsx`
+- Added `FULL_SCREEN_ROUTES` constant for views that need immersive mode
+
+**Scroll Double-Trigger Fix:**
+- Fixed `EpgChannelList` scroll-to-selected effect that could double-scroll
+- Added ref tracking to distinguish internal selections (keyboard nav, click, auto-select) from external (search)
+- Only scrolls for external selections to avoid conflicting with virtualized list scroll strategy
+
+**setTimeout Cleanup Fix:**
+- Fixed potential memory leak in `EpgSchedulePanel.handleFocus`
+- Replaced multiple `setTimeout(..., 0)` calls with `requestAnimationFrame` for proper DOM timing
+- Added mounted ref to prevent scroll operations after component unmount
+
+**Animation on Error States Fix:**
+- Removed `animate-slide-up` from error, loading, and not-found states in `EpgProgramDetails`
+- Animation now only applies to successful program details display
+- Error messages appear instantly for better user feedback
+
+### Files Modified (2026-01-23)
+
+| File | Change |
+|------|--------|
+| `src/components/layout/MainLayout.tsx` | Added full-screen mode support for EPG routes |
+| `src/components/epg/tv-style/EpgChannelList.tsx` | Fixed scroll double-trigger with internal selection tracking |
+| `src/components/epg/tv-style/EpgChannelRow.tsx` | Removed channel name display (intentional) |
+| `src/components/epg/tv-style/EpgMainContent.tsx` | Removed rounded corners, gap between panels |
+| `src/components/epg/tv-style/EpgSchedulePanel.tsx` | Fixed setTimeout cleanup with rAF and mounted ref |
+| `src/components/epg/tv-style/EpgProgramDetails.tsx` | Removed animation from error/loading states |
+| `src/views/EpgTv.tsx` | Removed negative margin hack, simplified layout |
+| `src/index.css` | Added slide-up animation keyframes |

@@ -166,30 +166,17 @@ export function EpgProgramDetails({ selectedProgramId, onClose, onNavigateUp, on
     };
   }, [programWithChannel]);
 
-  // Empty state (AC #2) - show when no program is selected
+  // Hide panel completely when no program is selected
   if (selectedProgramId === null) {
-    return (
-      <section
-        data-testid="epg-program-details"
-        className="h-full w-full bg-black/50 rounded-lg flex items-center justify-center focus:outline-none"
-        aria-label="Program details panel - no program selected"
-      >
-        <p
-          data-testid="details-empty-state"
-          className="text-white/50 text-sm text-center"
-        >
-          Select a program to see details
-        </p>
-      </section>
-    );
+    return null;
   }
 
-  // Loading state
+  // Loading state - no animation for loading states (instant feedback)
   if (isLoading) {
     return (
       <section
         data-testid="epg-program-details"
-        className="h-full w-full bg-black/50 rounded-lg p-8"
+        className="h-full w-full bg-black/50 p-8"
         aria-label="Program details loading"
         aria-busy="true"
       >
@@ -222,12 +209,12 @@ export function EpgProgramDetails({ selectedProgramId, onClose, onNavigateUp, on
     );
   }
 
-  // Error state
+  // Error state - no animation for error states (instant feedback)
   if (error) {
     return (
       <section
         data-testid="epg-program-details"
-        className="h-full w-full bg-black/50 rounded-lg p-8 flex flex-col items-center justify-center"
+        className="h-full w-full bg-black/50 p-8 flex flex-col items-center justify-center"
         aria-label="Program details error"
       >
         <div data-testid="details-error" className="text-center">
@@ -238,12 +225,12 @@ export function EpgProgramDetails({ selectedProgramId, onClose, onNavigateUp, on
     );
   }
 
-  // No program data found
+  // No program data found - no animation (instant feedback)
   if (!programWithChannel) {
     return (
       <section
         data-testid="epg-program-details"
-        className="h-full w-full bg-black/50 rounded-lg flex items-center justify-center"
+        className="h-full w-full bg-black/50 flex items-center justify-center"
         aria-label="Program details - not found"
       >
         <p className="text-white/50 text-sm text-center">Program not found</p>
@@ -257,7 +244,7 @@ export function EpgProgramDetails({ selectedProgramId, onClose, onNavigateUp, on
     <section
       ref={panelRef}
       data-testid="epg-program-details"
-      className="h-full w-full bg-black/50 rounded-lg p-8 flex flex-col overflow-hidden focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+      className="h-full w-full bg-black/50 p-8 flex flex-col overflow-hidden focus:outline-none focus:ring-2 focus:ring-indigo-500/50 animate-slide-up"
       role="complementary"
       aria-label="Program details. Press Escape or Left arrow to close."
       aria-describedby="program-details-instructions"

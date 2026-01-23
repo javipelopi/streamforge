@@ -134,6 +134,8 @@ export function EpgTv() {
         setSelectedChannelId(result.channelId);
         setHighlightedProgramId(null);
         setDetailsProgramId(null);
+        // Focus channel list for keyboard navigation
+        setTimeout(() => focusPanel('channels'), 0);
       } else if (result.startTime && result.programId) {
         // Program result: navigate to date, select channel, and show details
         const resultDate = new Date(result.startTime);
@@ -141,9 +143,11 @@ export function EpgTv() {
         setSelectedChannelId(result.channelId);
         setHighlightedProgramId(result.programId);
         setDetailsProgramId(result.programId);
+        // Focus schedule panel for keyboard navigation
+        setTimeout(() => focusPanel('schedule'), 0);
       }
     },
-    [selectDate]
+    [selectDate, focusPanel]
   );
 
   // Track mounted state to avoid focus operations after unmount
@@ -214,6 +218,7 @@ export function EpgTv() {
               setHighlightedProgramId(null);
               navigateFromSchedule('left');
             }}
+            onCloseDetails={handleCloseDetails}
           />
           {/* Right panel: Program Details (Story 5.8) */}
           <div ref={detailsRef} className="relative">
