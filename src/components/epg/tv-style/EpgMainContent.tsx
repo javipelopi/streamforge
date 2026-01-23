@@ -18,11 +18,11 @@ export function EpgMainContent({ children }: EpgMainContentProps) {
   const [leftPanel, centerPanel, rightPanel] = children;
 
   return (
-    <div className="flex flex-1 gap-4 p-4 min-h-0">
+    <div className="flex flex-1 gap-0 min-h-0">
       {/* Left Panel - Channel List (~30%) */}
       <div
         data-testid="epg-left-panel"
-        className="w-[30%] bg-black/60 rounded-lg overflow-hidden flex flex-col"
+        className="w-[30%] bg-black/60 overflow-hidden flex flex-col"
       >
         {leftPanel}
       </div>
@@ -30,15 +30,15 @@ export function EpgMainContent({ children }: EpgMainContentProps) {
       {/* Center Panel - Schedule (~30%) */}
       <div
         data-testid="epg-center-panel"
-        className="w-[30%] bg-black/50 rounded-lg overflow-hidden flex flex-col"
+        className="w-[30%] bg-black/50 overflow-hidden flex flex-col"
       >
         {centerPanel}
       </div>
 
-      {/* Right Panel - Details (~40%) */}
+      {/* Right Panel - Details (~40%) - transparent wrapper, background handled by EpgProgramDetails */}
       <div
         data-testid="epg-right-panel"
-        className="w-[40%] bg-black/50 rounded-lg overflow-hidden flex flex-col"
+        className="w-[40%] overflow-hidden flex flex-col"
       >
         {rightPanel}
       </div>

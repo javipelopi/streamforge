@@ -48,9 +48,15 @@ export const EpgChannelList = forwardRef<HTMLDivElement, EpgChannelListProps>(
 
   const { channels, isLoading, error } = useEpgChannelList();
 
+  // Track if selection is internal (auto-select, keyboard nav, click) to avoid double-scroll
+  // External selections (e.g., from search) should trigger scroll-to-selected
+  const isInternalSelectionRef = useRef(false);
+  const prevSelectedIdRef = useRef<number | null | undefined>(undefined);
+
   // Auto-select first channel when channels load and none is selected
   useEffect(() => {
     if (channels.length > 0 && selectedChannelId === null && onSelectChannel) {
+      isInternalSelectionRef.current = true;
       onSelectChannel(channels[0].channelId);
     }
   }, [channels, selectedChannelId, onSelectChannel]);
@@ -63,14 +69,37 @@ export const EpgChannelList = forwardRef<HTMLDivElement, EpgChannelListProps>(
     overscan: 5, // Render 5 extra items above/below viewport
   });
 
+  // Scroll to selected channel only for external changes (e.g., from search)
+  // Skip scrolling for internal selections (auto-select, keyboard nav, click)
+  useEffect(() => {
+    // Skip if selection hasn't changed
+    if (selectedChannelId === prevSelectedIdRef.current) return;
+    prevSelectedIdRef.current = selectedChannelId;
+
+    // Skip scroll for internal selections (keyboard nav, click, auto-select)
+    if (isInternalSelectionRef.current) {
+      isInternalSelectionRef.current = false;
+      return;
+    }
+
+    // External selection (e.g., from search) - scroll to make it visible
+    if (selectedChannelId !== null && channels.length > 0) {
+      const index = channels.findIndex((ch) => ch.channelId === selectedChannelId);
+      if (index !== -1) {
+        virtualizer.scrollToIndex(index, { align: 'center' });
+      }
+    }
+  }, [selectedChannelId, channels, virtualizer]);
+
   // Memoize scroll strategy to avoid recreating on every render
   const scrollStrategy = useMemo(() => ({
     type: 'virtualizer' as const,
     virtualizer,
   }), [virtualizer]);
 
-  // Handle channel selection for the navigation hook
+  // Handle channel selection for the navigation hook (keyboard nav)
   const handleSelect = useCallback((channelId: number) => {
+    isInternalSelectionRef.current = true;
     onSelectChannel?.(channelId);
   }, [onSelectChannel]);
 
@@ -109,6 +138,7 @@ export const EpgChannelList = forwardRef<HTMLDivElement, EpgChannelListProps>(
   // Handle channel click - ensures focus stays on container for keyboard nav
   const handleChannelClick = useCallback(
     (channelId: number) => {
+      isInternalSelectionRef.current = true;
       onSelectChannel?.(channelId);
       // Refocus container after click to keep keyboard nav working
       parentRef.current?.focus();

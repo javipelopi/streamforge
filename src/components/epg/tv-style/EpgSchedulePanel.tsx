@@ -35,6 +35,8 @@ interface EpgSchedulePanelProps {
   onNavigateLeft?: () => void;
   /** Whether the details panel is currently showing */
   isDetailsOpen?: boolean;
+  /** Callback to close details panel (when Left/Escape pressed while details open) */
+  onCloseDetails?: () => void;
 }
 
 /**
@@ -48,7 +50,7 @@ interface EpgSchedulePanelProps {
  */
 export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps>(
   function EpgSchedulePanel(
-    { selectedChannelId, selectedProgramId, onSelectProgram, onProgramAction, selectedDate, onNavigateUp, onNavigateLeft, isDetailsOpen = false },
+    { selectedChannelId, selectedProgramId, onSelectProgram, onProgramAction, selectedDate, onNavigateUp, onNavigateLeft, isDetailsOpen = false, onCloseDetails },
     forwardedRef
   ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -62,6 +64,15 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
     selectedDate
   );
 
+  // Track mounted state to prevent operations after unmount
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   // Parse selected date for header display
   const headerDate = selectedDate ? new Date(selectedDate.startTime) : new Date();
 
@@ -69,7 +80,7 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
   useEffect(() => {
     // Add slight delay to ensure ref is populated after render
     const timeoutId = setTimeout(() => {
-      if (currentProgramRef.current && containerRef.current) {
+      if (isMountedRef.current && currentProgramRef.current && containerRef.current) {
         currentProgramRef.current.scrollIntoView({
           behavior: 'smooth',
           block: 'center',
@@ -80,13 +91,34 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
     return () => clearTimeout(timeoutId);
   }, [currentProgramId, selectedChannelId]);
 
-  // Handle focus - auto-select current program when entering the panel
+  // Helper to scroll to element after next paint (uses rAF for proper timing)
+  const scrollToElementDeferred = useCallback((elementId: string) => {
+    requestAnimationFrame(() => {
+      if (!isMountedRef.current) return;
+      const element = document.getElementById(elementId);
+      element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }, []);
+
+  // Handle focus - auto-select current program when entering the panel and scroll to it
   const handleFocus = useCallback(() => {
-    // If no program is selected and we have a current program, auto-select it
-    if (selectedProgramId === null && currentProgramId !== null && onSelectProgram) {
-      onSelectProgram(currentProgramId);
+    if (selectedProgramId === null && onSelectProgram) {
+      // No program selected - auto-select one
+      if (currentProgramId !== null) {
+        // Today: select the current (NOW) program
+        onSelectProgram(currentProgramId);
+        scrollToElementDeferred(`schedule-row-${currentProgramId}`);
+      } else if (programs.length > 0) {
+        // Other day: select the first program in the list
+        const firstProgramId = programs[0].id;
+        onSelectProgram(firstProgramId);
+        scrollToElementDeferred(`schedule-row-${firstProgramId}`);
+      }
+    } else if (selectedProgramId !== null) {
+      // If a program is already selected, ensure it's visible
+      scrollToElementDeferred(`schedule-row-${selectedProgramId}`);
     }
-  }, [selectedProgramId, currentProgramId, onSelectProgram]);
+  }, [selectedProgramId, currentProgramId, programs, onSelectProgram, scrollToElementDeferred]);
 
   // Memoize scroll strategy for list navigation
   const scrollStrategy = useMemo(() => ({
@@ -122,14 +154,15 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         handleArrowUp();
-      } else if (e.key === 'ArrowLeft') {
-        // If details are open, let the details panel handle Left (to close)
-        // Otherwise navigate to channel list
-        if (!isDetailsOpen) {
-          e.preventDefault();
+      } else if (e.key === 'ArrowLeft' || e.key === 'Escape') {
+        // If details are open, close them
+        // Otherwise navigate to channel list (Left only, not Escape)
+        e.preventDefault();
+        if (isDetailsOpen) {
+          onCloseDetails?.();
+        } else if (e.key === 'ArrowLeft') {
           onNavigateLeft?.();
         }
-        // When details are open, don't handle here - global listener in EpgProgramDetails will close it
       } else if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') {
         // Activate program - opens/toggles details (if program selected)
         e.preventDefault();
@@ -138,7 +171,7 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
         }
       }
     },
-    [handleArrowDown, handleArrowUp, isDetailsOpen, onNavigateLeft, selectedProgramId, onProgramAction]
+    [handleArrowDown, handleArrowUp, isDetailsOpen, onNavigateLeft, onCloseDetails, selectedProgramId, onProgramAction]
   );
 
   // Handle program click - activates program (opens/toggles details)
@@ -157,7 +190,7 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
       <div
         ref={setRefs}
         data-testid="epg-schedule-panel"
-        className="h-full flex flex-col bg-black/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        className="h-full flex flex-col bg-black/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
@@ -177,7 +210,7 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
       <div
         ref={setRefs}
         data-testid="epg-schedule-panel"
-        className="h-full flex flex-col bg-black/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        className="h-full flex flex-col bg-black/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
@@ -214,7 +247,7 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
       <div
         ref={setRefs}
         data-testid="epg-schedule-panel"
-        className="h-full flex flex-col bg-black/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        className="h-full flex flex-col bg-black/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
@@ -251,7 +284,7 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
       <div
         ref={setRefs}
         data-testid="epg-schedule-panel"
-        className="h-full flex flex-col bg-black/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        className="h-full flex flex-col bg-black/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
@@ -275,7 +308,7 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
     <div
       ref={setRefs}
       data-testid="epg-schedule-panel"
-      className="h-full flex flex-col bg-black/50 rounded-lg overflow-hidden focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+      className="h-full flex flex-col bg-black/50 overflow-hidden focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onFocus={handleFocus}

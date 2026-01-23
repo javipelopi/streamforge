@@ -86,12 +86,7 @@ export const ScheduleRow = memo(
         <div className="flex-1 flex items-center gap-2 min-w-0">
           <span
             data-testid="program-title"
-            className={`text-sm truncate ${titleColorClass}`}
-            style={{
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
+            className={`text-sm line-clamp-2 ${titleColorClass}`}
           >
             {program.title}
           </span>

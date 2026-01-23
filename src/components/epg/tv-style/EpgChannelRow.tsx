@@ -98,7 +98,7 @@ export const EpgChannelRow = memo(function EpgChannelRow({
       {/* Channel Logo (80×60px) */}
       <div
         data-testid="channel-logo"
-        className="flex-shrink-0 w-20 h-[60px] rounded bg-white/10 flex items-center justify-center overflow-hidden"
+        className="flex-shrink-0 w-20 h-[60px] flex items-center justify-center overflow-hidden"
       >
         {channel.channelIcon ? (
           <img
@@ -116,23 +116,17 @@ export const EpgChannelRow = memo(function EpgChannelRow({
 
       {/* Channel Info */}
       <div className="flex-1 min-w-0">
-        {/* Row 1: Channel name and time range */}
-        <div className="flex items-baseline gap-3 mb-1">
-          <span
-            data-testid="channel-name"
-            className="font-semibold text-white text-sm truncate"
-          >
-            {channel.channelName}
-          </span>
-          {hasProgram && (
+        {/* Row 1: Time range */}
+        {hasProgram && (
+          <div className="mb-1">
             <span
               data-testid="program-time-range"
-              className="text-xs text-[#a0a0a0] flex-shrink-0"
+              className="text-xs text-[#a0a0a0]"
             >
               {timeRange}
             </span>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Row 2: Program title */}
         <div className="mb-2">
