@@ -106,7 +106,7 @@ development_status:
   epic-6: in-progress
   6-1-settings-gui-for-server-and-startup-options: done
   6-2-configuration-export-import: done
-  6-3-event-logging-system: ready-for-dev
+  6-3-event-logging-system: review
   6-4-event-log-viewer-with-notification-badge: backlog
   6-5-auto-update-mechanism: backlog
   epic-6-retrospective: optional

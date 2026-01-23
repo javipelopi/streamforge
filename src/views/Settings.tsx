@@ -5,6 +5,7 @@
  * Story 2-6: Implement Scheduled EPG Refresh
  * Story 6.1: Settings GUI for Server and Startup Options
  * Story 6.2: Configuration Export/Import
+ * Story 6.3: Event Logging System - Log Verbosity Settings
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -26,6 +27,9 @@ import {
   validateImportFile,
   importConfiguration,
   ImportPreview,
+  getLogVerbosity,
+  setLogVerbosity,
+  LogVerbosity,
 } from '../lib/tauri';
 import { ImportPreviewDialog } from '../components/settings/ImportPreviewDialog';
 
@@ -107,6 +111,10 @@ export function Settings() {
   const [importFileContent, setImportFileContent] = useState<string | null>(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
 
+  // Log verbosity state (Story 6-3)
+  const [logVerbosity, setLogVerbosityState] = useState<LogVerbosity>('verbose');
+  const [savedLogVerbosity, setSavedLogVerbosity] = useState<LogVerbosity>('verbose');
+
   // General state
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -140,6 +148,11 @@ export function Settings() {
         setSavedEpgRefreshTime(timeStr);
         setScheduleEnabled(schedule.enabled);
         setSavedScheduleEnabled(schedule.enabled);
+
+        // Load log verbosity (Story 6-3)
+        const verbosity = await getLogVerbosity();
+        setLogVerbosityState(verbosity);
+        setSavedLogVerbosity(verbosity);
       } catch (err) {
         setError(`Failed to load settings: ${err instanceof Error ? err.message : String(err)}`);
       } finally {
@@ -155,9 +168,10 @@ export function Settings() {
       serverPort !== savedServerPort ||
       autostartEnabled !== savedAutostartEnabled ||
       epgRefreshTime !== savedEpgRefreshTime ||
-      scheduleEnabled !== savedScheduleEnabled
+      scheduleEnabled !== savedScheduleEnabled ||
+      logVerbosity !== savedLogVerbosity
     );
-  }, [serverPort, savedServerPort, autostartEnabled, savedAutostartEnabled, epgRefreshTime, savedEpgRefreshTime, scheduleEnabled, savedScheduleEnabled]);
+  }, [serverPort, savedServerPort, autostartEnabled, savedAutostartEnabled, epgRefreshTime, savedEpgRefreshTime, scheduleEnabled, savedScheduleEnabled, logVerbosity, savedLogVerbosity]);
 
   // Validate port on change
   const handlePortChange = useCallback((value: string) => {
@@ -241,6 +255,13 @@ export function Settings() {
         }
       }
 
+      // Save log verbosity if changed (Story 6-3)
+      if (logVerbosity !== savedLogVerbosity) {
+        await setLogVerbosity(logVerbosity);
+        setSavedLogVerbosity(logVerbosity);
+        messages.push(`Log verbosity set to ${logVerbosity}`);
+      }
+
       // Set success message
       if (messages.length > 0) {
         setSuccessMessage(messages.join('. '));
@@ -262,9 +283,10 @@ export function Settings() {
     setEpgRefreshTime(savedEpgRefreshTime);
     setEpgTimeError(null);
     setScheduleEnabled(savedScheduleEnabled);
+    setLogVerbosityState(savedLogVerbosity);
     setError(null);
     setSuccessMessage(null);
-  }, [savedServerPort, savedAutostartEnabled, savedEpgRefreshTime, savedScheduleEnabled]);
+  }, [savedServerPort, savedAutostartEnabled, savedEpgRefreshTime, savedScheduleEnabled, savedLogVerbosity]);
 
   // Calculate next refresh time display
   const parsedTime = parseTimeString(epgRefreshTime);
@@ -626,6 +648,41 @@ export function Settings() {
                 ? formatRelativeTime(epgSchedule.lastScheduledRefresh)
                 : 'Never'}
             </span>
+          </div>
+        </div>
+      </section>
+
+      {/* Logging Settings Section - Story 6-3, AC #5 */}
+      <section data-testid="logging-section" className="mb-8">
+        <h2 className="text-lg font-semibold mb-2 text-gray-700">Logging Settings</h2>
+        <p className="text-sm text-gray-500 mb-4">Configure event logging behavior</p>
+
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <label
+                htmlFor="log-verbosity-select"
+                className="font-medium text-gray-900"
+              >
+                Log Verbosity
+              </label>
+              <p className="text-sm text-gray-500 mt-1">
+                <strong>Verbose</strong>: Log all events including info, warnings, and errors.{' '}
+                <strong>Minimal</strong>: Log only warnings and errors (info events filtered out).
+              </p>
+            </div>
+
+            <select
+              id="log-verbosity-select"
+              data-testid="log-verbosity-select"
+              value={logVerbosity}
+              onChange={(e) => setLogVerbosityState(e.target.value as LogVerbosity)}
+              disabled={isSaving}
+              className="block w-32 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <option value="verbose">Verbose</option>
+              <option value="minimal">Minimal</option>
+            </select>
           </div>
         </div>
       </section>

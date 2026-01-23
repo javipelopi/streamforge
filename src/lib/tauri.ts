@@ -1696,3 +1696,34 @@ export async function importConfiguration(content: string): Promise<ImportResult
   return invoke<ImportResult>('import_configuration', { content });
 }
 
+// ============================================================================
+// Log Verbosity Settings (Story 6-3)
+// ============================================================================
+
+/** Log verbosity type */
+export type LogVerbosity = 'minimal' | 'verbose';
+
+/**
+ * Get the current log verbosity setting
+ *
+ * Story 6-3: Event Logging System
+ * Task 1.5: TypeScript binding for getLogVerbosity
+ *
+ * @returns Current log verbosity ("verbose" or "minimal")
+ */
+export async function getLogVerbosity(): Promise<LogVerbosity> {
+  return invoke<LogVerbosity>('get_log_verbosity');
+}
+
+/**
+ * Set the log verbosity setting
+ *
+ * Story 6-3: Event Logging System
+ * Task 1.5: TypeScript binding for setLogVerbosity
+ *
+ * @param verbosity - "verbose" (log all events) or "minimal" (only warn/error)
+ */
+export async function setLogVerbosity(verbosity: LogVerbosity): Promise<void> {
+  return invoke<void>('set_log_verbosity', { verbosity });
+}
+

@@ -1,6 +1,7 @@
 //! Configuration export/import Tauri commands
 //!
 //! Story 6-2: Configuration Export/Import
+//! Story 6-3: Configuration change event logging
 //!
 //! This module provides commands for exporting and importing application configuration,
 //! enabling backup/restore and migration between machines.
@@ -13,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use thiserror::Error;
 
+use crate::commands::logs::log_event_internal;
 use crate::db::{
     schema::{accounts, channel_mappings, settings, xmltv_channel_settings, xmltv_sources},
     Account, ChannelMapping, DbConnection, NewAccount, NewXmltvSource, Setting,
@@ -313,6 +315,25 @@ pub fn export_configuration(db: State<DbConnection>) -> Result<String, String> {
         ).into());
     }
 
+    // Story 6-3: Log configuration export event (AC #1)
+    let details = serde_json::json!({
+        "accountsExported": export.data.accounts.len(),
+        "xmltvSourcesExported": export.data.xmltv_sources.len(),
+        "channelMappingsExported": export.data.channel_mappings.len(),
+        "version": CONFIG_VERSION,
+    });
+    let _ = log_event_internal(
+        &mut conn,
+        "info",
+        "system",
+        &format!(
+            "Configuration exported: {} accounts, {} EPG sources",
+            export.data.accounts.len(),
+            export.data.xmltv_sources.len()
+        ),
+        Some(&details.to_string()),
+    );
+
     Ok(json)
 }
 
@@ -566,16 +587,39 @@ pub fn import_configuration(
 
     // Count what was actually imported
     let settings_count = count_settings(&config.data.settings);
+    let accounts_count = config.data.accounts.len();
+    let sources_count = config.data.xmltv_sources.len();
+
+    // Story 6-3: Log configuration import event (AC #1)
+    // Need a fresh connection after the transaction
+    if let Ok(mut log_conn) = db.get_connection() {
+        let details = serde_json::json!({
+            "accountsImported": accounts_count,
+            "xmltvSourcesImported": sources_count,
+            "settingsImported": settings_count,
+            "version": config.version,
+        });
+        let _ = log_event_internal(
+            &mut log_conn,
+            "info",
+            "system",
+            &format!(
+                "Configuration imported: {} accounts, {} EPG sources, {} settings",
+                accounts_count, sources_count, settings_count
+            ),
+            Some(&details.to_string()),
+        );
+    }
 
     Ok(ImportResult {
         success: true,
-        accounts_imported: config.data.accounts.len(),
-        xmltv_sources_imported: config.data.xmltv_sources.len(),
+        accounts_imported: accounts_count,
+        xmltv_sources_imported: sources_count,
         channel_mappings_imported: 0, // Not imported - see note above
         settings_imported: settings_count,
         message: format!(
             "Configuration imported successfully. {} accounts need passwords re-entered.",
-            config.data.accounts.len()
+            accounts_count
         ),
     })
 }

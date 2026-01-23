@@ -1,6 +1,7 @@
 //! Event Logging Tauri Commands
 //!
 //! Story 3-4: Event logging system for provider changes, connection issues, etc.
+//! Story 6-3: Log verbosity setting (minimal/verbose modes)
 //! These commands allow the frontend to log events, query event history, and manage read state.
 
 use diesel::prelude::*;
@@ -8,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::db::models::{EventLog, NewEventLog};
-use crate::db::schema::event_log;
-use crate::db::DbConnection;
+use crate::db::schema::{event_log, settings};
+use crate::db::{DbConnection, Setting};
 
 /// Response type for event log queries
 #[derive(Debug, Serialize, Clone)]
@@ -32,6 +33,10 @@ pub struct LogEventInput {
 
 /// Log an event to the database.
 ///
+/// Story 6-3: Respects log verbosity setting.
+/// - In "minimal" mode, info events are filtered out (not logged)
+/// - In "verbose" mode (default), all events are logged
+///
 /// # Arguments
 ///
 /// * `level` - Event level: "info", "warn", or "error"
@@ -41,7 +46,7 @@ pub struct LogEventInput {
 ///
 /// # Returns
 ///
-/// The created event log entry
+/// The created event log entry, or None if event was filtered by verbosity
 #[tauri::command]
 pub fn log_event(
     db: State<DbConnection>,
@@ -49,7 +54,7 @@ pub fn log_event(
     category: String,
     message: String,
     details: Option<String>,
-) -> Result<EventLog, String> {
+) -> Result<Option<EventLog>, String> {
     // Validate level
     let valid_levels = ["info", "warn", "error"];
     if !valid_levels.contains(&level.as_str()) {
@@ -62,6 +67,16 @@ pub fn log_event(
     let mut conn = db
         .get_connection()
         .map_err(|e| format!("Database connection error: {}", e))?;
+
+    // Story 6-3: Check verbosity setting for info level events
+    if level == "info" {
+        let verbosity = get_log_verbosity_internal(&mut conn)
+            .map_err(|e| format!("Failed to get log verbosity: {}", e))?;
+        if verbosity == "minimal" {
+            // Skip info events in minimal mode - return None to indicate event was filtered
+            return Ok(None);
+        }
+    }
 
     let new_event = NewEventLog {
         level,
@@ -81,7 +96,7 @@ pub fn log_event(
         .first::<EventLog>(&mut conn)
         .map_err(|e| format!("Failed to retrieve event: {}", e))?;
 
-    Ok(event)
+    Ok(Some(event))
 }
 
 /// Get recent events from the event log.
@@ -273,6 +288,11 @@ pub fn clear_old_events(db: State<DbConnection>, keep_count: Option<i64>) -> Res
 
 /// Internal function to log an event (for use by other Rust code).
 /// Does not require Tauri state, takes a connection directly.
+///
+/// Story 6-3: Respects log verbosity setting.
+/// - In "minimal" mode, info events are filtered out (not logged)
+/// - In "verbose" mode (default), all events are logged
+/// - warn and error events are ALWAYS logged regardless of verbosity
 pub fn log_event_internal(
     conn: &mut diesel::SqliteConnection,
     level: &str,
@@ -280,6 +300,15 @@ pub fn log_event_internal(
     message: &str,
     details: Option<&str>,
 ) -> Result<(), diesel::result::Error> {
+    // Story 6-3: Check verbosity setting for info level events
+    if level == "info" {
+        let verbosity = get_log_verbosity_internal(conn)?;
+        if verbosity == "minimal" {
+            // Skip info events in minimal mode
+            return Ok(());
+        }
+    }
+
     let new_event = NewEventLog {
         level: level.to_string(),
         category: category.to_string(),
@@ -303,4 +332,86 @@ pub fn log_provider_event(
 ) -> Result<(), diesel::result::Error> {
     let details_str = details.map(|v| v.to_string());
     log_event_internal(conn, level, "provider", message, details_str.as_deref())
+}
+
+// ============================================================================
+// Log Verbosity Commands (Story 6-3)
+// ============================================================================
+
+/// Log verbosity setting key
+const LOG_VERBOSITY_KEY: &str = "log_verbosity";
+
+/// Default log verbosity (verbose = log all events including info)
+const DEFAULT_LOG_VERBOSITY: &str = "verbose";
+
+/// Get the current log verbosity setting from the database.
+///
+/// Story 6-3: Log verbosity setting
+///
+/// Returns "verbose" (default) or "minimal".
+/// - "verbose": All events (info, warn, error) are logged
+/// - "minimal": Only warn and error events are logged (info filtered out)
+fn get_log_verbosity_internal(
+    conn: &mut diesel::SqliteConnection,
+) -> Result<String, diesel::result::Error> {
+    let result = settings::table
+        .filter(settings::key.eq(LOG_VERBOSITY_KEY))
+        .select(settings::value)
+        .first::<String>(conn)
+        .optional()?;
+
+    Ok(result.unwrap_or_else(|| DEFAULT_LOG_VERBOSITY.to_string()))
+}
+
+/// Get the current log verbosity setting.
+///
+/// Story 6-3: Log Verbosity Setting (AC #3, #4, #5)
+///
+/// # Returns
+///
+/// "verbose" (default) or "minimal"
+#[tauri::command]
+pub fn get_log_verbosity(db: State<DbConnection>) -> Result<String, String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    get_log_verbosity_internal(&mut conn)
+        .map_err(|e| format!("Failed to get log verbosity: {}", e))
+}
+
+/// Set the log verbosity setting.
+///
+/// Story 6-3: Log Verbosity Setting (AC #3, #4, #5)
+///
+/// # Arguments
+///
+/// * `verbosity` - "verbose" or "minimal"
+///
+/// # Returns
+///
+/// Success or error
+#[tauri::command]
+pub fn set_log_verbosity(db: State<DbConnection>, verbosity: String) -> Result<(), String> {
+    // Validate verbosity value
+    let valid_values = ["minimal", "verbose"];
+    if !valid_values.contains(&verbosity.as_str()) {
+        return Err(format!(
+            "Invalid log verbosity: {}. Must be one of: {:?}",
+            verbosity, valid_values
+        ));
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    let setting = Setting::new(LOG_VERBOSITY_KEY.to_string(), verbosity);
+
+    diesel::replace_into(settings::table)
+        .values(&setting)
+        .execute(&mut conn)
+        .map_err(|e| format!("Failed to set log verbosity: {}", e))?;
+
+    Ok(())
 }

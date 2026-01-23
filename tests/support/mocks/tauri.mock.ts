@@ -266,6 +266,7 @@ export async function injectSettingsStatefulMock(
     serverPort?: number;
     autostartEnabled?: boolean;
     epgSchedule?: { hour: number; minute: number; enabled: boolean };
+    logVerbosity?: 'minimal' | 'verbose';
   } = {}
 ): Promise<void> {
   const serverPort = initialState.serverPort ?? 5004;
@@ -273,6 +274,7 @@ export async function injectSettingsStatefulMock(
   const epgHour = initialState.epgSchedule?.hour ?? 4;
   const epgMinute = initialState.epgSchedule?.minute ?? 0;
   const epgEnabled = initialState.epgSchedule?.enabled ?? true;
+  const logVerbosity = initialState.logVerbosity ?? 'verbose';
 
   const mockScript = `
     // Comprehensive Stateful Tauri Mock for Settings GUI - Injected by Playwright
@@ -300,7 +302,8 @@ export async function injectSettingsStatefulMock(
           minute: ${epgMinute},
           enabled: ${epgEnabled},
           lastScheduledRefresh: null
-        }
+        },
+        logVerbosity: '${logVerbosity}'
       };
 
       // Keep legacy state for backwards compatibility
@@ -389,6 +392,16 @@ export async function injectSettingsStatefulMock(
 
         // Event log commands (stub)
         get_unread_event_count: () => 0,
+
+        // Log verbosity commands (Story 6-3)
+        get_log_verbosity: () => {
+          return window.__SETTINGS_STATE__.logVerbosity || 'verbose';
+        },
+        set_log_verbosity: (args) => {
+          window.__SETTINGS_STATE__.logVerbosity = args.verbosity;
+          persistState();
+          return undefined;
+        },
 
         // Configuration export/import commands (Story 6-2)
         export_configuration: () => {
