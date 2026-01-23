@@ -6,7 +6,8 @@
  * episode info, channel badge with status, metadata, and description.
  */
 
-import { useEffect, useRef, useMemo } from 'react';
+import { useRef, useMemo, useCallback } from 'react';
+import type { KeyboardEvent } from 'react';
 import { Clock, Calendar } from 'lucide-react';
 import { useProgramDetails } from '../../../hooks/useProgramDetails';
 
@@ -121,13 +122,10 @@ export function EpgProgramDetails({ selectedProgramId, onClose, onNavigateUp, on
   const { programWithChannel, isLoading, error } = useProgramDetails(selectedProgramId);
 
   // Handle keyboard navigation - Escape or Left arrow to close
-  // Only add global listener when details panel is showing a program
+  // Uses local handler instead of global document listener to avoid conflicts
   // Note: Up/Down/Enter are handled by EpgSchedulePanel
-  useEffect(() => {
-    // Don't add global listener when panel is empty - let other panels handle keys
-    if (selectedProgramId === null) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLElement>) => {
       if (e.key === 'Escape') {
         // Escape closes details panel
         e.preventDefault();
@@ -136,13 +134,15 @@ export function EpgProgramDetails({ selectedProgramId, onClose, onNavigateUp, on
         // Left arrow closes details panel
         e.preventDefault();
         onNavigateLeft?.();
+      } else if (e.key === 'ArrowUp') {
+        // Navigate up to header
+        e.preventDefault();
+        onNavigateUp?.();
       }
-      // Note: ArrowUp/ArrowDown/Enter are NOT handled here - they're handled by EpgSchedulePanel
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedProgramId, onClose, onNavigateLeft]);
+      // Note: ArrowDown/Enter are NOT handled here - they're handled by EpgSchedulePanel
+    },
+    [onClose, onNavigateLeft, onNavigateUp]
+  );
 
   // Calculate program status - memoize to avoid recalculating on every render
   const programStatus = useMemo(() => {
@@ -171,7 +171,7 @@ export function EpgProgramDetails({ selectedProgramId, onClose, onNavigateUp, on
     return (
       <section
         data-testid="epg-program-details"
-        className="h-full w-full bg-black/50 rounded-lg flex items-center justify-center"
+        className="h-full w-full bg-black/50 rounded-lg flex items-center justify-center focus:outline-none"
         aria-label="Program details panel - no program selected"
       >
         <p
@@ -257,9 +257,12 @@ export function EpgProgramDetails({ selectedProgramId, onClose, onNavigateUp, on
     <section
       ref={panelRef}
       data-testid="epg-program-details"
-      className="h-full w-full bg-black/50 rounded-lg p-8 flex flex-col overflow-hidden"
+      className="h-full w-full bg-black/50 rounded-lg p-8 flex flex-col overflow-hidden focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
       role="complementary"
-      aria-label="Program details"
+      aria-label="Program details. Press Escape or Left arrow to close."
+      aria-describedby="program-details-instructions"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
     >
       {/* Program Header (Task 2) */}
       <div className="flex-shrink-0">
@@ -367,6 +370,11 @@ export function EpgProgramDetails({ selectedProgramId, onClose, onNavigateUp, on
           <p className="text-white/40 italic">No description available</p>
         )}
       </div>
+
+      {/* Screen reader instructions */}
+      <span id="program-details-instructions" className="sr-only">
+        Press Escape or Left arrow to close this panel. Press Up arrow to navigate to the header.
+      </span>
     </section>
   );
 }

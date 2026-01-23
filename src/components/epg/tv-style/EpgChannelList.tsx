@@ -13,6 +13,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { EpgChannelRow } from './EpgChannelRow';
 import { useEpgChannelList } from '../../../hooks/useEpgChannelList';
 import { useListNavigation } from '../../../hooks/useListNavigation';
+import { useCombinedRef } from '../../../hooks/useFocusManager';
 
 interface EpgChannelListProps {
   /** Currently selected channel ID */
@@ -42,20 +43,9 @@ export const EpgChannelList = forwardRef<HTMLDivElement, EpgChannelListProps>(
   ) {
   const parentRef = useRef<HTMLDivElement>(null);
 
-  // Combine local ref with forwarded ref
-  const setRefs = useCallback(
-    (element: HTMLDivElement | null) => {
-      // Set local ref
-      (parentRef as React.MutableRefObject<HTMLDivElement | null>).current = element;
-      // Set forwarded ref
-      if (typeof forwardedRef === 'function') {
-        forwardedRef(element);
-      } else if (forwardedRef) {
-        forwardedRef.current = element;
-      }
-    },
-    [forwardedRef]
-  );
+  // Combine local ref with forwarded ref using utility hook
+  const setRefs = useCombinedRef(parentRef, forwardedRef);
+
   const { channels, isLoading, error } = useEpgChannelList();
 
   // Auto-select first channel when channels load and none is selected

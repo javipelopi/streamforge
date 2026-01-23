@@ -13,7 +13,10 @@
  * - Right panel (~40%): Program details (when selected)
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+
+/** Timing constant for auto-focus delay after mount */
+const AUTO_FOCUS_DELAY_MS = 100;
 import { EpgBackground } from '../components/epg/tv-style/EpgBackground';
 import { EpgMainContent } from '../components/epg/tv-style/EpgMainContent';
 import { EpgChannelList } from '../components/epg/tv-style/EpgChannelList';
@@ -143,12 +146,23 @@ export function EpgTv() {
     [selectDate]
   );
 
+  // Track mounted state to avoid focus operations after unmount
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   // Auto-focus channel list when EPG view mounts for immediate keyboard navigation
   useEffect(() => {
     // Small delay to ensure the component is fully rendered
     const timeoutId = setTimeout(() => {
-      focusPanel('channels');
-    }, 100);
+      if (isMountedRef.current) {
+        focusPanel('channels');
+      }
+    }, AUTO_FOCUS_DELAY_MS);
     return () => clearTimeout(timeoutId);
   }, [focusPanel]);
 

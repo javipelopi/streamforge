@@ -6,6 +6,7 @@
  */
 
 import { useCallback } from 'react';
+import type { ForwardedRef, MutableRefObject, RefCallback } from 'react';
 
 /** Default selector for focusable elements */
 const DEFAULT_FOCUSABLE_SELECTOR = '[tabindex="0"], button:not([disabled]), input:not([disabled])';
@@ -138,4 +139,37 @@ export function useFocusManager(): UseFocusManagerReturn {
     focusByIndex,
     getActiveDescendantId,
   };
+}
+
+/**
+ * Hook to combine a local ref with a forwarded ref.
+ * Useful for components that need to use forwardRef but also need local access.
+ *
+ * @example
+ * ```tsx
+ * const MyComponent = forwardRef<HTMLDivElement, Props>((props, forwardedRef) => {
+ *   const localRef = useRef<HTMLDivElement>(null);
+ *   const setRefs = useCombinedRef(localRef, forwardedRef);
+ *
+ *   return <div ref={setRefs}>...</div>;
+ * });
+ * ```
+ */
+export function useCombinedRef<T>(
+  localRef: MutableRefObject<T | null>,
+  forwardedRef: ForwardedRef<T>
+): RefCallback<T> {
+  return useCallback(
+    (element: T | null) => {
+      // Set local ref
+      localRef.current = element;
+      // Set forwarded ref
+      if (typeof forwardedRef === 'function') {
+        forwardedRef(element);
+      } else if (forwardedRef) {
+        forwardedRef.current = element;
+      }
+    },
+    [localRef, forwardedRef]
+  );
 }
