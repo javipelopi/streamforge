@@ -6,8 +6,8 @@
  * episode info, channel badge with status, metadata, and description.
  */
 
-import { useEffect, useRef, useCallback, useMemo } from 'react';
-import { Clock, Calendar, X } from 'lucide-react';
+import { useEffect, useRef, useMemo } from 'react';
+import { Clock, Calendar } from 'lucide-react';
 import { useProgramDetails } from '../../../hooks/useProgramDetails';
 
 // Constants for styling
@@ -22,6 +22,10 @@ interface EpgProgramDetailsProps {
   selectedProgramId: number | null;
   /** Callback when panel should close */
   onClose: () => void;
+  /** Callback when navigating up (to header) */
+  onNavigateUp?: () => void;
+  /** Callback when navigating left (back to schedule panel) */
+  onNavigateLeft?: () => void;
 }
 
 /**
@@ -112,28 +116,33 @@ function parseCategories(category: string | undefined): string[] {
  * AC #2: Show empty state when no program selected
  * AC #3: Close panel on Escape or outside click
  */
-export function EpgProgramDetails({ selectedProgramId, onClose }: EpgProgramDetailsProps) {
+export function EpgProgramDetails({ selectedProgramId, onClose, onNavigateUp, onNavigateLeft }: EpgProgramDetailsProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const { programWithChannel, isLoading, error } = useProgramDetails(selectedProgramId);
 
-  // Handle Escape key to close panel (AC #3)
+  // Handle keyboard navigation - Escape or Left arrow to close
+  // Only add global listener when details panel is showing a program
+  // Note: Up/Down/Enter are handled by EpgSchedulePanel
   useEffect(() => {
+    // Don't add global listener when panel is empty - let other panels handle keys
+    if (selectedProgramId === null) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // Escape closes details panel
+        e.preventDefault();
         onClose();
+      } else if (e.key === 'ArrowLeft') {
+        // Left arrow closes details panel
+        e.preventDefault();
+        onNavigateLeft?.();
       }
+      // Note: ArrowUp/ArrowDown/Enter are NOT handled here - they're handled by EpgSchedulePanel
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
-  // Focus panel when it becomes visible for accessibility
-  useEffect(() => {
-    if (selectedProgramId !== null && panelRef.current) {
-      panelRef.current.focus();
-    }
-  }, [selectedProgramId]);
+  }, [selectedProgramId, onClose, onNavigateLeft]);
 
   // Calculate program status - memoize to avoid recalculating on every render
   const programStatus = useMemo(() => {
@@ -156,11 +165,6 @@ export function EpgProgramDetails({ selectedProgramId, onClose }: EpgProgramDeta
       categories: parseCategories(programWithChannel.program.category),
     };
   }, [programWithChannel]);
-
-  // Handle close button click
-  const handleCloseClick = useCallback(() => {
-    onClose();
-  }, [onClose]);
 
   // Empty state (AC #2) - show when no program is selected
   if (selectedProgramId === null) {
@@ -256,18 +260,7 @@ export function EpgProgramDetails({ selectedProgramId, onClose }: EpgProgramDeta
       className="h-full w-full bg-black/50 rounded-lg p-8 flex flex-col overflow-hidden"
       role="complementary"
       aria-label="Program details"
-      tabIndex={-1}
     >
-      {/* Close button (Task 9.2) */}
-      <button
-        data-testid="details-close-button"
-        onClick={handleCloseClick}
-        className="absolute top-4 right-4 p-2 text-white/60 hover:text-white transition-colors rounded-full hover:bg-white/10"
-        aria-label="Close program details"
-      >
-        <X className="w-5 h-5" aria-hidden="true" />
-      </button>
-
       {/* Program Header (Task 2) */}
       <div className="flex-shrink-0">
         {/* Program title (Task 2.1) */}

@@ -4,9 +4,10 @@
  *
  * Center panel displaying the full schedule for a selected channel.
  * Shows date header, time column, program titles with NOW/PAST/FUTURE indicators.
+ * Supports remote-control navigation with arrow keys.
  */
 
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, forwardRef } from 'react';
 import type { KeyboardEvent } from 'react';
 import { ScheduleHeader } from './ScheduleHeader';
 import { ScheduleRow } from './ScheduleRow';
@@ -17,10 +18,18 @@ interface EpgSchedulePanelProps {
   selectedChannelId: number | null;
   /** ID of the currently selected program */
   selectedProgramId?: number | null;
-  /** Callback when a program is selected */
+  /** Callback when a program is highlighted (up/down navigation) */
   onSelectProgram?: (programId: number) => void;
+  /** Callback when a program is activated (click/enter/right - toggles details) */
+  onProgramAction?: (programId: number) => void;
   /** Optional time window for day navigation (Story 5.7) */
   selectedDate?: { startTime: string; endTime: string };
+  /** Callback when navigating up (to header) */
+  onNavigateUp?: () => void;
+  /** Callback when navigating left (to channel list) */
+  onNavigateLeft?: () => void;
+  /** Whether the details panel is currently showing */
+  isDetailsOpen?: boolean;
 }
 
 /**
@@ -30,14 +39,29 @@ interface EpgSchedulePanelProps {
  * AC #2: Program selection with highlighted state and callback
  * AC #3: NOW indicator, muted past programs, auto-scroll to current
  * AC #4: Independent scrolling from channel list
+ * AC #5: Remote-control navigation (left to channels, right to details)
  */
-export function EpgSchedulePanel({
-  selectedChannelId,
-  selectedProgramId,
-  onSelectProgram,
-  selectedDate,
-}: EpgSchedulePanelProps) {
+export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps>(
+  function EpgSchedulePanel(
+    { selectedChannelId, selectedProgramId, onSelectProgram, onProgramAction, selectedDate, onNavigateUp, onNavigateLeft, isDetailsOpen = false },
+    forwardedRef
+  ) {
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Combine local ref with forwarded ref
+  const setRefs = useCallback(
+    (element: HTMLDivElement | null) => {
+      // Set local ref
+      (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = element;
+      // Set forwarded ref
+      if (typeof forwardedRef === 'function') {
+        forwardedRef(element);
+      } else if (forwardedRef) {
+        forwardedRef.current = element;
+      }
+    },
+    [forwardedRef]
+  );
   const currentProgramRef = useRef<HTMLDivElement>(null);
   const { programs, isLoading, error, currentProgramId } = useChannelSchedule(
     selectedChannelId,
@@ -62,17 +86,24 @@ export function EpgSchedulePanel({
     return () => clearTimeout(timeoutId);
   }, [currentProgramId, selectedChannelId]);
 
-  // Handle keyboard navigation (AC #2, AC #4)
+  // Handle focus - auto-select current program when entering the panel
+  const handleFocus = useCallback(() => {
+    // If no program is selected and we have a current program, auto-select it
+    if (selectedProgramId === null && currentProgramId !== null && onSelectProgram) {
+      onSelectProgram(currentProgramId);
+    }
+  }, [selectedProgramId, currentProgramId, onSelectProgram]);
+
+  // Handle keyboard navigation (AC #2, AC #4, AC #5)
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLDivElement>) => {
-      if (!onSelectProgram || programs.length === 0) return;
-
       const currentIndex = selectedProgramId
         ? programs.findIndex((p) => p.id === selectedProgramId)
         : -1;
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
+        if (!onSelectProgram || programs.length === 0) return;
         const nextIndex = currentIndex < programs.length - 1 ? currentIndex + 1 : currentIndex;
         if (nextIndex !== currentIndex || currentIndex === -1) {
           const nextProgram = programs[nextIndex === -1 ? 0 : nextIndex];
@@ -86,6 +117,16 @@ export function EpgSchedulePanel({
         }
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
+        // If at top of list or no selection
+        if (currentIndex <= 0) {
+          // Only navigate to header if details panel is closed
+          // When details are open, stay at top (user can close details first)
+          if (!isDetailsOpen) {
+            onNavigateUp?.();
+          }
+          return;
+        }
+        if (!onSelectProgram || programs.length === 0) return;
         const prevIndex = currentIndex > 0 ? currentIndex - 1 : 0;
         if (prevIndex !== currentIndex) {
           const prevProgram = programs[prevIndex];
@@ -97,25 +138,44 @@ export function EpgSchedulePanel({
             element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           }, 50);
         }
+      } else if (e.key === 'ArrowLeft') {
+        // If details are open, let the details panel handle Left (to close)
+        // Otherwise navigate to channel list
+        if (!isDetailsOpen) {
+          e.preventDefault();
+          onNavigateLeft?.();
+        }
+        // When details are open, don't handle here - global listener in EpgProgramDetails will close it
+      } else if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') {
+        // Activate program - opens/toggles details (if program selected)
+        e.preventDefault();
+        if (selectedProgramId !== null) {
+          onProgramAction?.(selectedProgramId);
+        }
       }
     },
-    [programs, selectedProgramId, onSelectProgram]
+    [programs, selectedProgramId, onSelectProgram, onProgramAction, onNavigateUp, onNavigateLeft, isDetailsOpen]
   );
 
-  // Handle program click
+  // Handle program click - activates program (opens/toggles details)
   const handleProgramClick = useCallback(
     (programId: number) => {
-      onSelectProgram?.(programId);
+      onProgramAction?.(programId);
+      // Refocus container after click to keep keyboard nav working
+      containerRef.current?.focus();
     },
-    [onSelectProgram]
+    [onProgramAction]
   );
 
   // No channel selected state (Task 7.1)
   if (selectedChannelId === null) {
     return (
       <div
+        ref={setRefs}
         data-testid="epg-schedule-panel"
-        className="h-full flex flex-col bg-black/50 rounded-lg"
+        className="h-full flex flex-col bg-black/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
       >
         <div
           data-testid="schedule-empty-state"
@@ -131,8 +191,11 @@ export function EpgSchedulePanel({
   if (isLoading) {
     return (
       <div
+        ref={setRefs}
         data-testid="epg-schedule-panel"
-        className="h-full flex flex-col bg-black/50 rounded-lg"
+        className="h-full flex flex-col bg-black/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
       >
         {/* Date header skeleton */}
         <div className="px-4 py-4 text-center" data-testid="schedule-skeleton">
@@ -165,8 +228,11 @@ export function EpgSchedulePanel({
   if (error) {
     return (
       <div
+        ref={setRefs}
         data-testid="epg-schedule-panel"
-        className="h-full flex flex-col bg-black/50 rounded-lg"
+        className="h-full flex flex-col bg-black/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
       >
         <div
           data-testid="schedule-error-state"
@@ -199,8 +265,11 @@ export function EpgSchedulePanel({
   if (programs.length === 0) {
     return (
       <div
+        ref={setRefs}
         data-testid="epg-schedule-panel"
-        className="h-full flex flex-col bg-black/50 rounded-lg"
+        className="h-full flex flex-col bg-black/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
       >
         <ScheduleHeader date={headerDate} />
         <div
@@ -220,11 +289,12 @@ export function EpgSchedulePanel({
 
   return (
     <div
-      ref={containerRef}
+      ref={setRefs}
       data-testid="epg-schedule-panel"
-      className="h-full flex flex-col bg-black/50 rounded-lg overflow-hidden"
+      className="h-full flex flex-col bg-black/50 rounded-lg overflow-hidden focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
       tabIndex={0}
       onKeyDown={handleKeyDown}
+      onFocus={handleFocus}
       role="listbox"
       aria-label="Schedule for selected channel"
       aria-activedescendant={activeDescendantId}
@@ -246,4 +316,4 @@ export function EpgSchedulePanel({
       </div>
     </div>
   );
-}
+});

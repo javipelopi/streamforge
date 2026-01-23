@@ -88,10 +88,20 @@ export function DatePickerButton({
   const month = viewDate.getMonth();
   const calendarDays = getCalendarDays(year, month);
 
-  // Reset view date when overlay opens
+  // Reset view date and focus overlay when it opens
   useEffect(() => {
     if (isOpen) {
       setViewDate(new Date(selectedDate));
+      // Focus the overlay after it renders
+      setTimeout(() => {
+        if (overlayRef.current) {
+          // Try to focus the selected date button, or the first available date
+          const selectedButton = overlayRef.current.querySelector<HTMLElement>(
+            'button[data-testid^="date-picker-day-"]:not([disabled])'
+          );
+          selectedButton?.focus();
+        }
+      }, 50);
     }
   }, [isOpen, selectedDate]);
 
@@ -127,6 +137,55 @@ export function DatePickerButton({
     [onDateSelect]
   );
 
+  // Handle keyboard navigation within calendar grid
+  const handleOverlayKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement;
+
+      // Only handle arrow keys on day buttons
+      if (!target.dataset.testid?.startsWith('date-picker-day-')) {
+        return;
+      }
+
+      const dayButtons = overlayRef.current?.querySelectorAll<HTMLElement>(
+        'button[data-testid^="date-picker-day-"]:not([disabled])'
+      );
+      if (!dayButtons) {
+        return;
+      }
+
+      const dayButtonsArray = Array.from(dayButtons);
+      const currentIndex = dayButtonsArray.indexOf(target);
+
+      if (currentIndex === -1) return;
+
+      let newIndex = currentIndex;
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        e.stopPropagation();
+        newIndex = Math.max(0, currentIndex - 1);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        e.stopPropagation();
+        newIndex = Math.min(dayButtonsArray.length - 1, currentIndex + 1);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        newIndex = Math.max(0, currentIndex - 7);
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopPropagation();
+        newIndex = Math.min(dayButtonsArray.length - 1, currentIndex + 7);
+      }
+
+      if (newIndex !== currentIndex) {
+        dayButtonsArray[newIndex]?.focus();
+      }
+    },
+    []
+  );
+
   // Handle click outside to close
   useEffect(() => {
     if (!isOpen) return;
@@ -151,19 +210,31 @@ export function DatePickerButton({
     };
   }, [isOpen, onClose]);
 
-  // Handle Escape key to close
+  // Handle Escape key to close and return focus
   useEffect(() => {
     if (!isOpen) return;
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
+        // Return focus to the button
+        buttonRef.current?.focus();
       }
     };
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
+
+  // Return focus to button when overlay closes (for any close method)
+  const prevIsOpen = useRef(isOpen);
+  useEffect(() => {
+    if (prevIsOpen.current && !isOpen) {
+      // Overlay just closed, return focus to button
+      buttonRef.current?.focus();
+    }
+    prevIsOpen.current = isOpen;
+  }, [isOpen]);
 
   const today = new Date();
 
@@ -174,7 +245,7 @@ export function DatePickerButton({
         ref={buttonRef}
         data-testid="date-picker-button"
         onClick={onToggle}
-        className="flex items-center justify-center w-8 h-8 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+        className="flex items-center justify-center w-8 h-8 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
         aria-label="Open date picker"
         aria-expanded={isOpen}
         aria-haspopup="dialog"
@@ -205,6 +276,7 @@ export function DatePickerButton({
           role="dialog"
           aria-label="Date picker"
           aria-modal="true"
+          onKeyDown={handleOverlayKeyDown}
         >
           {/* Month/Year header with navigation */}
           <div className="flex items-center justify-between mb-4">
@@ -285,7 +357,7 @@ export function DatePickerButton({
                   disabled={isPast}
                   className={`
                     w-8 h-8 rounded-lg text-sm font-medium
-                    transition-colors
+                    transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/50
                     ${
                       isSelected
                         ? 'bg-[#6366f1] text-white'
