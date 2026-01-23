@@ -998,6 +998,442 @@ pub async fn set_epg_schedule(
     })
 }
 
+// ============================================================================
+// EPG Grid Commands (Story 5.1)
+// ============================================================================
+
+/// Program data for EPG grid display
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EpgGridProgram {
+    pub id: i32,
+    pub title: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub category: Option<String>,
+    pub description: Option<String>,
+    pub episode_info: Option<String>,
+}
+
+// ============================================================================
+// EPG Search Commands (Story 5.2)
+// ============================================================================
+
+/// Match type for search result relevance
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SearchMatchType {
+    Title,
+    Channel,
+    Description,
+}
+
+/// Result type for search results (program vs channel-only)
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SearchResultType {
+    Program,
+    Channel,
+}
+
+/// Search result for EPG program search
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EpgSearchResult {
+    pub result_type: SearchResultType,
+    pub program_id: Option<i32>,
+    pub title: String,
+    pub description: Option<String>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+    pub category: Option<String>,
+    pub channel_id: i32,
+    pub channel_name: String,
+    pub channel_icon: Option<String>,
+    pub match_type: SearchMatchType,
+    pub relevance_score: f64,
+}
+
+/// Search EPG programs and channels by title, description, or channel name
+///
+/// Story 5.2: EPG Search Functionality
+/// AC #2: Search filters by title, description, channel name (enabled channels only)
+///
+/// This query:
+/// 1. Filters by xmltv_channel_settings.is_enabled = true
+/// 2. Matches title, description, or channel name with LIKE
+/// 3. Returns only future/current programs (end_time > now)
+/// 4. Also returns channel-only results for direct channel name matches
+/// 5. Orders by relevance (title > channel > description) then start_time
+/// 6. Limits results to 50 for performance
+#[tauri::command]
+pub async fn search_epg_programs(
+    db: State<'_, DbConnection>,
+    query: String,
+) -> Result<Vec<EpgSearchResult>, String> {
+    // Return empty results for empty query
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    // Current time for filtering past programs
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+
+    // Escape special SQL LIKE characters
+    let escaped_query = query.replace('%', r"\%").replace('_', r"\_");
+    let like_pattern = format!("%{}%", escaped_query);
+
+    // First get all enabled channels for efficient filtering
+    let enabled_channels: Vec<(XmltvChannel, XmltvChannelSettings)> = xmltv_channels::table
+        .inner_join(xmltv_channel_settings::table)
+        .filter(xmltv_channel_settings::is_enabled.eq(1))
+        .select((xmltv_channels::all_columns, xmltv_channel_settings::all_columns))
+        .load::<(XmltvChannel, XmltvChannelSettings)>(&mut conn)
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    if enabled_channels.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let enabled_channel_ids: Vec<i32> = enabled_channels
+        .iter()
+        .filter_map(|(c, _)| c.id)
+        .collect();
+
+    // Search programs in enabled channels only
+    let results: Vec<(Program, XmltvChannel)> = programs::table
+        .inner_join(xmltv_channels::table)
+        .filter(programs::xmltv_channel_id.eq_any(&enabled_channel_ids))
+        .filter(programs::end_time.gt(&now))
+        .filter(
+            programs::title.like(&like_pattern)
+                .or(programs::description.like(&like_pattern))
+                .or(xmltv_channels::display_name.like(&like_pattern))
+        )
+        .select((programs::all_columns, xmltv_channels::all_columns))
+        .order(programs::start_time.asc())
+        .limit(50)
+        .load::<(Program, XmltvChannel)>(&mut conn)
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    // Convert to search results with relevance scoring
+    let query_lower = query.to_lowercase();
+
+    let program_results: Vec<EpgSearchResult> = results
+        .into_iter()
+        .map(|(program, channel)| {
+            // Determine match type and score
+            let title_lower = program.title.to_lowercase();
+            let channel_lower = channel.display_name.to_lowercase();
+            let desc_lower = program.description.as_ref()
+                .map(|d| d.to_lowercase())
+                .unwrap_or_default();
+
+            let (match_type, relevance_score) = if title_lower.contains(&query_lower) {
+                (SearchMatchType::Title, 1.0)
+            } else if channel_lower.contains(&query_lower) {
+                (SearchMatchType::Channel, 0.8)
+            } else if desc_lower.contains(&query_lower) {
+                (SearchMatchType::Description, 0.6)
+            } else {
+                // Shouldn't happen due to filter, but handle gracefully
+                (SearchMatchType::Description, 0.5)
+            };
+
+            EpgSearchResult {
+                result_type: SearchResultType::Program,
+                program_id: Some(program.id.unwrap_or(0)),
+                title: program.title,
+                description: program.description,
+                start_time: Some(program.start_time),
+                end_time: Some(program.end_time),
+                category: program.category,
+                channel_id: channel.id.unwrap_or(0),
+                channel_name: channel.display_name,
+                channel_icon: channel.icon,
+                match_type,
+                relevance_score,
+            }
+        })
+        .collect();
+
+    // Search for channel results (channels matching the query - always shown first)
+    let channel_results: Vec<EpgSearchResult> = enabled_channels
+        .into_iter()
+        .filter_map(|(channel, _settings)| {
+            let channel_id = channel.id.unwrap_or(0);
+            let channel_lower = channel.display_name.to_lowercase();
+
+            // Check if channel name matches
+            if !channel_lower.contains(&query_lower) {
+                return None;
+            }
+
+            // Score: exact match = 1.0, partial match = 0.9
+            let relevance_score = if channel_lower == query_lower {
+                1.0
+            } else {
+                0.9
+            };
+
+            Some(EpgSearchResult {
+                result_type: SearchResultType::Channel,
+                program_id: None,
+                title: channel.display_name.clone(),
+                description: None,
+                start_time: None,
+                end_time: None,
+                category: None,
+                channel_id,
+                channel_name: channel.display_name,
+                channel_icon: channel.icon,
+                match_type: SearchMatchType::Channel,
+                relevance_score,
+            })
+        })
+        .collect();
+
+    // Merge program and channel results
+    let mut all_results: Vec<EpgSearchResult> = program_results;
+    all_results.extend(channel_results);
+
+    // Sort by result type (channels first), then by relevance (higher first), then by start time for programs
+    all_results.sort_by(|a, b| {
+        // Channels come before programs
+        let type_order = match (&a.result_type, &b.result_type) {
+            (SearchResultType::Channel, SearchResultType::Program) => std::cmp::Ordering::Less,
+            (SearchResultType::Program, SearchResultType::Channel) => std::cmp::Ordering::Greater,
+            _ => std::cmp::Ordering::Equal,
+        };
+
+        type_order
+            .then_with(|| {
+                // Within same type, higher relevance first
+                b.relevance_score.partial_cmp(&a.relevance_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| {
+                // For same relevance, sort by start_time (programs only)
+                match (&a.start_time, &b.start_time) {
+                    (None, None) => std::cmp::Ordering::Equal,
+                    (None, Some(_)) => std::cmp::Ordering::Less,
+                    (Some(_), None) => std::cmp::Ordering::Greater,
+                    (Some(a_time), Some(b_time)) => a_time.cmp(b_time),
+                }
+            })
+    });
+
+    Ok(all_results)
+}
+
+/// Channel data with programs for EPG grid display
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EpgGridChannel {
+    pub channel_id: i32,
+    pub channel_name: String,
+    pub channel_icon: Option<String>,
+    pub plex_display_order: i32,
+    pub programs: Vec<EpgGridProgram>,
+}
+
+/// Get all enabled XMLTV channels with their programs in a time range
+///
+/// Story 5.1: EPG Grid Browser with Time Navigation
+/// AC #1: Grid displays enabled XMLTV channels only (Plex preview mode)
+/// AC #3: Efficient rendering with time range filtering
+///
+/// This query:
+/// 1. Filters by xmltv_channel_settings.is_enabled = true
+/// 2. Joins channels with programs
+/// 3. Filters programs by time range (window_start <= end_time AND window_end >= start_time)
+/// 4. Orders by plex_display_order then display_name
+#[tauri::command]
+pub async fn get_enabled_channels_with_programs(
+    db: State<'_, DbConnection>,
+    start_time: String,
+    end_time: String,
+) -> Result<Vec<EpgGridChannel>, String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    // Get all enabled channels with their settings, ordered by display order
+    let enabled_channels: Vec<(XmltvChannel, XmltvChannelSettings)> = xmltv_channels::table
+        .inner_join(xmltv_channel_settings::table)
+        .filter(xmltv_channel_settings::is_enabled.eq(1))
+        .order((
+            xmltv_channel_settings::plex_display_order.asc(),
+            xmltv_channels::display_name.asc(),
+        ))
+        .select((xmltv_channels::all_columns, xmltv_channel_settings::all_columns))
+        .load::<(XmltvChannel, XmltvChannelSettings)>(&mut conn)
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    // For each enabled channel, get programs in the time range
+    let mut result: Vec<EpgGridChannel> = Vec::with_capacity(enabled_channels.len());
+
+    for (channel, settings) in enabled_channels {
+        let channel_id = channel.id.unwrap_or(0);
+
+        // Get programs that overlap with the time window
+        // A program overlaps if: program.start_time < window_end AND program.end_time > window_start
+        let channel_programs: Vec<Program> = programs::table
+            .filter(programs::xmltv_channel_id.eq(channel_id))
+            .filter(programs::start_time.lt(&end_time))
+            .filter(programs::end_time.gt(&start_time))
+            .order(programs::start_time.asc())
+            .load::<Program>(&mut conn)
+            .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+        let programs: Vec<EpgGridProgram> = channel_programs
+            .into_iter()
+            .map(|p| EpgGridProgram {
+                id: p.id.unwrap_or(0),
+                title: p.title,
+                start_time: p.start_time,
+                end_time: p.end_time,
+                category: p.category,
+                description: p.description,
+                episode_info: p.episode_info,
+            })
+            .collect();
+
+        result.push(EpgGridChannel {
+            channel_id,
+            channel_name: channel.display_name,
+            channel_icon: channel.icon,
+            plex_display_order: settings.plex_display_order.unwrap_or(9999),
+            programs,
+        });
+    }
+
+    Ok(result)
+}
+
+// ============================================================================
+// Program Details Commands (Story 5.3)
+// ============================================================================
+
+use crate::db::schema::xtream_channels;
+
+/// Stream info for program details panel
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelStreamInfo {
+    pub stream_name: String,
+    pub quality_tiers: Vec<String>,
+    pub is_primary: bool,
+    pub match_confidence: f64,
+}
+
+/// Get stream info for an XMLTV channel
+///
+/// Story 5.3: Program Details View
+/// AC #3: Stream info displays for channels with Xtream mappings
+///
+/// Returns the primary stream mapping for the given XMLTV channel, including
+/// stream name, quality tiers, and match confidence.
+#[tauri::command]
+pub async fn get_channel_stream_info(
+    db: State<'_, DbConnection>,
+    xmltv_channel_id: i32,
+) -> Result<Option<ChannelStreamInfo>, String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    // Query channel_mappings JOIN xtream_channels for the primary mapping
+    // Only return primary mappings (is_primary = 1)
+    let result: Option<(crate::db::ChannelMapping, crate::db::XtreamChannel)> = channel_mappings::table
+        .inner_join(xtream_channels::table)
+        .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
+        .filter(channel_mappings::is_primary.eq(1))
+        .select((channel_mappings::all_columns, xtream_channels::all_columns))
+        .first(&mut conn)
+        .optional()
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    Ok(result.map(|(mapping, stream)| {
+        // Parse qualities JSON array
+        let quality_tiers: Vec<String> = stream
+            .qualities
+            .as_ref()
+            .and_then(|q| serde_json::from_str(q).ok())
+            .unwrap_or_default();
+
+        ChannelStreamInfo {
+            stream_name: stream.name,
+            quality_tiers,
+            is_primary: mapping.is_primary.unwrap_or(0) == 1,
+            match_confidence: mapping.match_confidence.unwrap_or(0.0) as f64,
+        }
+    }))
+}
+
+// ============================================================================
+// Program Details Commands (Story 5.8)
+// ============================================================================
+
+/// Channel info for program details panel
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelInfo {
+    pub id: i32,
+    pub display_name: String,
+    pub icon: Option<String>,
+}
+
+/// Program with associated channel information
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProgramWithChannel {
+    pub program: ProgramResponse,
+    pub channel: ChannelInfo,
+}
+
+/// Get program by ID with associated channel information
+///
+/// Story 5.8: EPG Program Details Panel
+/// Task 8.1, 8.2: Add get_program_by_id command
+///
+/// Returns the program with its associated channel data for displaying
+/// in the details panel.
+#[tauri::command]
+pub async fn get_program_by_id(
+    db: State<'_, DbConnection>,
+    program_id: i32,
+) -> Result<Option<ProgramWithChannel>, String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    // Query program with JOIN to xmltv_channels
+    let result: Option<(Program, XmltvChannel)> = programs::table
+        .inner_join(xmltv_channels::table)
+        .filter(programs::id.eq(program_id))
+        .select((programs::all_columns, xmltv_channels::all_columns))
+        .first(&mut conn)
+        .optional()
+        .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+    Ok(result.map(|(program, channel)| {
+        ProgramWithChannel {
+            program: ProgramResponse::from(program),
+            channel: ChannelInfo {
+                id: channel.id.unwrap_or(0),
+                display_name: channel.display_name,
+                icon: channel.icon,
+            },
+        }
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1038,5 +1474,101 @@ mod tests {
         assert!(validate_format("json").is_err());
         assert!(validate_format("xml.gz").is_err()); // Note: underscores, not dots
         assert!(validate_format("").is_err());
+    }
+
+    // ============================================================================
+    // EPG Search Tests (Story 5.2)
+    // ============================================================================
+
+    #[test]
+    fn test_search_match_type_serialization() {
+        // Test that match types serialize to camelCase correctly
+        let title_match = SearchMatchType::Title;
+        let channel_match = SearchMatchType::Channel;
+        let desc_match = SearchMatchType::Description;
+
+        assert_eq!(
+            serde_json::to_string(&title_match).unwrap(),
+            "\"title\""
+        );
+        assert_eq!(
+            serde_json::to_string(&channel_match).unwrap(),
+            "\"channel\""
+        );
+        assert_eq!(
+            serde_json::to_string(&desc_match).unwrap(),
+            "\"description\""
+        );
+    }
+
+    #[test]
+    fn test_epg_search_result_serialization() {
+        let result = EpgSearchResult {
+            result_type: SearchResultType::Program,
+            program_id: Some(123),
+            title: "Breaking News".to_string(),
+            description: Some("Latest updates".to_string()),
+            start_time: Some("2026-01-22T20:00:00".to_string()),
+            end_time: Some("2026-01-22T21:00:00".to_string()),
+            category: Some("News".to_string()),
+            channel_id: 1,
+            channel_name: "CNN".to_string(),
+            channel_icon: Some("http://example.com/cnn.png".to_string()),
+            match_type: SearchMatchType::Title,
+            relevance_score: 1.0,
+        };
+
+        let json = serde_json::to_value(&result).unwrap();
+
+        // Verify camelCase serialization
+        assert_eq!(json["resultType"], "program");
+        assert_eq!(json["programId"], 123);
+        assert_eq!(json["title"], "Breaking News");
+        assert_eq!(json["channelId"], 1);
+        assert_eq!(json["channelName"], "CNN");
+        assert_eq!(json["matchType"], "title");
+        assert_eq!(json["relevanceScore"], 1.0);
+        assert_eq!(json["startTime"], "2026-01-22T20:00:00");
+        assert_eq!(json["endTime"], "2026-01-22T21:00:00");
+    }
+
+    #[test]
+    fn test_channel_search_result_serialization() {
+        let result = EpgSearchResult {
+            result_type: SearchResultType::Channel,
+            program_id: None,
+            title: "CNN".to_string(),
+            description: None,
+            start_time: None,
+            end_time: None,
+            category: None,
+            channel_id: 1,
+            channel_name: "CNN".to_string(),
+            channel_icon: Some("http://example.com/cnn.png".to_string()),
+            match_type: SearchMatchType::Channel,
+            relevance_score: 0.9,
+        };
+
+        let json = serde_json::to_value(&result).unwrap();
+
+        // Verify camelCase serialization for channel result
+        assert_eq!(json["resultType"], "channel");
+        assert!(json["programId"].is_null());
+        assert_eq!(json["title"], "CNN");
+        assert_eq!(json["channelId"], 1);
+        assert_eq!(json["channelName"], "CNN");
+        assert_eq!(json["matchType"], "channel");
+        assert_eq!(json["relevanceScore"], 0.9);
+        assert!(json["startTime"].is_null());
+        assert!(json["endTime"].is_null());
+    }
+
+    #[test]
+    fn test_search_match_type_equality() {
+        assert_eq!(SearchMatchType::Title, SearchMatchType::Title);
+        assert_eq!(SearchMatchType::Channel, SearchMatchType::Channel);
+        assert_eq!(SearchMatchType::Description, SearchMatchType::Description);
+        assert_ne!(SearchMatchType::Title, SearchMatchType::Channel);
+        assert_ne!(SearchMatchType::Channel, SearchMatchType::Description);
     }
 }

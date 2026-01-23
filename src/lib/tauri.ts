@@ -1358,3 +1358,223 @@ export interface PlexConfig {
 export async function getPlexConfig(): Promise<PlexConfig> {
   return invoke<PlexConfig>('get_plex_config');
 }
+
+// ============================================================================
+// EPG types and functions (Story 5.1, updated Story 5.9)
+// ============================================================================
+
+/** Program data for EPG display */
+export interface EpgProgram {
+  id: number;
+  title: string;
+  startTime: string;
+  endTime: string;
+  category?: string;
+  description?: string;
+  episodeInfo?: string;
+}
+
+/** Channel data with programs for EPG display */
+export interface EpgChannel {
+  channelId: number;
+  channelName: string;
+  channelIcon?: string;
+  plexDisplayOrder: number;
+  programs: EpgProgram[];
+}
+
+// Legacy type aliases for backwards compatibility with Rust backend
+// These match the Rust struct names in get_enabled_channels_with_programs command
+/** @deprecated Use EpgProgram instead */
+export type EpgGridProgram = EpgProgram;
+/** @deprecated Use EpgChannel instead */
+export type EpgGridChannel = EpgChannel;
+
+/**
+ * Get enabled XMLTV channels with their programs in a time range
+ *
+ * Story 5.1: EPG Grid Browser with Time Navigation
+ * AC #1: Grid displays enabled XMLTV channels only (Plex preview mode)
+ * AC #3: Efficient rendering with time range filtering
+ *
+ * @param startTime - Start of time window (ISO string)
+ * @param endTime - End of time window (ISO string)
+ * @returns List of enabled channels with their programs
+ */
+export async function getEnabledChannelsWithPrograms(
+  startTime: string,
+  endTime: string
+): Promise<EpgChannel[]> {
+  return invoke<EpgChannel[]>('get_enabled_channels_with_programs', {
+    startTime,
+    endTime,
+  });
+}
+
+// ============================================================================
+// EPG Search types and functions (Story 5.2)
+// ============================================================================
+
+/** Match type for search result relevance */
+export type EpgSearchMatchType = 'title' | 'channel' | 'description';
+
+/** Result type for search results (program vs channel-only) */
+export type EpgSearchResultType = 'program' | 'channel';
+
+/** Search result for EPG program or channel search */
+export interface EpgSearchResult {
+  /** Type of result: 'program' or 'channel' */
+  resultType: EpgSearchResultType;
+  /** Program ID (null for channel-only results) */
+  programId?: number | null;
+  title: string;
+  description?: string | null;
+  /** Start time (null for channel-only results) */
+  startTime?: string | null;
+  /** End time (null for channel-only results) */
+  endTime?: string | null;
+  category?: string | null;
+  channelId: number;
+  channelName: string;
+  channelIcon?: string | null;
+  /** Match type for relevance: 'title', 'channel', 'description' */
+  matchType: EpgSearchMatchType;
+  /** Match score 0-1 for relevance ordering */
+  relevanceScore: number;
+}
+
+/**
+ * Search EPG programs by title, description, or channel name
+ *
+ * Story 5.2: EPG Search Functionality
+ * AC #2: Search filters by title, description, channel name (enabled channels only)
+ *
+ * @param query - Search query string
+ * @returns List of matching programs with relevance scores
+ */
+export async function searchEpgPrograms(query: string): Promise<EpgSearchResult[]> {
+  return invoke<EpgSearchResult[]>('search_epg_programs', { query });
+}
+
+/**
+ * Get relevance indicator display text based on search match type
+ *
+ * Story 5.2: AC #3 - Results show relevance indicator
+ *
+ * @param matchType - The match type from search result
+ * @returns Human-readable relevance indicator
+ */
+export function getEpgSearchMatchTypeDisplay(matchType: EpgSearchMatchType): string {
+  switch (matchType) {
+    case 'title':
+      return 'Title match';
+    case 'channel':
+      return 'Channel match';
+    case 'description':
+      return 'Description match';
+    default:
+      return 'Match';
+  }
+}
+
+/**
+ * Get relevance badge color classes based on match type
+ *
+ * @param matchType - The match type from search result
+ * @returns Tailwind CSS classes for the badge
+ */
+export function getMatchTypeBadgeClasses(matchType: EpgSearchMatchType): string {
+  switch (matchType) {
+    case 'title':
+      return 'bg-green-100 text-green-800'; // Highest relevance
+    case 'channel':
+      return 'bg-blue-100 text-blue-800'; // Medium relevance
+    case 'description':
+      return 'bg-gray-100 text-gray-800'; // Lower relevance
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+}
+
+/**
+ * Format program duration from start and end times
+ *
+ * @param startTime - ISO start time string
+ * @param endTime - ISO end time string
+ * @returns Formatted duration string (e.g., "1h 30m")
+ */
+export function formatProgramDuration(startTime: string, endTime: string): string {
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+  const durationMinutes = Math.round((end.getTime() - start.getTime()) / (1000 * 60));
+
+  if (durationMinutes < 60) {
+    return `${durationMinutes}m`;
+  }
+
+  const hours = Math.floor(durationMinutes / 60);
+  const minutes = durationMinutes % 60;
+
+  if (minutes === 0) {
+    return `${hours}h`;
+  }
+
+  return `${hours}h ${minutes}m`;
+}
+
+// ============================================================================
+// Program Details types and functions (Story 5.3)
+// ============================================================================
+
+/** Stream info for program details panel */
+export interface ChannelStreamInfo {
+  streamName: string;
+  qualityTiers: string[];
+  isPrimary: boolean;
+  matchConfidence: number;
+}
+
+/**
+ * Get stream info for an XMLTV channel
+ *
+ * Story 5.3: Program Details View
+ * AC #3: Stream info displays for channels with Xtream mappings
+ *
+ * @param xmltvChannelId - XMLTV channel ID to get stream info for
+ * @returns Stream info or null if no mapping exists
+ */
+export async function getChannelStreamInfo(
+  xmltvChannelId: number
+): Promise<ChannelStreamInfo | null> {
+  return invoke<ChannelStreamInfo | null>('get_channel_stream_info', {
+    xmltvChannelId,
+  });
+}
+
+// ============================================================================
+// Program Details types and functions (Story 5.8)
+// ============================================================================
+
+/** Program with associated channel information */
+export interface ProgramWithChannel {
+  program: Program;
+  channel: {
+    id: number;
+    displayName: string;
+    icon?: string;
+  };
+}
+
+/**
+ * Get program by ID with associated channel information
+ *
+ * Story 5.8: EPG Program Details Panel
+ * Task 8.4: TypeScript binding for getProgramById
+ *
+ * @param programId - Program ID to fetch
+ * @returns Program with channel data, or null if not found
+ */
+export async function getProgramById(programId: number): Promise<ProgramWithChannel | null> {
+  return invoke<ProgramWithChannel | null>('get_program_by_id', { programId });
+}
+
