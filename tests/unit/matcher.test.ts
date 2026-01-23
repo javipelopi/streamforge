@@ -271,8 +271,8 @@ describe('Performance Edge Cases', () => {
  *
  *     #[test]
  *     fn test_match_channels_finds_all_above_threshold() {
- *         let xmltv = vec![/* ... */];
- *         let xtream = vec![/* ... */];
+ *         let xmltv = vec![...];
+ *         let xtream = vec![...];
  *         let results = match_channels(&xmltv, &xtream, 0.85);
  *         assert!(results.iter().all(|r| r.confidence >= 0.85));
  *     }

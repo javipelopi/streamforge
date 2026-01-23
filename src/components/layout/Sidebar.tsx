@@ -83,7 +83,7 @@ export function Sidebar() {
   return (
     <aside
       data-testid="sidebar"
-      className={`bg-gray-900 text-white h-screen fixed left-0 top-0 transition-all duration-300 overflow-hidden ${
+      className={`bg-gray-900 text-white h-screen fixed left-0 top-0 z-50 transition-all duration-300 overflow-hidden ${
         sidebarOpen ? 'w-64' : 'w-16 collapsed'
       }`}
     >
@@ -115,7 +115,9 @@ export function Sidebar() {
                   data-testid={item.testId}
                   aria-label={item.ariaLabel}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 px-4 py-2 rounded transition-colors relative ${
+                    `flex items-center py-2 rounded transition-colors relative ${
+                      sidebarOpen ? 'gap-3 px-4' : 'justify-center px-2'
+                    } ${
                       isActive
                         ? 'bg-blue-600 active'
                         : 'hover:bg-gray-800'
@@ -124,8 +126,8 @@ export function Sidebar() {
                 >
                   <Icon className="w-5 h-5 flex-shrink-0" />
                   {sidebarOpen && <span>{item.label}</span>}
-                  {/* Notification badge for Logs (Story 3-4: AC #5) */}
-                  {showBadge && (
+                  {/* Notification badge for Logs (Story 3-4: AC #5) - only show when sidebar is open */}
+                  {showBadge && sidebarOpen && (
                     <span
                       data-testid="logs-unread-badge"
                       className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full px-2 py-0.5 min-w-[1.25rem] text-center"

@@ -1264,7 +1264,11 @@ So that stream interruptions are handled transparently without manual interventi
 
 User can browse and search the program guide for enabled channels (Plex preview).
 
-### Story 5.1: EPG Grid Browser with Time Navigation
+**Course Correction (2026-01-22):** Stakeholder-driven redesign from horizontal grid to TV-style vertical channel list. Stories 5.1-5.3 superseded by new UX implementation (Stories 5.4-5.9). See UX spec: `ux-epg-tv-guide.md`
+
+### Story 5.1: EPG Grid Browser with Time Navigation (SUPERSEDED)
+
+*Superseded by Stories 5.4-5.6 - TV-style EPG redesign*
 
 As a user,
 I want to browse the EPG in a grid view,
@@ -1299,7 +1303,9 @@ So that I can see what's on across all my enabled channels.
 
 ---
 
-### Story 5.2: EPG Search Functionality
+### Story 5.2: EPG Search Functionality (SUPERSEDED)
+
+*Superseded by Story 5.7 - Search integrated into top bar*
 
 As a user,
 I want to search the EPG by various criteria,
@@ -1338,7 +1344,9 @@ So that I can find specific programs I'm interested in.
 
 ---
 
-### Story 5.3: Program Details View
+### Story 5.3: Program Details View (SUPERSEDED)
+
+*Superseded by Story 5.8 - Details as right panel*
 
 As a user,
 I want to see detailed information about a program,
@@ -1365,6 +1373,235 @@ So that I can decide if I want to watch it.
 **When** viewing details
 **Then** I see which Xtream stream is currently primary
 **And** stream quality tier is displayed
+
+---
+
+### Story 5.4: EPG TV-Style Layout Foundation
+
+*Added via Sprint Change Proposal 2026-01-22 - TV-Style EPG Redesign*
+
+As a user,
+I want a TV-style EPG interface with three panels over a cinematic background,
+So that I can browse channels in a lean-back, television-friendly experience.
+
+**Acceptance Criteria:**
+
+**Given** the EPG view
+**When** it loads
+**Then** I see a three-panel layout:
+- Left panel (~30%): Channel list with now-playing info
+- Center panel (~30%): Schedule for selected channel
+- Right panel (~40%): Program details (when selected)
+**And** a gradient background (purple to dark blue, diagonal)
+**And** semi-transparent dark overlays on each panel
+
+**Given** no program is selected
+**When** viewing the EPG
+**Then** the right panel shows only the gradient background
+**And** left and center panels are visible
+
+**Given** a program is selected
+**When** viewing the EPG
+**Then** the right panel displays full program details
+
+**Technical Notes:**
+- Use CSS: `background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)`
+- Panel backgrounds: `rgba(0, 0, 0, 0.5-0.7)`
+- Reference: `ux-epg-tv-guide.md` Layout Structure section
+
+---
+
+### Story 5.5: EPG Channel List Panel
+
+*Added via Sprint Change Proposal 2026-01-22 - TV-Style EPG Redesign*
+
+As a user,
+I want a vertical channel list showing what's currently playing,
+So that I can quickly see all my channels and their current programs.
+
+**Acceptance Criteria:**
+
+**Given** the EPG left panel
+**When** it loads
+**Then** I see a virtualized list of enabled XMLTV channels
+**And** each row shows:
+- Channel logo (80×60px)
+- Channel name (bold, white)
+- Current program time range
+- Current program title
+- Progress bar showing time elapsed
+
+**Given** the channel list
+**When** I select a channel (click or keyboard)
+**Then** the row shows selected state (pill highlight, purple tint)
+**And** the center panel updates to show that channel's schedule
+
+**Given** a large channel list
+**When** scrolling
+**Then** UI remains responsive (<100ms)
+**And** TanStack Virtual handles efficient rendering
+
+**Technical Notes:**
+- Progress bar: gradient from #6366f1 to #22d3ee
+- Selected state: border `rgba(255,255,255,0.3)`, bg `rgba(99,102,241,0.2)`
+- Reference: `ux-epg-tv-guide.md` Left Panel section
+
+---
+
+### Story 5.6: EPG Schedule Panel
+
+*Added via Sprint Change Proposal 2026-01-22 - TV-Style EPG Redesign*
+
+As a user,
+I want to see the full schedule for my selected channel,
+So that I can browse what's coming up on that channel.
+
+**Acceptance Criteria:**
+
+**Given** a channel is selected
+**When** the center panel loads
+**Then** I see a schedule list with:
+- Date header (e.g., "TUE 21 Jan")
+- Time column (~80px, gray)
+- Program titles (white, ellipsis on overflow)
+
+**Given** the schedule list
+**When** I click a program
+**Then** that program is highlighted (left accent bar, brighter bg)
+**And** the right panel shows program details
+
+**Given** the current time
+**When** viewing the schedule
+**Then** the "NOW" program is indicated distinctly
+**And** past programs show muted styling
+**And** schedule auto-scrolls to current time
+
+**Given** the schedule panel
+**When** scrolling through programs
+**Then** scrolling is independent of channel list
+**And** UI remains responsive
+
+**Technical Notes:**
+- Row hover: `rgba(255,255,255,0.05)`
+- Selected: purple left accent bar
+- Reference: `ux-epg-tv-guide.md` Center Panel section
+
+---
+
+### Story 5.7: EPG Top Bar with Search and Day Navigation
+
+*Added via Sprint Change Proposal 2026-01-22 - TV-Style EPG Redesign*
+
+As a user,
+I want a top bar with search and day navigation,
+So that I can find programs and browse different days.
+
+**Acceptance Criteria:**
+
+**Given** the EPG view
+**When** it loads
+**Then** I see a fixed top bar with:
+- Left: Search input (expandable, magnifying glass icon)
+- Right: Day navigation chips (Today, Tonight, Tomorrow, day names)
+- Right: Prev/Next arrows and date picker icon
+
+**Given** the search input
+**When** I type a query
+**Then** results appear in dropdown (debounced 300ms)
+**And** results show: program title, channel name, date/time
+**And** clicking a result navigates to that day/channel/program
+
+**Given** day navigation chips
+**When** I click a chip
+**Then** the schedule panel loads that day's programs
+**And** the selected chip shows purple background (#6366f1)
+
+**Given** the date picker icon
+**When** I click it
+**Then** a calendar overlay opens for date selection
+
+**Technical Notes:**
+- Top bar: `rgba(0,0,0,0.7)`, height ~56px
+- Search max 8 results
+- "Today" = current time, "Tonight" = 6 PM onwards
+- Reference: `ux-epg-tv-guide.md` Top Bar section
+
+---
+
+### Story 5.8: EPG Program Details Panel
+
+*Added via Sprint Change Proposal 2026-01-22 - TV-Style EPG Redesign*
+
+As a user,
+I want to see detailed program information in a right panel,
+So that I can learn more about selected programs.
+
+**Acceptance Criteria:**
+
+**Given** a program is selected from the schedule
+**When** the right panel appears
+**Then** I see:
+- Program title (28-32px, bold, white)
+- Episode info (if applicable)
+- Channel logo + name + status (Live Now / Starts at X)
+- Time range with clock icon
+- Full date with calendar icon
+- Category/genre tags
+- Description (14-16px, light gray, scrollable)
+
+**Given** no program is selected
+**When** viewing the EPG
+**Then** the right panel is hidden or shows "Select a program to see details"
+
+**Given** the details panel is visible
+**When** I click outside or press Escape
+**Then** the panel closes and selection clears
+
+**Technical Notes:**
+- Status indicators: Live (#22c55e), Upcoming (#3b82f6), Aired (#6b7280)
+- Action buttons (Watch, Record) are future enhancement
+- Reference: `ux-epg-tv-guide.md` Right Panel section
+
+---
+
+### Story 5.9: EPG Legacy Component Cleanup
+
+*Added via Sprint Change Proposal 2026-01-22 - TV-Style EPG Redesign*
+
+As a developer,
+I want to remove superseded EPG components and adapt reusable ones,
+So that the codebase is clean and doesn't contain dead code.
+
+**Acceptance Criteria:**
+
+**Given** the new TV-style EPG is fully implemented (Stories 5.4-5.8 complete)
+**When** cleanup is performed
+**Then** the following components are DELETED:
+- `src/components/epg/EpgGrid.tsx`
+- `src/components/epg/EpgCell.tsx`
+- `src/components/epg/TimeNavigationBar.tsx`
+- Any associated test files for above components
+- Any unused styles specific to grid layout
+
+**Given** the cleanup is complete
+**When** reviewing adapted components
+**Then** these components have been refactored for new design:
+- `ProgramDetailsPanel.tsx` → adapted to inline right panel
+- `EpgSearchInput.tsx` → moved to top bar context
+- `EpgSearchResults.tsx` → updated dropdown styling for dark theme
+
+**Given** all cleanup is complete
+**When** running the build
+**Then** no unused imports or dead code warnings exist
+**And** no references to deleted components remain
+**And** all tests pass
+
+**Dependency:** Stories 5.4-5.8 must be complete before this story
+
+**Technical Notes:**
+- Run `grep -r "EpgGrid\|EpgCell\|TimeNavigationBar"` to find all references
+- Update any route imports in App.tsx or EPG view entry point
+- Remove from component index exports if applicable
 
 ---
 

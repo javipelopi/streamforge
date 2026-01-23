@@ -484,7 +484,7 @@ src/
 │   ├── ui/                  # Shared UI components (Radix-based)
 │   ├── layout/              # Shell, sidebar, system tray menu
 │   ├── channels/            # Channel list, drag-drop, enable/disable
-│   ├── epg/                 # EPG viewer, search, program details
+│   ├── epg/                 # TV-style EPG (channel list, schedule, details panels)
 │   ├── accounts/            # Xtream account management
 │   ├── settings/            # App settings forms
 │   └── logs/                # Event log viewer
@@ -844,3 +844,4 @@ GET /lineup.json
 | 1.0 | 2026-01-18 | Javier | Initial Architecture creation |
 | 1.1 | 2026-01-19 | Bob (SM) | Course correction: Updated channel_mappings schema, MatchResult struct, data flow to reflect XMLTV channels as primary for Plex lineup |
 | 1.2 | 2026-01-21 | Bob (SM) | Course correction: Added mid-stream health monitoring to failover strategy; extended StreamSession struct |
+| 1.3 | 2026-01-22 | Bob (SM) | Course correction: TV-style EPG redesign - frontend EPG components restructured per ux-epg-tv-guide.md |
