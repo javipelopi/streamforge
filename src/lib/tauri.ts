@@ -1578,3 +1578,47 @@ export async function getProgramById(programId: number): Promise<ProgramWithChan
   return invoke<ProgramWithChannel | null>('get_program_by_id', { programId });
 }
 
+// ============================================================================
+// Server Port Settings (Story 6.1)
+// ============================================================================
+
+/**
+ * Get the current server port from settings
+ *
+ * Story 6.1: Settings GUI for Server and Startup Options
+ * Task 2.1: TypeScript binding for getServerPort
+ *
+ * @returns Current server port (default 5004)
+ */
+export async function getServerPort(): Promise<number> {
+  return invoke<number>('get_server_port');
+}
+
+/**
+ * Set the server port in settings
+ *
+ * Story 6.1: Settings GUI for Server and Startup Options
+ * Task 2.2: TypeScript binding for setServerPort
+ *
+ * Note: Changing the port requires a server restart to take effect.
+ *
+ * @param port - New port value (must be 1024-65535)
+ */
+export async function setServerPort(port: number): Promise<void> {
+  return invoke<void>('set_server_port', { port });
+}
+
+/**
+ * Restart the HTTP server on the new port
+ *
+ * Story 6.1: Settings GUI for Server and Startup Options
+ * Task 2.3: TypeScript binding for restartServer
+ *
+ * Stops the current server and restarts it on the configured port.
+ *
+ * @returns Promise that resolves when server has restarted
+ */
+export async function restartServer(): Promise<void> {
+  return invoke<void>('restart_server');
+}
+

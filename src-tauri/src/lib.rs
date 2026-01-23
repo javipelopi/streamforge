@@ -287,6 +287,7 @@ pub fn run() {
             commands::set_setting,
             commands::get_server_port,
             commands::set_server_port,
+            commands::restart_server,
             commands::get_autostart_enabled,
             commands::set_autostart_enabled,
             commands::get_plex_config,

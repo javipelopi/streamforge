@@ -50,6 +50,12 @@ export const NAV_ITEMS: NavItem[] = [
     ariaLabel: 'EPG - Electronic program guide',
   },
   { label: 'Accounts', path: ROUTES.ACCOUNTS, icon: 'person' },
-  { label: 'Settings', path: ROUTES.SETTINGS, icon: 'gear' },
+  {
+    label: 'Settings',
+    path: ROUTES.SETTINGS,
+    icon: 'gear',
+    testId: 'settings-nav-link',
+    ariaLabel: 'Settings - Configure server, startup, and EPG options',
+  },
   { label: 'Logs', path: ROUTES.LOGS, icon: 'file' },
 ];
