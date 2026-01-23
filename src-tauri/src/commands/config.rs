@@ -122,6 +122,7 @@ pub struct ExportedXmltvChannelSettings {
 
 /// Data section of the export file
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ExportData {
     pub settings: ExportedSettings,
     pub accounts: Vec<ExportedAccount>,
@@ -190,7 +191,10 @@ pub fn export_configuration(db: State<DbConnection>) -> Result<String, String> {
     // Query all settings (Task 1.3)
     let settings_rows: Vec<Setting> = settings::table
         .load(&mut conn)
-        .map_err(|e| ConfigError::DatabaseError(e.to_string()))?;
+        .map_err(|e| {
+            eprintln!("Export failed: Could not query settings - {}", e);
+            ConfigError::DatabaseError(e.to_string())
+        })?;
 
     let mut exported_settings = ExportedSettings {
         server_port: None,
@@ -216,7 +220,10 @@ pub fn export_configuration(db: State<DbConnection>) -> Result<String, String> {
     // Query all accounts - EXCLUDE password_encrypted (Task 1.4)
     let account_rows: Vec<Account> = accounts::table
         .load(&mut conn)
-        .map_err(|e| ConfigError::DatabaseError(e.to_string()))?;
+        .map_err(|e| {
+            eprintln!("Export failed: Could not query accounts - {}", e);
+            ConfigError::DatabaseError(e.to_string())
+        })?;
 
     let exported_accounts: Vec<ExportedAccount> = account_rows
         .into_iter()
@@ -294,7 +301,10 @@ pub fn export_configuration(db: State<DbConnection>) -> Result<String, String> {
 
     // Serialize to JSON
     let json = serde_json::to_string_pretty(&export)
-        .map_err(|e| ConfigError::SerializationError(e.to_string()))?;
+        .map_err(|e| {
+            eprintln!("Export failed: JSON serialization error - {}", e);
+            ConfigError::SerializationError(e.to_string())
+        })?;
 
     // SECURITY ASSERTION: Verify passwords are NEVER in the export
     if json.to_lowercase().contains("password") {
@@ -460,6 +470,17 @@ pub fn import_configuration(
         // Insert accounts with empty passwords (Task 2.9)
         // SECURITY: Passwords are NOT exported, so we insert with empty placeholder
         for account in &config.data.accounts {
+            // Validate required fields are non-empty
+            if account.name.trim().is_empty() {
+                return Err(diesel::result::Error::RollbackTransaction);
+            }
+            if account.server_url.trim().is_empty() {
+                return Err(diesel::result::Error::RollbackTransaction);
+            }
+            if account.username.trim().is_empty() {
+                return Err(diesel::result::Error::RollbackTransaction);
+            }
+
             let new_account = NewAccount {
                 name: account.name.clone(),
                 server_url: account.server_url.clone(),
@@ -475,6 +496,14 @@ pub fn import_configuration(
 
         // Insert XMLTV sources (Task 2.10)
         for source in &config.data.xmltv_sources {
+            // Validate required fields are non-empty
+            if source.name.trim().is_empty() {
+                return Err(diesel::result::Error::RollbackTransaction);
+            }
+            if source.url.trim().is_empty() {
+                return Err(diesel::result::Error::RollbackTransaction);
+            }
+
             let new_source = NewXmltvSource {
                 name: source.name.clone(),
                 url: source.url.clone(),
@@ -489,20 +518,33 @@ pub fn import_configuration(
 
         // NOTE: Channel mappings and settings are NOT imported here because:
         // 1. They reference xmltv_channels and xtream_channels which are re-fetched from providers
-        // 2. The IDs won't match after provider data is refreshed
-        // 3. User will need to re-run channel matching after import
+        // 2. The database IDs won't match after provider data is refreshed
+        // 3. Importing stale IDs would create foreign key constraint violations or point to wrong channels
+        // 4. User will need to re-run channel matching after import to regenerate mappings
         //
-        // If we wanted to preserve mappings, we'd need to:
-        // - Export channel identifiers (channel_id strings) not database IDs
-        // - Re-resolve mappings after channels are refreshed
-        // For now, this is acceptable per story requirements (mappings are "configuration")
+        // TECHNICAL EXPLANATION: The exported mappings contain database primary keys (integers)
+        // that are auto-incremented. After importing accounts and sources, when the user fetches
+        // channels from providers, new xmltv_channels and xtream_channels records will be created
+        // with DIFFERENT IDs. The old mapping IDs would either:
+        //   - Fail foreign key constraints (if IDs don't exist)
+        //   - Map to completely wrong channels (if IDs happen to exist but point elsewhere)
+        //
+        // To preserve mappings across import, we would need to:
+        // - Export channel identifiers (channel_id strings, not database IDs)
+        // - After import, wait for user to fetch channels from providers
+        // - Re-resolve mappings by looking up new database IDs for the channel_id strings
+        // - This is complex and out of scope for current story requirements
 
         Ok(())
     })
     .map_err(|e| {
         // Provide more specific error messages for common constraint violations
         let error_str = e.to_string();
-        if error_str.to_lowercase().contains("unique") {
+        if matches!(e, diesel::result::Error::RollbackTransaction) {
+            ConfigError::ImportFailed(
+                "Import validation failed: One or more records have empty required fields (name, URL, username, etc.)".to_string()
+            )
+        } else if error_str.to_lowercase().contains("unique") {
             ConfigError::ImportFailed(format!(
                 "Duplicate data detected in import file. Each item must be unique. Details: {}",
                 error_str
@@ -651,18 +693,18 @@ mod tests {
 
         let json = serde_json::to_string_pretty(&export).unwrap();
 
-        // Verify structure - ConfigExport and ExportedSettings use camelCase
+        // Verify structure - All structs now use camelCase for consistency
         assert!(json.contains("\"version\": \"1.0\""));
         assert!(json.contains("\"exportDate\"")); // ConfigExport camelCase
         assert!(json.contains("\"appVersion\"")); // ConfigExport camelCase
-        // ExportedSettings now uses camelCase (added rename attribute)
+        // ExportedSettings uses camelCase
         assert!(json.contains("\"serverPort\": \"5004\""));
         assert!(json.contains("\"autostartEnabled\": \"true\""));
-        // ExportData uses snake_case (no rename attribute)
+        // ExportData now also uses camelCase (consistency fix)
         assert!(json.contains("\"accounts\""));
-        assert!(json.contains("\"xmltv_sources\""));
-        assert!(json.contains("\"channel_mappings\""));
-        assert!(json.contains("\"xmltv_channel_settings\""));
+        assert!(json.contains("\"xmltvSources\""));
+        assert!(json.contains("\"channelMappings\""));
+        assert!(json.contains("\"xmltvChannelSettings\""));
 
         // Verify no password field
         assert!(!json.contains("password"));
@@ -685,9 +727,9 @@ mod tests {
                     "matchThreshold": null
                 },
                 "accounts": [],
-                "xmltv_sources": [],
-                "channel_mappings": [],
-                "xmltv_channel_settings": []
+                "xmltvSources": [],
+                "channelMappings": [],
+                "xmltvChannelSettings": []
             }
         }"#;
 
@@ -730,9 +772,9 @@ mod tests {
             "data": {
                 "settings": {},
                 "accounts": [],
-                "xmltv_sources": [],
-                "channel_mappings": [],
-                "xmltv_channel_settings": []
+                "xmltvSources": [],
+                "channelMappings": [],
+                "xmltvChannelSettings": []
             }
         }"#;
 
@@ -749,7 +791,7 @@ mod tests {
             "appVersion": "0.1.0",
             "data": {
                 "settings": {
-                    "server_port": "5004"
+                    "serverPort": "5004"
                 },
                 "accounts": [
                     {
@@ -761,7 +803,7 @@ mod tests {
                         "isActive": true
                     }
                 ],
-                "xmltv_sources": [
+                "xmltvSources": [
                     {
                         "id": 1,
                         "name": "Source",
@@ -771,8 +813,8 @@ mod tests {
                         "isActive": true
                     }
                 ],
-                "channel_mappings": [],
-                "xmltv_channel_settings": []
+                "channelMappings": [],
+                "xmltvChannelSettings": []
             }
         }"#;
 

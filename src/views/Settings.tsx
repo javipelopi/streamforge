@@ -340,6 +340,14 @@ export function Settings() {
       if (filePath && typeof filePath === 'string') {
         // Read the file content
         const content = await readTextFile(filePath);
+
+        // Validate file was read successfully
+        if (!content || content.trim().length === 0) {
+          setError('Import failed: The selected file is empty or could not be read.');
+          setIsImporting(false);
+          return;
+        }
+
         setImportFileContent(content);
 
         // Validate and get preview
@@ -349,7 +357,12 @@ export function Settings() {
       }
       // If user cancelled, do nothing
     } catch (err) {
-      setError(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (errorMessage.includes('Failed to read') || errorMessage.includes('file')) {
+        setError(`Failed to read file: ${errorMessage}`);
+      } else {
+        setError(`Import failed: ${errorMessage}`);
+      }
     } finally {
       setIsImporting(false);
     }

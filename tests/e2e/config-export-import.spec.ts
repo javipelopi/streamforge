@@ -124,17 +124,17 @@ test.describe('Configuration Export/Import - Import Preview Dialog', () => {
       appVersion: '0.1.0',
       data: {
         settings: {
-          server_port: '5005',
-          autostart_enabled: 'true',
+          serverPort: '5005',
+          autostartEnabled: 'true',
         },
         accounts: [
           { id: 1, name: 'Test Account', serverUrl: 'http://test.com', username: 'user', maxConnections: 1, isActive: true },
         ],
-        xmltv_sources: [
+        xmltvSources: [
           { id: 1, name: 'EPG Source', url: 'http://epg.com', format: 'xml', refreshHour: 4, isActive: true },
         ],
-        channel_mappings: [],
-        xmltv_channel_settings: [],
+        channelMappings: [],
+        xmltvChannelSettings: [],
       },
     });
 
@@ -182,9 +182,9 @@ test.describe('Configuration Export/Import - Import Preview Dialog', () => {
       data: {
         settings: {},
         accounts: [],
-        xmltv_sources: [],
-        channel_mappings: [],
-        xmltv_channel_settings: [],
+        xmltvSources: [],
+        channelMappings: [],
+        xmltvChannelSettings: [],
       },
     });
 
@@ -208,14 +208,14 @@ test.describe('Configuration Export/Import - Import Preview Dialog', () => {
       appVersion: '0.1.0',
       data: {
         settings: {
-          server_port: '5008',
-          autostart_enabled: 'true',
-          epg_schedule_hour: '3',
+          serverPort: '5008',
+          autostartEnabled: 'true',
+          epgScheduleHour: '3',
         },
         accounts: [],
-        xmltv_sources: [],
-        channel_mappings: [],
-        xmltv_channel_settings: [],
+        xmltvSources: [],
+        channelMappings: [],
+        xmltvChannelSettings: [],
       },
     });
 
@@ -253,20 +253,20 @@ test.describe('Configuration Export/Import - Import Execution', () => {
       appVersion: '0.1.0',
       data: {
         settings: {
-          server_port: '5010',
-          autostart_enabled: 'true',
-          epg_schedule_hour: '6',
-          epg_schedule_minute: '30',
-          epg_schedule_enabled: 'true',
+          serverPort: '5010',
+          autostartEnabled: 'true',
+          epgScheduleHour: '6',
+          epgScheduleMinute: '30',
+          epgScheduleEnabled: 'true',
         },
         accounts: [
           { id: 1, name: 'Imported Account', serverUrl: 'http://imported.com', username: 'imported', maxConnections: 2, isActive: true },
         ],
-        xmltv_sources: [
+        xmltvSources: [
           { id: 1, name: 'Imported EPG', url: 'http://imported-epg.com', format: 'xml', refreshHour: 6, isActive: true },
         ],
-        channel_mappings: [],
-        xmltv_channel_settings: [],
+        channelMappings: [],
+        xmltvChannelSettings: [],
       },
     });
 
@@ -302,9 +302,9 @@ test.describe('Configuration Export/Import - Import Execution', () => {
           { id: 1, name: 'Account 1', serverUrl: 'http://test1.com', username: 'user1', maxConnections: 1, isActive: true },
           { id: 2, name: 'Account 2', serverUrl: 'http://test2.com', username: 'user2', maxConnections: 1, isActive: true },
         ],
-        xmltv_sources: [],
-        channel_mappings: [],
-        xmltv_channel_settings: [],
+        xmltvSources: [],
+        channelMappings: [],
+        xmltvChannelSettings: [],
       },
     });
 
@@ -367,7 +367,7 @@ test.describe('Configuration Export/Import - Export Functionality', () => {
     // THEN: Exported JSON contains current settings
     const exported = JSON.parse(exportJson);
     expect(exported.version).toBe('1.0');
-    expect(exported.data.settings.server_port).toBe('5555');
+    expect(exported.data.settings.serverPort).toBe('5555');
     expect(exported.data.settings.autostart_enabled).toBe('true');
     expect(exported.data.settings.epg_schedule_hour).toBe('3');
     expect(exported.data.settings.epg_schedule_minute).toBe('45');

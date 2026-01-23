@@ -393,6 +393,23 @@ None - implementation completed successfully without issues.
 
 **Security Enhancement**: Export now includes runtime assertion that scans the final JSON for any password-related fields and aborts export if detected. This provides defense-in-depth beyond the struct field exclusion.
 
+### Code Review Fixes - Round 2 (2026-01-23)
+
+**Review Agent**: Claude Sonnet 4.5 (adversarial second-pass review, YOLO mode)
+
+**Issues Found**: 9 issues (0 HIGH, 6 MEDIUM, 3 LOW)
+**Issues Fixed**: 6 MEDIUM issues (auto-fixed in YOLO mode)
+
+**Fixes Applied**:
+1. ✅ **ExportData camelCase consistency** (MEDIUM): Added `#[serde(rename_all = "camelCase")]` to `ExportData` struct - now ALL exported fields use camelCase (was mixing snake_case and camelCase)
+2. ✅ **Export error logging** (MEDIUM): Added error logging with `eprintln!` at all export failure points for better production debugging
+3. ✅ **File read validation** (MEDIUM): Added empty file check in `Settings.tsx` before validation - now shows "file is empty" instead of cryptic "Invalid JSON"
+4. ✅ **Test JSON format** (MEDIUM): Fixed all E2E tests to use camelCase field names (`xmltvSources`, `serverPort`, etc.) - tests now correctly validate the actual API
+5. ✅ **Import field validation** (MEDIUM): Added validation for required non-empty fields (name, URL, username) before database insertion - prevents invalid state
+6. ✅ **Mappings documentation** (MEDIUM): Expanded technical explanation of why channel mappings aren't imported (database ID mismatch after re-fetch)
+
+**Consistency Improvement**: Export JSON now uses camelCase uniformly across ALL fields. Previous version had inconsistent naming where top-level and nested structs used camelCase but ExportData used snake_case.
+
 ### File List
 
 **New Files:**
