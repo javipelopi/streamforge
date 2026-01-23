@@ -13,6 +13,7 @@
  */
 
 import { useRef, useCallback } from 'react';
+import { useFocusManager } from './useFocusManager';
 
 export type EpgPanelId = 'header' | 'channels' | 'schedule' | 'details';
 
@@ -38,36 +39,19 @@ export function useEpgNavigation(): UseEpgNavigationReturn {
   const scheduleRef = useRef<HTMLDivElement>(null);
   const detailsRef = useRef<HTMLDivElement>(null);
 
+  const { focusFirst } = useFocusManager();
+
   const focusPanel = useCallback((panelId: EpgPanelId) => {
-    let ref: React.RefObject<HTMLDivElement>;
-    switch (panelId) {
-      case 'header':
-        ref = headerRef;
-        break;
-      case 'channels':
-        ref = channelsRef;
-        break;
-      case 'schedule':
-        ref = scheduleRef;
-        break;
-      case 'details':
-        ref = detailsRef;
-        break;
-    }
+    const panelRefs: Record<EpgPanelId, React.RefObject<HTMLDivElement>> = {
+      header: headerRef,
+      channels: channelsRef,
+      schedule: scheduleRef,
+      details: detailsRef,
+    };
 
-
-    if (ref.current) {
-      // Find the first focusable element or the panel itself
-      const focusable = ref.current.querySelector<HTMLElement>(
-        '[tabindex="0"], button:not([disabled]), input:not([disabled])'
-      );
-      if (focusable) {
-        focusable.focus();
-      } else {
-        ref.current.focus();
-      }
-    }
-  }, []);
+    const ref = panelRefs[panelId];
+    focusFirst(ref.current);
+  }, [focusFirst]);
 
   const navigateFromHeader = useCallback(
     (direction: 'down') => {

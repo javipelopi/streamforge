@@ -7,11 +7,12 @@
  * Supports remote-control navigation with arrow keys.
  */
 
-import { useRef, useEffect, useCallback, forwardRef } from 'react';
+import { useRef, useEffect, useCallback, forwardRef, useMemo } from 'react';
 import type { KeyboardEvent } from 'react';
 import { ScheduleHeader } from './ScheduleHeader';
 import { ScheduleRow } from './ScheduleRow';
 import { useChannelSchedule } from '../../../hooks/useChannelSchedule';
+import { useListNavigation } from '../../../hooks/useListNavigation';
 
 interface EpgSchedulePanelProps {
   /** ID of the currently selected channel */
@@ -94,50 +95,40 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
     }
   }, [selectedProgramId, currentProgramId, onSelectProgram]);
 
+  // Memoize scroll strategy for list navigation
+  const scrollStrategy = useMemo(() => ({
+    type: 'scrollIntoView' as const,
+    idPrefix: 'schedule-row-',
+  }), []);
+
+  // Handle program selection for the navigation hook
+  const handleSelect = useCallback((programId: number) => {
+    onSelectProgram?.(programId);
+  }, [onSelectProgram]);
+
+  // Predicate for boundary navigation - only allow when details are closed
+  const canNavigateBoundary = useCallback(() => !isDetailsOpen, [isDetailsOpen]);
+
+  // Use list navigation hook for ArrowUp/Down handling
+  const { handleArrowUp, handleArrowDown } = useListNavigation({
+    items: programs,
+    selectedId: selectedProgramId ?? null,
+    getId: (p) => p.id,
+    onSelect: handleSelect,
+    scrollStrategy,
+    onBoundaryUp: onNavigateUp,
+    canNavigateBoundary,
+  });
+
   // Handle keyboard navigation (AC #2, AC #4, AC #5)
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLDivElement>) => {
-      const currentIndex = selectedProgramId
-        ? programs.findIndex((p) => p.id === selectedProgramId)
-        : -1;
-
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        if (!onSelectProgram || programs.length === 0) return;
-        const nextIndex = currentIndex < programs.length - 1 ? currentIndex + 1 : currentIndex;
-        if (nextIndex !== currentIndex || currentIndex === -1) {
-          const nextProgram = programs[nextIndex === -1 ? 0 : nextIndex];
-          onSelectProgram(nextProgram.id);
-
-          // Scroll selected item into view
-          setTimeout(() => {
-            const element = document.getElementById(`schedule-row-${nextProgram.id}`);
-            element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }, 50);
-        }
+        handleArrowDown();
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        // If at top of list or no selection
-        if (currentIndex <= 0) {
-          // Only navigate to header if details panel is closed
-          // When details are open, stay at top (user can close details first)
-          if (!isDetailsOpen) {
-            onNavigateUp?.();
-          }
-          return;
-        }
-        if (!onSelectProgram || programs.length === 0) return;
-        const prevIndex = currentIndex > 0 ? currentIndex - 1 : 0;
-        if (prevIndex !== currentIndex) {
-          const prevProgram = programs[prevIndex];
-          onSelectProgram(prevProgram.id);
-
-          // Scroll selected item into view
-          setTimeout(() => {
-            const element = document.getElementById(`schedule-row-${prevProgram.id}`);
-            element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }, 50);
-        }
+        handleArrowUp();
       } else if (e.key === 'ArrowLeft') {
         // If details are open, let the details panel handle Left (to close)
         // Otherwise navigate to channel list
@@ -154,7 +145,7 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
         }
       }
     },
-    [programs, selectedProgramId, onSelectProgram, onProgramAction, onNavigateUp, onNavigateLeft, isDetailsOpen]
+    [handleArrowDown, handleArrowUp, isDetailsOpen, onNavigateLeft, selectedProgramId, onProgramAction]
   );
 
   // Handle program click - activates program (opens/toggles details)
