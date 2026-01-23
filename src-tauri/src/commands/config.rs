@@ -65,6 +65,7 @@ impl From<ConfigError> for String {
 
 /// Exported settings (key-value pairs)
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ExportedSettings {
     pub server_port: Option<String>,
     pub autostart_enabled: Option<String>,
@@ -292,8 +293,17 @@ pub fn export_configuration(db: State<DbConnection>) -> Result<String, String> {
     };
 
     // Serialize to JSON
-    serde_json::to_string_pretty(&export)
-        .map_err(|e| ConfigError::SerializationError(e.to_string()).into())
+    let json = serde_json::to_string_pretty(&export)
+        .map_err(|e| ConfigError::SerializationError(e.to_string()))?;
+
+    // SECURITY ASSERTION: Verify passwords are NEVER in the export
+    if json.to_lowercase().contains("password") {
+        return Err(ConfigError::ImportFailed(
+            "CRITICAL SECURITY VIOLATION: Password data detected in export. Export aborted.".to_string()
+        ).into());
+    }
+
+    Ok(json)
 }
 
 // ============================================================================
@@ -489,7 +499,28 @@ pub fn import_configuration(
 
         Ok(())
     })
-    .map_err(|e| ConfigError::DatabaseError(e.to_string()))?;
+    .map_err(|e| {
+        // Provide more specific error messages for common constraint violations
+        let error_str = e.to_string();
+        if error_str.to_lowercase().contains("unique") {
+            ConfigError::ImportFailed(format!(
+                "Duplicate data detected in import file. Each item must be unique. Details: {}",
+                error_str
+            ))
+        } else if error_str.to_lowercase().contains("foreign key") {
+            ConfigError::ImportFailed(format!(
+                "Invalid references in import data. Some items reference non-existent records. Details: {}",
+                error_str
+            ))
+        } else if error_str.to_lowercase().contains("not null") {
+            ConfigError::ImportFailed(format!(
+                "Missing required data in import file. All mandatory fields must be provided. Details: {}",
+                error_str
+            ))
+        } else {
+            ConfigError::DatabaseError(error_str)
+        }
+    })?;
 
     // Count what was actually imported
     let settings_count = count_settings(&config.data.settings);
@@ -513,19 +544,30 @@ pub fn import_configuration(
 
 /// Check if the import version is compatible
 fn is_version_compatible(version: &str) -> bool {
-    // Simple version comparison - just check major.minor
+    // Version comparison - check major.minor
     let parts: Vec<&str> = version.split('.').collect();
     let min_parts: Vec<&str> = MIN_SUPPORTED_VERSION.split('.').collect();
 
-    if parts.is_empty() || min_parts.is_empty() {
+    if parts.len() < 2 || min_parts.len() < 2 {
         return false;
     }
 
-    // Parse major version
+    // Parse major and minor versions
     let major: u32 = parts[0].parse().unwrap_or(0);
     let min_major: u32 = min_parts[0].parse().unwrap_or(0);
+    let minor: u32 = parts[1].parse().unwrap_or(0);
+    let min_minor: u32 = min_parts[1].parse().unwrap_or(0);
 
-    major >= min_major
+    // Check major version first
+    if major > min_major {
+        return true;
+    }
+    if major < min_major {
+        return false;
+    }
+
+    // Major versions match, check minor
+    minor >= min_minor
 }
 
 /// Count non-None settings
@@ -609,12 +651,13 @@ mod tests {
 
         let json = serde_json::to_string_pretty(&export).unwrap();
 
-        // Verify structure - ConfigExport uses camelCase, but nested structs vary
+        // Verify structure - ConfigExport and ExportedSettings use camelCase
         assert!(json.contains("\"version\": \"1.0\""));
         assert!(json.contains("\"exportDate\"")); // ConfigExport camelCase
         assert!(json.contains("\"appVersion\"")); // ConfigExport camelCase
-        // ExportedSettings uses snake_case (no rename attribute)
-        assert!(json.contains("\"server_port\": \"5004\""));
+        // ExportedSettings now uses camelCase (added rename attribute)
+        assert!(json.contains("\"serverPort\": \"5004\""));
+        assert!(json.contains("\"autostartEnabled\": \"true\""));
         // ExportData uses snake_case (no rename attribute)
         assert!(json.contains("\"accounts\""));
         assert!(json.contains("\"xmltv_sources\""));
@@ -634,12 +677,12 @@ mod tests {
             "appVersion": "0.1.0",
             "data": {
                 "settings": {
-                    "server_port": "5004",
-                    "autostart_enabled": "true",
-                    "epg_schedule_hour": "4",
-                    "epg_schedule_minute": "0",
-                    "epg_schedule_enabled": "true",
-                    "match_threshold": null
+                    "serverPort": "5004",
+                    "autostartEnabled": "true",
+                    "epgScheduleHour": "4",
+                    "epgScheduleMinute": "0",
+                    "epgScheduleEnabled": "true",
+                    "matchThreshold": null
                 },
                 "accounts": [],
                 "xmltv_sources": [],
@@ -656,12 +699,18 @@ mod tests {
 
     #[test]
     fn test_version_compatibility() {
-        assert!(is_version_compatible("1.0"));
-        assert!(is_version_compatible("1.1"));
-        assert!(is_version_compatible("2.0"));
-        assert!(!is_version_compatible("0.9"));
-        assert!(!is_version_compatible(""));
-        assert!(!is_version_compatible("invalid"));
+        // Valid versions
+        assert!(is_version_compatible("1.0")); // exact match
+        assert!(is_version_compatible("1.1")); // same major, higher minor
+        assert!(is_version_compatible("2.0")); // higher major
+        assert!(is_version_compatible("1.999")); // same major, much higher minor
+
+        // Invalid versions
+        assert!(!is_version_compatible("0.9")); // lower major
+        assert!(!is_version_compatible("0.999")); // lower major, even with high minor
+        assert!(!is_version_compatible("")); // empty string
+        assert!(!is_version_compatible("invalid")); // not a number
+        assert!(!is_version_compatible("1")); // missing minor version
     }
 
     #[test]
