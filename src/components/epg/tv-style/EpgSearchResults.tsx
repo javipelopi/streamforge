@@ -6,7 +6,8 @@
  * Displays program title, channel name, and date/time for each result.
  */
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState, useRef, forwardRef, useImperativeHandle } from 'react';
+import type { KeyboardEvent } from 'react';
 import type { EpgSearchResult } from '../../../lib/tauri';
 
 /** Maximum number of results to display */
@@ -21,6 +22,14 @@ interface EpgSearchResultsProps {
   error: string | null;
   /** Callback when a result is selected */
   onResultSelect: (result: EpgSearchResult) => void;
+  /** Callback when dropdown should close */
+  onClose: () => void;
+}
+
+/** Ref handle for external control */
+export interface EpgSearchResultsHandle {
+  /** Focus the first result */
+  focusFirst: () => void;
 }
 
 /**
@@ -54,23 +63,40 @@ function formatDate(isoString: string): string {
  * AC #2: Loading spinner while searching
  * AC #2: "No results found" empty state
  */
-export function EpgSearchResults({
-  results,
-  isSearching,
-  error,
-  onResultSelect,
-}: EpgSearchResultsProps) {
-  // Handle Escape key to close dropdown
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        window.dispatchEvent(new CustomEvent('epgSearchEscape'));
-      }
-    };
+export const EpgSearchResults = forwardRef<EpgSearchResultsHandle, EpgSearchResultsProps>(
+  function EpgSearchResults(
+    {
+      results,
+      isSearching,
+      error,
+      onResultSelect,
+      onClose,
+    },
+    ref
+  ) {
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const listRef = useRef<HTMLUListElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, []);
+  // Limit results to max
+  const displayResults = results.slice(0, MAX_RESULTS);
+  const hasResults = displayResults.length > 0;
+  const showEmptyState = !isSearching && !hasResults && !error;
+
+  // Reset highlighted index when results change
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [results]);
+
+  // Expose focus method to parent
+  useImperativeHandle(ref, () => ({
+    focusFirst: () => {
+      if (hasResults && itemRefs.current[0]) {
+        setHighlightedIndex(0);
+        itemRefs.current[0]?.focus();
+      }
+    },
+  }), [hasResults]);
 
   // Handle result click
   const handleResultClick = useCallback(
@@ -80,10 +106,33 @@ export function EpgSearchResults({
     [onResultSelect]
   );
 
-  // Limit results to max
-  const displayResults = results.slice(0, MAX_RESULTS);
-  const hasResults = displayResults.length > 0;
-  const showEmptyState = !isSearching && !hasResults && !error;
+  // Handle keyboard navigation within results
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLButtonElement>, index: number, result: EpgSearchResult) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopPropagation();
+        const nextIndex = Math.min(index + 1, displayResults.length - 1);
+        setHighlightedIndex(nextIndex);
+        itemRefs.current[nextIndex]?.focus();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        const prevIndex = Math.max(index - 1, 0);
+        setHighlightedIndex(prevIndex);
+        itemRefs.current[prevIndex]?.focus();
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        onResultSelect(result);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    },
+    [displayResults.length, onResultSelect, onClose]
+  );
 
   return (
     <div
@@ -169,21 +218,26 @@ export function EpgSearchResults({
 
       {/* Results list */}
       {hasResults && !isSearching && (
-        <ul className="py-1">
-          {displayResults.map((result) => {
+        <ul ref={listRef} className="py-1">
+          {displayResults.map((result, index) => {
             const isChannelResult = result.resultType === 'channel';
             const resultKey = isChannelResult
               ? `channel-${result.channelId}`
               : `program-${result.programId}`;
+            const isHighlighted = index === highlightedIndex;
 
             return (
               <li key={resultKey}>
                 <button
+                  ref={(el) => { itemRefs.current[index] = el; }}
                   data-testid={`search-result-${resultKey}`}
                   onClick={() => handleResultClick(result)}
-                  className="w-full px-4 py-3 text-left hover:bg-white/5 transition-colors focus:outline-none focus:bg-white/5"
+                  onKeyDown={(e) => handleKeyDown(e, index, result)}
+                  className={`w-full px-4 py-3 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500/50 ${
+                    isHighlighted ? 'bg-white/10' : 'hover:bg-white/5'
+                  }`}
                   role="option"
-                  aria-selected={false}
+                  aria-selected={isHighlighted}
                 >
                   <div className="flex items-start justify-between gap-3">
                     {/* Left: Title/channel name and subtitle */}
@@ -274,4 +328,4 @@ export function EpgSearchResults({
       )}
     </div>
   );
-}
+});

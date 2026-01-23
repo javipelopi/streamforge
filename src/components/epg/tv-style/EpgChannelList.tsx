@@ -4,9 +4,10 @@
  *
  * Virtualized list of enabled channels with current program information.
  * Uses TanStack Virtual for efficient rendering with large channel counts.
+ * Supports remote-control navigation with arrow keys.
  */
 
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, forwardRef } from 'react';
 import type { KeyboardEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { EpgChannelRow } from './EpgChannelRow';
@@ -17,6 +18,12 @@ interface EpgChannelListProps {
   selectedChannelId?: number | null;
   /** Callback when a channel is selected */
   onSelectChannel?: (channelId: number) => void;
+  /** Callback when navigating up from top channel (to header) */
+  onNavigateUp?: () => void;
+  /** Callback when navigating right (to schedule panel) */
+  onNavigateRight?: () => void;
+  /** Callback when navigating left (close details) */
+  onNavigateLeft?: () => void;
 }
 
 /**
@@ -25,12 +32,29 @@ interface EpgChannelListProps {
  * AC #1: Displays virtualized list of enabled XMLTV channels
  * AC #2: Supports channel selection via click or keyboard
  * AC #3: Remains responsive with large channel counts (<100ms)
+ * AC #4: Remote-control navigation (up to header, right to schedule, left closes details)
  */
-export function EpgChannelList({
-  selectedChannelId,
-  onSelectChannel,
-}: EpgChannelListProps) {
+export const EpgChannelList = forwardRef<HTMLDivElement, EpgChannelListProps>(
+  function EpgChannelList(
+    { selectedChannelId, onSelectChannel, onNavigateUp, onNavigateRight, onNavigateLeft },
+    forwardedRef
+  ) {
   const parentRef = useRef<HTMLDivElement>(null);
+
+  // Combine local ref with forwarded ref
+  const setRefs = useCallback(
+    (element: HTMLDivElement | null) => {
+      // Set local ref
+      (parentRef as React.MutableRefObject<HTMLDivElement | null>).current = element;
+      // Set forwarded ref
+      if (typeof forwardedRef === 'function') {
+        forwardedRef(element);
+      } else if (forwardedRef) {
+        forwardedRef.current = element;
+      }
+    },
+    [forwardedRef]
+  );
   const { channels, isLoading, error } = useEpgChannelList();
 
   // Auto-select first channel when channels load and none is selected
@@ -48,17 +72,16 @@ export function EpgChannelList({
     overscan: 5, // Render 5 extra items above/below viewport
   });
 
-  // Handle keyboard navigation (AC #2)
+  // Handle keyboard navigation (AC #2, AC #4)
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLDivElement>) => {
-      if (!onSelectChannel || channels.length === 0) return;
-
       const currentIndex = selectedChannelId
         ? channels.findIndex((ch) => ch.channelId === selectedChannelId)
         : -1;
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
+        if (!onSelectChannel || channels.length === 0) return;
         const nextIndex = currentIndex < channels.length - 1 ? currentIndex + 1 : currentIndex;
         if (nextIndex !== currentIndex || currentIndex === -1) {
           const nextChannel = channels[nextIndex === -1 ? 0 : nextIndex];
@@ -68,20 +91,36 @@ export function EpgChannelList({
         }
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
+        // If at top channel, navigate to header
+        if (currentIndex <= 0) {
+          onNavigateUp?.();
+          return;
+        }
+        if (!onSelectChannel || channels.length === 0) return;
         const prevIndex = currentIndex > 0 ? currentIndex - 1 : 0;
         if (prevIndex !== currentIndex) {
           onSelectChannel(channels[prevIndex].channelId);
           virtualizer.scrollToIndex(prevIndex, { align: 'auto' });
         }
+      } else if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') {
+        // Navigate to schedule panel
+        e.preventDefault();
+        onNavigateRight?.();
+      } else if (e.key === 'ArrowLeft') {
+        // Close details panel
+        e.preventDefault();
+        onNavigateLeft?.();
       }
     },
-    [channels, selectedChannelId, onSelectChannel, virtualizer]
+    [channels, selectedChannelId, onSelectChannel, virtualizer, onNavigateUp, onNavigateRight, onNavigateLeft]
   );
 
-  // Handle channel click
+  // Handle channel click - ensures focus stays on container for keyboard nav
   const handleChannelClick = useCallback(
     (channelId: number) => {
       onSelectChannel?.(channelId);
+      // Refocus container after click to keep keyboard nav working
+      parentRef.current?.focus();
     },
     [onSelectChannel]
   );
@@ -90,8 +129,11 @@ export function EpgChannelList({
   if (isLoading) {
     return (
       <div
+        ref={setRefs}
         data-testid="epg-channel-list"
-        className="h-full p-2 flex flex-col gap-2"
+        className="h-full p-2 flex flex-col gap-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
       >
         {/* Render 5 skeleton rows */}
         {Array.from({ length: 5 }).map((_, i) => (
@@ -145,8 +187,11 @@ export function EpgChannelList({
 
     return (
       <div
+        ref={setRefs}
         data-testid="epg-channel-list"
-        className="h-full flex flex-col items-center justify-center p-4 text-center gap-3"
+        className="h-full flex flex-col items-center justify-center p-4 text-center gap-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
       >
         <svg
           className="w-12 h-12 text-red-400"
@@ -174,8 +219,11 @@ export function EpgChannelList({
   if (channels.length === 0) {
     return (
       <div
+        ref={setRefs}
         data-testid="epg-channel-list-empty"
-        className="h-full flex flex-col items-center justify-center p-4 text-center"
+        className="h-full flex flex-col items-center justify-center p-4 text-center focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
       >
         <svg
           className="w-12 h-12 text-white/30 mb-3"
@@ -210,7 +258,7 @@ export function EpgChannelList({
 
   return (
     <div
-      ref={parentRef}
+      ref={setRefs}
       data-testid="epg-channel-list"
       className="h-full overflow-y-auto focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
       tabIndex={0}
@@ -251,4 +299,4 @@ export function EpgChannelList({
       </div>
     </div>
   );
-}
+});

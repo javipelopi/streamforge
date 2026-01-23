@@ -21,6 +21,14 @@ interface EpgSearchInputProps {
   onClear: () => void;
   /** Whether a search is in progress */
   isSearching: boolean;
+  /** Callback when navigating down from search (to exit header) */
+  onNavigateDown?: () => void;
+  /** Callback when navigating right from search icon (to day navigation) */
+  onNavigateRight?: () => void;
+  /** Callback when navigating to search results (Enter/Down with results visible) */
+  onNavigateToResults?: () => void;
+  /** Whether search results are currently visible */
+  hasResults?: boolean;
 }
 
 /**
@@ -34,6 +42,10 @@ export function EpgSearchInput({
   onSearch,
   onClear,
   isSearching,
+  onNavigateDown,
+  onNavigateRight,
+  onNavigateToResults,
+  hasResults = false,
 }: EpgSearchInputProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [localQuery, setLocalQuery] = useState(query);
@@ -58,7 +70,7 @@ export function EpgSearchInput({
     }
   }, [localQuery]);
 
-  // Handle icon click (expand and focus)
+  // Handle icon click or keyboard activation (expand and focus)
   const handleIconClick = useCallback(() => {
     setIsExpanded(true);
     // Focus input after state update
@@ -66,6 +78,23 @@ export function EpgSearchInput({
       inputRef.current?.focus();
     }, 50);
   }, []);
+
+  // Handle icon keyboard events (Enter/Space to activate, arrows to navigate)
+  const handleIconKeyDown = useCallback(
+    (e: KeyboardEvent<globalThis.HTMLButtonElement>) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleIconClick();
+      } else if (e.key === 'ArrowDown' || e.key === 'Tab') {
+        e.preventDefault();
+        onNavigateDown?.();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        onNavigateRight?.();
+      }
+    },
+    [handleIconClick, onNavigateDown, onNavigateRight]
+  );
 
   // Handle input change with debouncing (AC #2)
   const handleChange = useCallback(
@@ -96,15 +125,33 @@ export function EpgSearchInput({
     inputRef.current?.focus();
   }, [onClear]);
 
-  // Handle keyboard events
+  // Handle keyboard events for input (navigation and escape)
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Escape') {
         // Dispatch custom event for parent to close dropdown
-        window.dispatchEvent(new CustomEvent('epgSearchEscape'));
+        window.dispatchEvent(new globalThis.CustomEvent('epgSearchEscape'));
+        // Also collapse the input if empty
+        if (!localQuery.trim()) {
+          setIsExpanded(false);
+          onNavigateDown?.();
+        }
+      } else if (e.key === 'ArrowDown' || e.key === 'Enter') {
+        // If results are visible, navigate to them; otherwise navigate down to channels
+        e.preventDefault();
+        e.stopPropagation();
+        if (hasResults && onNavigateToResults) {
+          onNavigateToResults();
+        } else if (e.key === 'ArrowDown') {
+          onNavigateDown?.();
+        }
+      } else if (e.key === 'ArrowRight' && e.currentTarget.selectionStart === e.currentTarget.value.length) {
+        // Navigate right only if cursor is at end of input
+        e.preventDefault();
+        onNavigateRight?.();
       }
     },
-    []
+    [localQuery, onNavigateDown, onNavigateRight, hasResults, onNavigateToResults]
   );
 
   // Cleanup debounce on unmount
@@ -126,7 +173,8 @@ export function EpgSearchInput({
       <button
         data-testid="epg-search-icon"
         onClick={handleIconClick}
-        className="flex items-center justify-center w-10 h-10 text-white hover:text-white/80 transition-colors"
+        onKeyDown={handleIconKeyDown}
+        className="flex items-center justify-center w-10 h-10 text-white hover:text-white/80 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/50 rounded-lg"
         aria-label="Search channels and programs"
         type="button"
       >

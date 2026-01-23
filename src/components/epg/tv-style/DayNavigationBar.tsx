@@ -7,6 +7,7 @@
  */
 
 import { useState, useCallback, useMemo } from 'react';
+import type { KeyboardEvent } from 'react';
 import { DayChip } from './DayChip';
 import { DatePickerButton } from './DatePickerButton';
 import type { DayOption } from '../../../hooks/useEpgDayNavigation';
@@ -24,6 +25,10 @@ interface DayNavigationBarProps {
   onNextDay: () => void;
   /** Callback when a date is selected from picker */
   onSelectDate: (date: Date) => void;
+  /** Callback when navigating down (to channel list) */
+  onNavigateDown?: () => void;
+  /** Callback when navigating left (to search) */
+  onNavigateLeft?: () => void;
 }
 
 /**
@@ -40,6 +45,8 @@ export function DayNavigationBar({
   onPrevDay,
   onNextDay,
   onSelectDate,
+  onNavigateDown,
+  onNavigateLeft,
 }: DayNavigationBarProps) {
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
@@ -96,19 +103,56 @@ export function DayNavigationBar({
     setIsDatePickerOpen(false);
   }, []);
 
+  // Handle keyboard navigation for buttons within day navigation
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === 'ArrowDown' || e.key === 'Tab') {
+        e.preventDefault();
+        onNavigateDown?.();
+        return;
+      }
+
+      const target = e.target as HTMLElement;
+      const container = e.currentTarget;
+      const focusableElements = Array.from(
+        container.querySelectorAll<HTMLElement>('button:not([disabled])')
+      );
+      const currentIndex = focusableElements.indexOf(target);
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (currentIndex <= 0) {
+          // At first element, navigate to search
+          onNavigateLeft?.();
+        } else {
+          // Move to previous button
+          focusableElements[currentIndex - 1]?.focus();
+        }
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (currentIndex < focusableElements.length - 1) {
+          // Move to next button
+          focusableElements[currentIndex + 1]?.focus();
+        }
+      }
+    },
+    [onNavigateDown, onNavigateLeft]
+  );
+
   return (
     <div
       data-testid="day-navigation-bar"
       className="flex items-center gap-2"
       role="tablist"
       aria-label="Day navigation"
+      onKeyDown={handleKeyDown}
     >
       {/* Prev day button - hidden when on Today */}
       {!isToday && (
         <button
           data-testid="prev-day-button"
           onClick={handlePrevClick}
-          className="flex items-center justify-center w-8 h-8 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+          className="flex items-center justify-center w-8 h-8 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
           aria-label="Previous day"
           type="button"
         >
@@ -156,7 +200,7 @@ export function DayNavigationBar({
       <button
         data-testid="next-day-button"
         onClick={handleNextClick}
-        className="flex items-center justify-center w-8 h-8 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+        className="flex items-center justify-center w-8 h-8 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
         aria-label="Next day"
         type="button"
       >

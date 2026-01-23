@@ -32,6 +32,7 @@ export function DayChip({ day, isSelected, onClick }: DayChipProps) {
       className={`
         px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap
         transition-all duration-150
+        focus:outline-none focus:ring-2 focus:ring-indigo-500/50
         ${
           isSelected
             ? 'bg-[#6366f1] text-white'
