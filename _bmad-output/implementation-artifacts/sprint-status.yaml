@@ -103,8 +103,8 @@ development_status:
   epic-5-retrospective: optional
 
   # Epic 6: Settings, Logging & Updates
-  epic-6: backlog
-  6-1-settings-gui-for-server-and-startup-options: backlog
+  epic-6: in-progress
+  6-1-settings-gui-for-server-and-startup-options: ready-for-dev
   6-2-configuration-export-import: backlog
   6-3-event-logging-system: backlog
   6-4-event-log-viewer-with-notification-badge: backlog
