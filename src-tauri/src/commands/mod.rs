@@ -129,25 +129,28 @@ pub fn set_server_port(db: State<DbConnection>, port: u16) -> Result<(), String>
 /// Story 6.1: Settings GUI for Server and Startup Options
 /// Task 3.1: Add restart_server Tauri command
 ///
-/// Note: In the current implementation (Option A from Dev Notes), this command
-/// is a placeholder. The actual server restart requires an application restart.
-/// The port change is saved via set_server_port and takes effect on next app launch.
+/// IMPLEMENTATION NOTE: This is a placeholder implementation (Option A).
+/// Port changes do NOT take effect immediately - they require a full application restart.
+/// The frontend has been updated to inform users: "Port saved. Restart the app to apply changes."
 ///
-/// Future enhancement (Option B): Implement hot restart by storing server handle
-/// and managing graceful shutdown/restart on the same Tokio runtime.
+/// Why Option A was chosen:
+/// - Simpler implementation with no risk of server state corruption
+/// - No need to manage server handle lifecycle or graceful connection shutdown
+/// - Clear user expectation (restart required)
+/// - Recommended approach in Dev Notes
+///
+/// Future enhancement (Option B): Implement hot restart by:
+/// 1. Storing server handle in Tauri managed state
+/// 2. Implementing graceful shutdown with connection draining
+/// 3. Restarting server on same Tokio runtime with new port
 #[allow(dead_code)] // Used by lib crate via tauri invoke_handler
 #[tauri::command]
 pub async fn restart_server() -> Result<(), String> {
-    // Option A: Log the request and return success
-    // The actual restart happens when the user restarts the app
-    // This is the simpler, safer approach as recommended in Dev Notes
-    println!("Server restart requested. Port change will take effect on next app restart.");
+    // Placeholder implementation - actual restart requires app restart
+    println!("INFO: Server port change saved. Port will take effect on next application restart.");
 
-    // In a future enhancement (Option B), we would:
-    // 1. Get the new port from settings
-    // 2. Signal the current server to gracefully shutdown
-    // 3. Wait for active connections to close
-    // 4. Start a new server instance on the new port
+    // This command exists to maintain API compatibility and allow future enhancement
+    // Frontend correctly handles this by informing user to restart the app
 
     Ok(())
 }

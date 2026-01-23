@@ -90,9 +90,9 @@ test.describe('Settings GUI - Server Port Change', () => {
     await portInput.fill('5005');
     await page.click('[data-testid="save-settings-button"]');
 
-    // THEN: Success message is displayed
+    // THEN: Success message is displayed with restart instruction
     await expect(page.locator('[data-testid="settings-success-message"]')).toBeVisible();
-    await expect(page.locator('[data-testid="settings-success-message"]')).toContainText('Settings saved');
+    await expect(page.locator('[data-testid="settings-success-message"]')).toContainText('Port saved');
   });
 
   test('should update Plex configuration URLs after port change', async ({ page }) => {

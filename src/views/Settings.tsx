@@ -27,16 +27,26 @@ const DEFAULT_PORT = 5004;
 
 /** Validates port number and returns error message or null */
 function validatePort(port: string): string | null {
-  const portNum = parseInt(port, 10);
-  if (isNaN(portNum) || port.trim() === '') {
+  // Check for empty input first
+  if (port.trim() === '') {
     return 'Port must be a number';
   }
-  if (portNum < 1 || portNum > MAX_PORT) {
-    return 'Port must be between 1 and 65535';
+
+  const portNum = parseInt(port, 10);
+  if (isNaN(portNum)) {
+    return 'Port must be a number';
   }
+
+  // Check upper bound
+  if (portNum > MAX_PORT) {
+    return `Port must be ${MAX_PORT} or lower`;
+  }
+
+  // Check lower bound - must be non-privileged port
   if (portNum < MIN_PORT) {
     return 'Port must be 1024 or higher (non-privileged ports)';
   }
+
   return null;
 }
 
@@ -175,15 +185,16 @@ export function Settings() {
         await setServerPort(portNum);
         setSavedServerPort(serverPort);
 
-        // Restart server
+        // Note: Server restart happens on next application restart
+        // The restart_server command is a placeholder in current implementation
         setIsServerRestarting(true);
         try {
           await restartServer();
-          messages.push('Settings saved');
+          messages.push('Port saved. Restart the app to apply changes.');
         } catch (restartErr) {
-          // Server restart may fail if not running - still save the port
+          // Server restart may fail if not running - port is still saved
           console.warn('Server restart warning:', restartErr);
-          messages.push('Settings saved');
+          messages.push('Port saved. Restart the app to apply changes.');
         } finally {
           setIsServerRestarting(false);
         }
@@ -307,7 +318,7 @@ export function Settings() {
                   aria-invalid={!!portError}
                 />
                 {isServerRestarting && (
-                  <span className="text-sm text-blue-600">Restarting server...</span>
+                  <span className="text-sm text-blue-600">Saving port...</span>
                 )}
               </div>
               {portError && (

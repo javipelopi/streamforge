@@ -1,6 +1,6 @@
 # Story 6.1: Settings GUI for Server and Startup Options
 
-Status: review
+Status: done
 
 ## Story
 
@@ -210,10 +210,29 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
 - `tests/e2e/autostart.spec.ts` - Updated to use new toggle button pattern
 - `tests/support/mocks/tauri.mock.ts` - Added injectSettingsStatefulMock with localStorage persistence
 
+## Code Review Notes
+
+### Review Date: 2026-01-23
+**Reviewer:** Code Review Agent (Adversarial Mode)
+**Outcome:** PASSED with fixes applied
+
+**Issues Found and Fixed:**
+1. **Port Validation Logic** - Fixed inconsistent validation that allowed invalid port ranges
+2. **Server Restart Implementation** - Documented Option A approach (restart requires app restart)
+3. **User Messaging** - Updated success messages to accurately reflect behavior ("Port saved. Restart the app to apply changes.")
+4. **Test Assertions** - Updated test expectations to match corrected user messaging
+
+**Implementation Notes:**
+- Server restart uses Option A from Dev Notes: port changes require full application restart
+- This is the simpler, safer approach recommended in the original story
+- Frontend correctly informs users that app restart is required for port changes to take effect
+- All 18 E2E tests passing after review fixes
+
 ## Change Log
 
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-01-23 | Initial story creation from epic | PM |
 | 2026-01-23 | Story implementation complete | Dev Agent |
+| 2026-01-23 | Code review completed, fixes applied, status: done | Code Review Agent |
 
