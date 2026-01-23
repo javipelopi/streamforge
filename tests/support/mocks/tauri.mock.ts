@@ -389,6 +389,130 @@ export async function injectSettingsStatefulMock(
 
         // Event log commands (stub)
         get_unread_event_count: () => 0,
+
+        // Configuration export/import commands (Story 6-2)
+        export_configuration: () => {
+          const state = window.__SETTINGS_STATE__;
+          const exportData = {
+            version: '1.0',
+            exportDate: new Date().toISOString(),
+            appVersion: '0.1.0',
+            data: {
+              settings: {
+                server_port: String(state.serverPort),
+                autostart_enabled: String(state.autostartEnabled),
+                epg_schedule_hour: String(state.epgSchedule.hour),
+                epg_schedule_minute: String(state.epgSchedule.minute),
+                epg_schedule_enabled: String(state.epgSchedule.enabled),
+              },
+              accounts: window.__MOCK_ACCOUNTS__ || [],
+              xmltv_sources: window.__MOCK_XMLTV_SOURCES__ || [],
+              channel_mappings: [],
+              xmltv_channel_settings: [],
+            },
+          };
+          return JSON.stringify(exportData, null, 2);
+        },
+
+        validate_import_file: (args) => {
+          try {
+            const content = args.content;
+            const config = JSON.parse(content);
+
+            // Check version
+            if (!config.version || parseFloat(config.version) < 1.0) {
+              return {
+                valid: false,
+                version: config.version || 'unknown',
+                exportDate: '',
+                accountCount: 0,
+                xmltvSourceCount: 0,
+                channelMappingCount: 0,
+                xmltvChannelSettingsCount: 0,
+                settingsSummary: [],
+                errorMessage: 'Unsupported configuration version: ' + (config.version || 'unknown') + '. Minimum supported: 1.0',
+              };
+            }
+
+            const data = config.data || {};
+            const settings = data.settings || {};
+            const settingsSummary = [];
+            if (settings.server_port) settingsSummary.push('Server port: ' + settings.server_port);
+            if (settings.autostart_enabled) settingsSummary.push('Autostart: ' + (settings.autostart_enabled === 'true' ? 'enabled' : 'disabled'));
+
+            return {
+              valid: true,
+              version: config.version,
+              exportDate: config.exportDate || '',
+              accountCount: (data.accounts || []).length,
+              xmltvSourceCount: (data.xmltv_sources || []).length,
+              channelMappingCount: (data.channel_mappings || []).length,
+              xmltvChannelSettingsCount: (data.xmltv_channel_settings || []).length,
+              settingsSummary: settingsSummary,
+              errorMessage: null,
+            };
+          } catch (e) {
+            return {
+              valid: false,
+              version: '',
+              exportDate: '',
+              accountCount: 0,
+              xmltvSourceCount: 0,
+              channelMappingCount: 0,
+              xmltvChannelSettingsCount: 0,
+              settingsSummary: [],
+              errorMessage: 'Invalid JSON format: ' + e.message,
+            };
+          }
+        },
+
+        import_configuration: (args) => {
+          try {
+            const config = JSON.parse(args.content);
+            const data = config.data || {};
+            const settings = data.settings || {};
+
+            // Apply settings to state
+            if (settings.server_port) {
+              window.__SETTINGS_STATE__.serverPort = parseInt(settings.server_port, 10);
+            }
+            if (settings.autostart_enabled) {
+              window.__SETTINGS_STATE__.autostartEnabled = settings.autostart_enabled === 'true';
+              window.__AUTOSTART_STATE__.enabled = window.__SETTINGS_STATE__.autostartEnabled;
+            }
+            if (settings.epg_schedule_hour) {
+              window.__SETTINGS_STATE__.epgSchedule.hour = parseInt(settings.epg_schedule_hour, 10);
+            }
+            if (settings.epg_schedule_minute) {
+              window.__SETTINGS_STATE__.epgSchedule.minute = parseInt(settings.epg_schedule_minute, 10);
+            }
+            if (settings.epg_schedule_enabled) {
+              window.__SETTINGS_STATE__.epgSchedule.enabled = settings.epg_schedule_enabled === 'true';
+            }
+
+            // Store mock accounts/sources for later verification
+            window.__MOCK_ACCOUNTS__ = data.accounts || [];
+            window.__MOCK_XMLTV_SOURCES__ = data.xmltv_sources || [];
+
+            return {
+              success: true,
+              accountsImported: (data.accounts || []).length,
+              xmltvSourcesImported: (data.xmltv_sources || []).length,
+              channelMappingsImported: 0,
+              settingsImported: Object.keys(settings).length,
+              message: 'Configuration imported successfully.',
+            };
+          } catch (e) {
+            return {
+              success: false,
+              accountsImported: 0,
+              xmltvSourcesImported: 0,
+              channelMappingsImported: 0,
+              settingsImported: 0,
+              message: 'Import failed: ' + e.message,
+            };
+          }
+        },
       };
 
       async function mockInvoke(cmd, args = {}) {

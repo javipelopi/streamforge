@@ -1622,3 +1622,77 @@ export async function restartServer(): Promise<void> {
   return invoke<void>('restart_server');
 }
 
+// ============================================================================
+// Configuration Export/Import (Story 6-2)
+// ============================================================================
+
+/** Import preview response type */
+export interface ImportPreview {
+  valid: boolean;
+  version: string;
+  exportDate: string;
+  accountCount: number;
+  xmltvSourceCount: number;
+  channelMappingCount: number;
+  xmltvChannelSettingsCount: number;
+  settingsSummary: string[];
+  errorMessage?: string;
+}
+
+/** Import result response type */
+export interface ImportResult {
+  success: boolean;
+  accountsImported: number;
+  xmltvSourcesImported: number;
+  channelMappingsImported: number;
+  settingsImported: number;
+  message: string;
+}
+
+/**
+ * Export all configuration data to JSON
+ *
+ * Story 6-2: Configuration Export/Import
+ * Task 3.1: TypeScript binding for exportConfiguration
+ *
+ * Returns the complete configuration as a JSON string that can be saved to a file.
+ * SECURITY: Passwords are NOT included in the export.
+ *
+ * @returns JSON string of the configuration export
+ */
+export async function exportConfiguration(): Promise<string> {
+  return invoke<string>('export_configuration');
+}
+
+/**
+ * Validate an import file and get preview
+ *
+ * Story 6-2: Configuration Export/Import
+ * Task 3.2: TypeScript binding for validateImportFile
+ *
+ * Parses the JSON content and returns a preview of what will be imported.
+ * Does not modify any data - use importConfiguration to actually import.
+ *
+ * @param content - JSON content of the configuration file
+ * @returns Preview of what will be imported
+ */
+export async function validateImportFile(content: string): Promise<ImportPreview> {
+  return invoke<ImportPreview>('validate_import_file', { content });
+}
+
+/**
+ * Import configuration from JSON content
+ *
+ * Story 6-2: Configuration Export/Import
+ * Task 3.3: TypeScript binding for importConfiguration
+ *
+ * Performs atomic import: all existing data is REPLACED (not merged).
+ * Accounts are imported with empty passwords - user must re-enter.
+ *
+ * @param content - JSON content of the configuration file
+ * @returns Result of the import operation
+ */
+export async function importConfiguration(content: string): Promise<ImportResult> {
+  return invoke<ImportResult>('import_configuration', { content });
+}
+

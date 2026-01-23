@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod channels;
+pub mod config;
 pub mod epg;
 pub mod logs;
 pub mod matcher;
