@@ -29,6 +29,8 @@ interface EpgSearchInputProps {
   onNavigateToResults?: () => void;
   /** Whether search results are currently visible */
   hasResults?: boolean;
+  /** Callback when Escape is pressed (to close search results) */
+  onEscape?: () => void;
 }
 
 /**
@@ -46,6 +48,7 @@ export function EpgSearchInput({
   onNavigateRight,
   onNavigateToResults,
   hasResults = false,
+  onEscape,
 }: EpgSearchInputProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [localQuery, setLocalQuery] = useState(query);
@@ -129,8 +132,8 @@ export function EpgSearchInput({
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Escape') {
-        // Dispatch custom event for parent to close dropdown
-        window.dispatchEvent(new globalThis.CustomEvent('epgSearchEscape'));
+        // Call parent callback to close dropdown
+        onEscape?.();
         // Also collapse the input if empty
         if (!localQuery.trim()) {
           setIsExpanded(false);
@@ -151,7 +154,7 @@ export function EpgSearchInput({
         onNavigateRight?.();
       }
     },
-    [localQuery, onNavigateDown, onNavigateRight, hasResults, onNavigateToResults]
+    [localQuery, onNavigateDown, onNavigateRight, hasResults, onNavigateToResults, onEscape]
   );
 
   // Cleanup debounce on unmount

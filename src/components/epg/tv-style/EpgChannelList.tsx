@@ -7,11 +7,12 @@
  * Supports remote-control navigation with arrow keys.
  */
 
-import { useRef, useCallback, useEffect, forwardRef } from 'react';
+import { useRef, useCallback, useEffect, forwardRef, useMemo } from 'react';
 import type { KeyboardEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { EpgChannelRow } from './EpgChannelRow';
 import { useEpgChannelList } from '../../../hooks/useEpgChannelList';
+import { useListNavigation } from '../../../hooks/useListNavigation';
 
 interface EpgChannelListProps {
   /** Currently selected channel ID */
@@ -72,36 +73,36 @@ export const EpgChannelList = forwardRef<HTMLDivElement, EpgChannelListProps>(
     overscan: 5, // Render 5 extra items above/below viewport
   });
 
+  // Memoize scroll strategy to avoid recreating on every render
+  const scrollStrategy = useMemo(() => ({
+    type: 'virtualizer' as const,
+    virtualizer,
+  }), [virtualizer]);
+
+  // Handle channel selection for the navigation hook
+  const handleSelect = useCallback((channelId: number) => {
+    onSelectChannel?.(channelId);
+  }, [onSelectChannel]);
+
+  // Use list navigation hook for ArrowUp/Down handling
+  const { handleArrowUp, handleArrowDown } = useListNavigation({
+    items: channels,
+    selectedId: selectedChannelId ?? null,
+    getId: (ch) => ch.channelId,
+    onSelect: handleSelect,
+    scrollStrategy,
+    onBoundaryUp: onNavigateUp,
+  });
+
   // Handle keyboard navigation (AC #2, AC #4)
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLDivElement>) => {
-      const currentIndex = selectedChannelId
-        ? channels.findIndex((ch) => ch.channelId === selectedChannelId)
-        : -1;
-
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        if (!onSelectChannel || channels.length === 0) return;
-        const nextIndex = currentIndex < channels.length - 1 ? currentIndex + 1 : currentIndex;
-        if (nextIndex !== currentIndex || currentIndex === -1) {
-          const nextChannel = channels[nextIndex === -1 ? 0 : nextIndex];
-          onSelectChannel(nextChannel.channelId);
-          // Scroll to keep selected item visible
-          virtualizer.scrollToIndex(nextIndex === -1 ? 0 : nextIndex, { align: 'auto' });
-        }
+        handleArrowDown();
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        // If at top channel, navigate to header
-        if (currentIndex <= 0) {
-          onNavigateUp?.();
-          return;
-        }
-        if (!onSelectChannel || channels.length === 0) return;
-        const prevIndex = currentIndex > 0 ? currentIndex - 1 : 0;
-        if (prevIndex !== currentIndex) {
-          onSelectChannel(channels[prevIndex].channelId);
-          virtualizer.scrollToIndex(prevIndex, { align: 'auto' });
-        }
+        handleArrowUp();
       } else if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') {
         // Navigate to schedule panel
         e.preventDefault();
@@ -112,7 +113,7 @@ export const EpgChannelList = forwardRef<HTMLDivElement, EpgChannelListProps>(
         onNavigateLeft?.();
       }
     },
-    [channels, selectedChannelId, onSelectChannel, virtualizer, onNavigateUp, onNavigateRight, onNavigateLeft]
+    [handleArrowDown, handleArrowUp, onNavigateRight, onNavigateLeft]
   );
 
   // Handle channel click - ensures focus stays on container for keyboard nav

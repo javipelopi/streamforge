@@ -143,16 +143,14 @@ export function EpgTv() {
     [selectDate]
   );
 
-  // Handle Escape key for search dropdown (Story 5.7)
+  // Auto-focus channel list when EPG view mounts for immediate keyboard navigation
   useEffect(() => {
-    const handleEscapeEvent = () => {
-      // This event is dispatched by the search input to close dropdown
-      // The actual handling is in EpgSearchInput component
-    };
-
-    window.addEventListener('epgSearchEscape', handleEscapeEvent);
-    return () => window.removeEventListener('epgSearchEscape', handleEscapeEvent);
-  }, []);
+    // Small delay to ensure the component is fully rendered
+    const timeoutId = setTimeout(() => {
+      focusPanel('channels');
+    }, 100);
+    return () => clearTimeout(timeoutId);
+  }, [focusPanel]);
 
   return (
     <div data-testid="epg-tv-view" className="relative h-full w-full overflow-hidden">

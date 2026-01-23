@@ -7,7 +7,7 @@
  * Supports remote-control navigation with arrow keys.
  */
 
-import { useEffect, forwardRef, useCallback, useRef } from 'react';
+import { forwardRef, useCallback, useRef } from 'react';
 import type { KeyboardEvent } from 'react';
 import { EpgSearchInput } from './EpgSearchInput';
 import { EpgSearchResults } from './EpgSearchResults';
@@ -102,16 +102,6 @@ export const EpgTopBar = forwardRef<HTMLDivElement, EpgTopBarProps>(
     hideResults,
   } = useEpgSearch();
 
-  // Handle Escape key to close search dropdown (AC #2)
-  useEffect(() => {
-    const handleEscapeEvent = () => {
-      hideResults();
-    };
-
-    window.addEventListener('epgSearchEscape', handleEscapeEvent);
-    return () => window.removeEventListener('epgSearchEscape', handleEscapeEvent);
-  }, [hideResults]);
-
   // Handle search result selection
   const handleResultSelect = (result: EpgSearchResult) => {
     // Call the hook's onResultSelect to get time window and clear state
@@ -159,6 +149,7 @@ export const EpgTopBar = forwardRef<HTMLDivElement, EpgTopBarProps>(
           onNavigateRight={handleNavigateRight}
           onNavigateToResults={handleNavigateToResults}
           hasResults={isResultsVisible && results.length > 0}
+          onEscape={hideResults}
         />
         {/* Search results dropdown */}
         {isResultsVisible && (

@@ -9,6 +9,7 @@
 import { useEffect, useCallback, useState, useRef, forwardRef, useImperativeHandle } from 'react';
 import type { KeyboardEvent } from 'react';
 import type { EpgSearchResult } from '../../../lib/tauri';
+import { useListNavigation } from '../../../hooks/useListNavigation';
 
 /** Maximum number of results to display */
 const MAX_RESULTS = 8;
@@ -83,10 +84,27 @@ export const EpgSearchResults = forwardRef<EpgSearchResultsHandle, EpgSearchResu
   const hasResults = displayResults.length > 0;
   const showEmptyState = !isSearching && !hasResults && !error;
 
+  // Create indices array for useListNavigation (using index as ID)
+  const indices = displayResults.map((_, i) => i);
+
   // Reset highlighted index when results change
   useEffect(() => {
     setHighlightedIndex(0);
   }, [results]);
+
+  // Wrapper for setHighlightedIndex to match hook's expected signature
+  const handleSelect = useCallback((index: number) => {
+    setHighlightedIndex(index);
+  }, []);
+
+  // Use list navigation hook for ArrowUp/Down handling
+  const { handleArrowUp, handleArrowDown } = useListNavigation({
+    items: indices,
+    selectedId: highlightedIndex,
+    getId: (i) => i,
+    onSelect: handleSelect,
+    scrollStrategy: { type: 'refFocus', refs: itemRefs as React.RefObject<(HTMLElement | null)[]> },
+  });
 
   // Expose focus method to parent
   useImperativeHandle(ref, () => ({
@@ -106,21 +124,17 @@ export const EpgSearchResults = forwardRef<EpgSearchResultsHandle, EpgSearchResu
     [onResultSelect]
   );
 
-  // Handle keyboard navigation within results
+  // Handle keyboard navigation within results (Enter/Space/Escape + delegate ArrowUp/Down to hook)
   const handleKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLButtonElement>, index: number, result: EpgSearchResult) => {
+    (e: KeyboardEvent<HTMLButtonElement>, result: EpgSearchResult) => {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         e.stopPropagation();
-        const nextIndex = Math.min(index + 1, displayResults.length - 1);
-        setHighlightedIndex(nextIndex);
-        itemRefs.current[nextIndex]?.focus();
+        handleArrowDown();
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         e.stopPropagation();
-        const prevIndex = Math.max(index - 1, 0);
-        setHighlightedIndex(prevIndex);
-        itemRefs.current[prevIndex]?.focus();
+        handleArrowUp();
       } else if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         e.stopPropagation();
@@ -131,7 +145,7 @@ export const EpgSearchResults = forwardRef<EpgSearchResultsHandle, EpgSearchResu
         onClose();
       }
     },
-    [displayResults.length, onResultSelect, onClose]
+    [handleArrowDown, handleArrowUp, onResultSelect, onClose]
   );
 
   return (
@@ -232,7 +246,7 @@ export const EpgSearchResults = forwardRef<EpgSearchResultsHandle, EpgSearchResu
                   ref={(el) => { itemRefs.current[index] = el; }}
                   data-testid={`search-result-${resultKey}`}
                   onClick={() => handleResultClick(result)}
-                  onKeyDown={(e) => handleKeyDown(e, index, result)}
+                  onKeyDown={(e) => handleKeyDown(e, result)}
                   className={`w-full px-4 py-3 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500/50 ${
                     isHighlighted ? 'bg-white/10' : 'hover:bg-white/5'
                   }`}
