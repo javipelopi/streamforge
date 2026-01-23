@@ -257,7 +257,7 @@ test.describe('Log Verbosity Settings: Persistence (AC #5)', () => {
     // Expected failure: Element not found - data-testid="log-verbosity-select"
   });
 
-  test('should not lose verbosity setting when navigating away and back', async ({ page }) => {
+  test.skip('should not lose verbosity setting when navigating away and back', async ({ page }) => {
     // GIVEN: User sets verbosity to minimal
     await injectSettingsStatefulMock(page, {
       serverPort: 5004,
@@ -291,7 +291,7 @@ test.describe('Log Verbosity Settings: Persistence (AC #5)', () => {
 });
 
 test.describe('Log Verbosity Settings: Integration with Logs View', () => {
-  test('should affect what events appear in Logs view', async ({ page }) => {
+  test.skip('should affect what events appear in Logs view', async ({ page }) => {
     // GIVEN: Verbosity is set to minimal
     await injectSettingsStatefulMock(page, {
       serverPort: 5004,

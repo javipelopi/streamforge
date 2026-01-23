@@ -49,6 +49,23 @@ pub fn run() {
             let db_connection = db::DbConnection::new(database_url)
                 .map_err(|e| format!("Failed to create connection pool: {}", e))?;
 
+            // Story 6-3: Log application startup event (AC #1)
+            {
+                use commands::logs::log_event_internal;
+                if let Ok(mut log_conn) = db_connection.get_connection() {
+                    let details = serde_json::json!({
+                        "version": env!("CARGO_PKG_VERSION"),
+                    });
+                    let _ = log_event_internal(
+                        &mut log_conn,
+                        "info",
+                        "system",
+                        &format!("StreamForge v{} started", env!("CARGO_PKG_VERSION")),
+                        Some(&details.to_string()),
+                    );
+                }
+            }
+
             // Get app data directory for credential retrieval in stream proxy
             let app_data_dir = app.path()
                 .app_data_dir()
@@ -353,6 +370,8 @@ pub fn run() {
             commands::logs::mark_event_read,
             commands::logs::mark_all_events_read,
             commands::logs::clear_old_events,
+            commands::logs::get_log_verbosity,
+            commands::logs::set_log_verbosity,
             // Configuration export/import commands (Story 6-2)
             commands::config::export_configuration,
             commands::config::validate_import_file,
