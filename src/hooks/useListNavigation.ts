@@ -8,18 +8,18 @@
  * - refFocus: Uses ref array to focus individual elements
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef, useEffect } from 'react';
 import type { KeyboardEvent } from 'react';
 import type { Virtualizer } from '@tanstack/react-virtual';
 
-/** Scroll strategy options */
-export type ScrollStrategy =
+/** Scroll strategy options - generic E extends HTMLElement for type-safe ref arrays */
+export type ScrollStrategy<E extends HTMLElement = HTMLElement> =
   | { type: 'virtualizer'; virtualizer: Virtualizer<HTMLDivElement, Element> }
   | { type: 'scrollIntoView'; idPrefix: string }
-  | { type: 'refFocus'; refs: React.RefObject<(HTMLElement | null)[]> };
+  | { type: 'refFocus'; refs: React.RefObject<(E | null)[]> };
 
 /** Configuration for list navigation */
-export interface UseListNavigationOptions<T, K extends string | number> {
+export interface UseListNavigationOptions<T, K extends string | number, E extends HTMLElement = HTMLElement> {
   /** Array of items in the list */
   items: T[];
   /** Currently selected item ID (null if none selected) */
@@ -29,7 +29,7 @@ export interface UseListNavigationOptions<T, K extends string | number> {
   /** Callback when selection changes */
   onSelect: (id: K) => void;
   /** Scroll strategy for keeping selected item visible */
-  scrollStrategy: ScrollStrategy;
+  scrollStrategy: ScrollStrategy<E>;
   /** Called when ArrowUp at index 0 (boundary navigation) */
   onBoundaryUp?: () => void;
   /** Called when ArrowDown at last index (boundary navigation) */
@@ -67,7 +67,7 @@ export interface UseListNavigationReturn {
  * return <div onKeyDown={handleKeyDown}>...</div>;
  * ```
  */
-export function useListNavigation<T, K extends string | number>({
+export function useListNavigation<T, K extends string | number, E extends HTMLElement = HTMLElement>({
   items,
   selectedId,
   getId,
@@ -76,7 +76,16 @@ export function useListNavigation<T, K extends string | number>({
   onBoundaryUp,
   onBoundaryDown,
   canNavigateBoundary = () => true,
-}: UseListNavigationOptions<T, K>): UseListNavigationReturn {
+}: UseListNavigationOptions<T, K, E>): UseListNavigationReturn {
+  // Track mounted state to avoid scroll/focus after unmount
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   // Calculate current index
   const currentIndex = useMemo(() => {
     if (selectedId === null) return -1;
@@ -93,19 +102,21 @@ export function useListNavigation<T, K extends string | number>({
         break;
 
       case 'scrollIntoView':
-        // Use setTimeout to allow state to update first
-        setTimeout(() => {
+        // Use requestAnimationFrame for reliable DOM timing after React render
+        requestAnimationFrame(() => {
+          if (!isMountedRef.current) return;
           const id = getId(items[index]);
           const element = document.getElementById(`${scrollStrategy.idPrefix}${id}`);
           element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }, 50);
+        });
         break;
 
       case 'refFocus':
-        // Focus the element at the index
-        setTimeout(() => {
+        // Use queueMicrotask for immediate focus after current execution
+        queueMicrotask(() => {
+          if (!isMountedRef.current) return;
           scrollStrategy.refs.current?.[index]?.focus();
-        }, 0);
+        });
         break;
     }
   }, [items, getId, scrollStrategy]);

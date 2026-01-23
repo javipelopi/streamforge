@@ -13,6 +13,10 @@ import { ScheduleHeader } from './ScheduleHeader';
 import { ScheduleRow } from './ScheduleRow';
 import { useChannelSchedule } from '../../../hooks/useChannelSchedule';
 import { useListNavigation } from '../../../hooks/useListNavigation';
+import { useCombinedRef } from '../../../hooks/useFocusManager';
+
+/** Timing constant for auto-scroll delay */
+const AUTO_SCROLL_DELAY_MS = 100;
 
 interface EpgSchedulePanelProps {
   /** ID of the currently selected channel */
@@ -49,20 +53,9 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
   ) {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Combine local ref with forwarded ref
-  const setRefs = useCallback(
-    (element: HTMLDivElement | null) => {
-      // Set local ref
-      (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = element;
-      // Set forwarded ref
-      if (typeof forwardedRef === 'function') {
-        forwardedRef(element);
-      } else if (forwardedRef) {
-        forwardedRef.current = element;
-      }
-    },
-    [forwardedRef]
-  );
+  // Combine local ref with forwarded ref using utility hook
+  const setRefs = useCombinedRef(containerRef, forwardedRef);
+
   const currentProgramRef = useRef<HTMLDivElement>(null);
   const { programs, isLoading, error, currentProgramId } = useChannelSchedule(
     selectedChannelId,
@@ -82,7 +75,7 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
           block: 'center',
         });
       }
-    }, 100);
+    }, AUTO_SCROLL_DELAY_MS);
 
     return () => clearTimeout(timeoutId);
   }, [currentProgramId, selectedChannelId]);
@@ -140,7 +133,7 @@ export const EpgSchedulePanel = forwardRef<HTMLDivElement, EpgSchedulePanelProps
       } else if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') {
         // Activate program - opens/toggles details (if program selected)
         e.preventDefault();
-        if (selectedProgramId !== null) {
+        if (selectedProgramId != null) {
           onProgramAction?.(selectedProgramId);
         }
       }

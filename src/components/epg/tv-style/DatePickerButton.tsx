@@ -8,6 +8,9 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 
+/** Delay for focusing calendar after overlay opens */
+const FOCUS_DELAY_MS = 50;
+
 interface DatePickerButtonProps {
   /** Whether the date picker overlay is open */
   isOpen: boolean;
@@ -101,7 +104,7 @@ export function DatePickerButton({
           );
           selectedButton?.focus();
         }
-      }, 50);
+      }, FOCUS_DELAY_MS);
     }
   }, [isOpen, selectedDate]);
 
@@ -275,6 +278,7 @@ export function DatePickerButton({
           className="absolute right-0 top-full mt-2 p-4 bg-black/90 backdrop-blur-sm rounded-lg border border-white/10 shadow-xl z-50 min-w-[280px]"
           role="dialog"
           aria-label="Date picker"
+          aria-describedby="date-picker-instructions"
           aria-modal="true"
           onKeyDown={handleOverlayKeyDown}
         >
@@ -385,6 +389,11 @@ export function DatePickerButton({
           >
             Close
           </button>
+
+          {/* Screen reader instructions */}
+          <span id="date-picker-instructions" className="sr-only">
+            Use arrow keys to navigate the calendar. Press Enter to select a date. Press Escape to close.
+          </span>
         </div>
       )}
     </div>

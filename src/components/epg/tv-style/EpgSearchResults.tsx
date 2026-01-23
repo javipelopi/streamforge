@@ -98,12 +98,13 @@ export const EpgSearchResults = forwardRef<EpgSearchResultsHandle, EpgSearchResu
   }, []);
 
   // Use list navigation hook for ArrowUp/Down handling
-  const { handleArrowUp, handleArrowDown } = useListNavigation({
+  // Generic <number, number, HTMLButtonElement> for type-safe button ref array
+  const { handleArrowUp, handleArrowDown } = useListNavigation<number, number, HTMLButtonElement>({
     items: indices,
     selectedId: highlightedIndex,
     getId: (i) => i,
     onSelect: handleSelect,
-    scrollStrategy: { type: 'refFocus', refs: itemRefs as React.RefObject<(HTMLElement | null)[]> },
+    scrollStrategy: { type: 'refFocus', refs: itemRefs },
   });
 
   // Expose focus method to parent

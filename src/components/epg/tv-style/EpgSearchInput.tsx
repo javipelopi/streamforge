@@ -12,6 +12,9 @@ import type { KeyboardEvent, ChangeEvent } from 'react';
 /** Debounce delay for search queries in milliseconds */
 const DEBOUNCE_MS = 300;
 
+/** Delay for focusing input after icon click */
+const FOCUS_DELAY_MS = 50;
+
 interface EpgSearchInputProps {
   /** Current search query */
   query: string;
@@ -79,7 +82,7 @@ export function EpgSearchInput({
     // Focus input after state update
     setTimeout(() => {
       inputRef.current?.focus();
-    }, 50);
+    }, FOCUS_DELAY_MS);
   }, []);
 
   // Handle icon keyboard events (Enter/Space to activate, arrows to navigate)
@@ -219,12 +222,17 @@ export function EpgSearchInput({
             aria-expanded={hasText}
             aria-haspopup="listbox"
             aria-label="Search channels and programs"
+            aria-describedby="search-instructions"
             aria-autocomplete="list"
             autoCapitalize="off"
             autoCorrect="off"
             autoComplete="off"
             spellCheck={false}
           />
+          {/* Screen reader instructions */}
+          <span id="search-instructions" className="sr-only">
+            Type to search. Use arrow keys to navigate results. Press Enter to select.
+          </span>
 
           {/* Clear button (visible when has text) */}
           {hasText && (
