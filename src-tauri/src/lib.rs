@@ -23,13 +23,15 @@ const MAIN_WINDOW_NAME: &str = "main";
 pub fn run() {
     let mut builder = tauri::Builder::default().plugin(tauri_plugin_shell::init());
 
-    // Initialize autostart plugin only on desktop platforms
+    // Initialize autostart and dialog plugins only on desktop platforms
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_autostart::init(
-            MacosLauncher::LaunchAgent,
-            Some(vec!["--minimized"]),
-        ));
+        builder = builder
+            .plugin(tauri_plugin_autostart::init(
+                MacosLauncher::LaunchAgent,
+                Some(vec!["--minimized"]),
+            ))
+            .plugin(tauri_plugin_dialog::init());
     }
 
     builder.setup(|app| {
@@ -351,6 +353,10 @@ pub fn run() {
             commands::logs::mark_event_read,
             commands::logs::mark_all_events_read,
             commands::logs::clear_old_events,
+            // Configuration export/import commands (Story 6-2)
+            commands::config::export_configuration,
+            commands::config::validate_import_file,
+            commands::config::import_configuration,
             // Test data commands (only functional when IPTV_TEST_MODE=1)
             commands::test_data::seed_stream_proxy_test_data,
             commands::test_data::clear_stream_proxy_test_data,

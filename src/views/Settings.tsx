@@ -4,8 +4,12 @@
  * Story 1.6: Add Auto-Start on Boot Capability
  * Story 2-6: Implement Scheduled EPG Refresh
  * Story 6.1: Settings GUI for Server and Startup Options
+ * Story 6.2: Configuration Export/Import
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { save, open } from '@tauri-apps/plugin-dialog';
+import { writeTextFile, readTextFile } from '@tauri-apps/plugin-fs';
 import {
   getAutostartEnabled,
   setAutostartEnabled,
@@ -18,7 +22,12 @@ import {
   getServerPort,
   setServerPort,
   restartServer,
+  exportConfiguration,
+  validateImportFile,
+  importConfiguration,
+  ImportPreview,
 } from '../lib/tauri';
+import { ImportPreviewDialog } from '../components/settings/ImportPreviewDialog';
 
 /** Port validation constants */
 const MIN_PORT = 1024;
@@ -66,6 +75,8 @@ function formatTimeString(hour: number, minute: number): string {
 }
 
 export function Settings() {
+  const navigate = useNavigate();
+
   // Server port state
   const [serverPort, setServerPortState] = useState<string>(DEFAULT_PORT.toString());
   const [savedServerPort, setSavedServerPort] = useState<string>(DEFAULT_PORT.toString());
@@ -88,6 +99,13 @@ export function Settings() {
   const [scheduleEnabled, setScheduleEnabled] = useState(true);
   const [savedScheduleEnabled, setSavedScheduleEnabled] = useState(true);
   const [epgTimeError, setEpgTimeError] = useState<string | null>(null);
+
+  // Configuration export/import state (Story 6-2)
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [importFileContent, setImportFileContent] = useState<string | null>(null);
+  const [showImportDialog, setShowImportDialog] = useState(false);
 
   // General state
   const [isLoading, setIsLoading] = useState(true);
@@ -261,6 +279,125 @@ export function Settings() {
   const nextRefreshDisplay = nextRefresh
     ? `${formatScheduleTime(nextRefresh.getHours(), nextRefresh.getMinutes())} (${formatRelativeTime(nextRefresh)})`
     : scheduleEnabled ? 'Invalid time' : 'Disabled';
+
+  // Handle export configuration (Story 6-2, AC #1, #2)
+  const handleExport = async () => {
+    try {
+      setIsExporting(true);
+      setError(null);
+      setSuccessMessage(null);
+
+      // Get configuration JSON from backend
+      const configJson = await exportConfiguration();
+
+      // Generate default filename with timestamp
+      const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      const defaultFilename = `streamforge-config-${timestamp}.json`;
+
+      // Show save dialog
+      const filePath = await save({
+        defaultPath: defaultFilename,
+        filters: [
+          {
+            name: 'JSON Files',
+            extensions: ['json'],
+          },
+        ],
+      });
+
+      if (filePath) {
+        // Write the file
+        await writeTextFile(filePath, configJson);
+        setSuccessMessage('Configuration exported successfully');
+        setTimeout(() => setSuccessMessage(null), 5000);
+      }
+      // If user cancelled, do nothing
+    } catch (err) {
+      setError(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Handle import configuration - step 1: file selection (Story 6-2, AC #3)
+  const handleImportSelect = async () => {
+    try {
+      setIsImporting(true);
+      setError(null);
+      setSuccessMessage(null);
+
+      // Show open dialog
+      const filePath = await open({
+        multiple: false,
+        filters: [
+          {
+            name: 'JSON Files',
+            extensions: ['json'],
+          },
+        ],
+      });
+
+      if (filePath && typeof filePath === 'string') {
+        // Read the file content
+        const content = await readTextFile(filePath);
+        setImportFileContent(content);
+
+        // Validate and get preview
+        const preview = await validateImportFile(content);
+        setImportPreview(preview);
+        setShowImportDialog(true);
+      }
+      // If user cancelled, do nothing
+    } catch (err) {
+      setError(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  // Handle import confirmation (Story 6-2, AC #5, #6)
+  const handleImportConfirm = async () => {
+    if (!importFileContent) return;
+
+    try {
+      setIsImporting(true);
+      setError(null);
+
+      const result = await importConfiguration(importFileContent);
+
+      setShowImportDialog(false);
+      setImportPreview(null);
+      setImportFileContent(null);
+
+      if (result.success) {
+        // Show message about accounts needing passwords
+        const accountMsg = result.accountsImported > 0
+          ? ` ${result.accountsImported} account(s) imported - passwords must be re-entered.`
+          : '';
+        setSuccessMessage(`Configuration imported successfully.${accountMsg} Please restart the app to apply changes.`);
+
+        // Navigate to accounts page if accounts were imported
+        if (result.accountsImported > 0) {
+          setTimeout(() => {
+            navigate('/accounts');
+          }, 3000);
+        }
+      } else {
+        setError(`Import failed: ${result.message}`);
+      }
+    } catch (err) {
+      setError(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  // Handle import cancellation
+  const handleImportCancel = () => {
+    setShowImportDialog(false);
+    setImportPreview(null);
+    setImportFileContent(null);
+  };
 
   if (isLoading) {
     return (
@@ -480,6 +617,89 @@ export function Settings() {
         </div>
       </section>
 
+      {/* Configuration Backup Section - Story 6-2, AC #1-6 */}
+      <section data-testid="config-backup-section" className="mb-8">
+        <h2 className="text-lg font-semibold mb-2 text-gray-700">Configuration Backup</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Export your settings to a file for backup or migration to another machine.
+          Import a previously exported configuration to restore settings.
+        </p>
+
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="space-y-4">
+            {/* Export Section */}
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <h3 className="font-medium text-gray-900">Export Configuration</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Save your current settings, accounts, and EPG sources to a JSON file.
+                  <span className="text-amber-600 font-medium"> Passwords are not exported for security.</span>
+                </p>
+              </div>
+              <button
+                data-testid="export-config-button"
+                onClick={handleExport}
+                disabled={isExporting || isSaving}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isExporting ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Export
+                  </>
+                )}
+              </button>
+            </div>
+
+            <hr className="border-gray-200" />
+
+            {/* Import Section */}
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <h3 className="font-medium text-gray-900">Import Configuration</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Load settings from a previously exported JSON file.
+                  <span className="text-red-600 font-medium"> This will replace all current settings.</span>
+                </p>
+              </div>
+              <button
+                data-testid="import-config-button"
+                onClick={handleImportSelect}
+                disabled={isImporting || isSaving}
+                className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isImporting ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Importing...
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    Import
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Action Buttons */}
       <div className="flex items-center gap-4 mt-8">
         <button
@@ -521,6 +741,16 @@ export function Settings() {
         >
           {error}
         </div>
+      )}
+
+      {/* Import Preview Dialog - Story 6-2, AC #4 */}
+      {showImportDialog && importPreview && (
+        <ImportPreviewDialog
+          preview={importPreview}
+          isImporting={isImporting}
+          onConfirm={handleImportConfirm}
+          onCancel={handleImportCancel}
+        />
       )}
     </div>
   );
