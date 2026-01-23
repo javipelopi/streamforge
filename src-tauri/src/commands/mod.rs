@@ -124,6 +124,34 @@ pub fn set_server_port(db: State<DbConnection>, port: u16) -> Result<(), String>
     Ok(())
 }
 
+/// Restart the HTTP server on the new port
+///
+/// Story 6.1: Settings GUI for Server and Startup Options
+/// Task 3.1: Add restart_server Tauri command
+///
+/// Note: In the current implementation (Option A from Dev Notes), this command
+/// is a placeholder. The actual server restart requires an application restart.
+/// The port change is saved via set_server_port and takes effect on next app launch.
+///
+/// Future enhancement (Option B): Implement hot restart by storing server handle
+/// and managing graceful shutdown/restart on the same Tokio runtime.
+#[allow(dead_code)] // Used by lib crate via tauri invoke_handler
+#[tauri::command]
+pub async fn restart_server() -> Result<(), String> {
+    // Option A: Log the request and return success
+    // The actual restart happens when the user restarts the app
+    // This is the simpler, safer approach as recommended in Dev Notes
+    println!("Server restart requested. Port change will take effect on next app restart.");
+
+    // In a future enhancement (Option B), we would:
+    // 1. Get the new port from settings
+    // 2. Signal the current server to gracefully shutdown
+    // 3. Wait for active connections to close
+    // 4. Start a new server instance on the new port
+
+    Ok(())
+}
+
 /// Get the current autostart status
 ///
 /// Returns whether the application is configured to auto-start on boot.
