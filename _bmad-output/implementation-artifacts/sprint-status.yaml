@@ -108,5 +108,5 @@ development_status:
   6-2-configuration-export-import: done
   6-3-event-logging-system: done
   6-4-event-log-viewer-with-notification-badge: done
-  6-5-auto-update-mechanism: ready-for-dev
+  6-5-auto-update-mechanism: review
   epic-6-retrospective: optional

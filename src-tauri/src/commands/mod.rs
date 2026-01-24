@@ -5,6 +5,7 @@ pub mod epg;
 pub mod logs;
 pub mod matcher;
 pub mod test_data;
+pub mod update;
 pub mod xmltv_channels;
 pub mod xtream_sources;
 

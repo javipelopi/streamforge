@@ -6,6 +6,7 @@
  * Story 6.1: Settings GUI for Server and Startup Options
  * Story 6.2: Configuration Export/Import
  * Story 6.3: Event Logging System - Log Verbosity Settings
+ * Story 6-5: Auto-Update Mechanism with Signature Verification
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -30,6 +31,13 @@ import {
   getLogVerbosity,
   setLogVerbosity,
   LogVerbosity,
+  getUpdateSettings,
+  setAutoCheckUpdates,
+  checkForUpdate,
+  downloadAndInstallUpdate,
+  UpdateInfo,
+  UpdateSettings,
+  formatLastCheckTime,
 } from '../lib/tauri';
 import { ImportPreviewDialog } from '../components/settings/ImportPreviewDialog';
 
@@ -115,6 +123,17 @@ export function Settings() {
   const [logVerbosity, setLogVerbosityState] = useState<LogVerbosity>('verbose');
   const [savedLogVerbosity, setSavedLogVerbosity] = useState<LogVerbosity>('verbose');
 
+  // Update state (Story 6-5)
+  const [updateSettings, setUpdateSettingsState] = useState<UpdateSettings | null>(null);
+  const [autoCheckUpdates, setAutoCheckUpdatesState] = useState(true);
+  const [savedAutoCheckUpdates, setSavedAutoCheckUpdates] = useState(true);
+  const [isCheckingForUpdate, setIsCheckingForUpdate] = useState(false);
+  const [isDownloadingUpdate, setIsDownloadingUpdate] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [showReleaseNotes, setShowReleaseNotes] = useState(false);
+  const [updateCheckMessage, setUpdateCheckMessage] = useState<string | null>(null);
+
   // General state
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -153,6 +172,17 @@ export function Settings() {
         const verbosity = await getLogVerbosity();
         setLogVerbosityState(verbosity);
         setSavedLogVerbosity(verbosity);
+
+        // Load update settings (Story 6-5)
+        try {
+          const updateSettingsData = await getUpdateSettings();
+          setUpdateSettingsState(updateSettingsData);
+          setAutoCheckUpdatesState(updateSettingsData.autoCheck);
+          setSavedAutoCheckUpdates(updateSettingsData.autoCheck);
+        } catch (updateErr) {
+          // Update settings are optional - don't fail the whole load
+          console.warn('Failed to load update settings:', updateErr);
+        }
       } catch (err) {
         setError(`Failed to load settings: ${err instanceof Error ? err.message : String(err)}`);
       } finally {
@@ -169,9 +199,10 @@ export function Settings() {
       autostartEnabled !== savedAutostartEnabled ||
       epgRefreshTime !== savedEpgRefreshTime ||
       scheduleEnabled !== savedScheduleEnabled ||
-      logVerbosity !== savedLogVerbosity
+      logVerbosity !== savedLogVerbosity ||
+      autoCheckUpdates !== savedAutoCheckUpdates
     );
-  }, [serverPort, savedServerPort, autostartEnabled, savedAutostartEnabled, epgRefreshTime, savedEpgRefreshTime, scheduleEnabled, savedScheduleEnabled, logVerbosity, savedLogVerbosity]);
+  }, [serverPort, savedServerPort, autostartEnabled, savedAutostartEnabled, epgRefreshTime, savedEpgRefreshTime, scheduleEnabled, savedScheduleEnabled, logVerbosity, savedLogVerbosity, autoCheckUpdates, savedAutoCheckUpdates]);
 
   // Validate port on change
   const handlePortChange = useCallback((value: string) => {
@@ -262,6 +293,13 @@ export function Settings() {
         messages.push(`Log verbosity set to ${logVerbosity}`);
       }
 
+      // Save auto-check updates if changed (Story 6-5)
+      if (autoCheckUpdates !== savedAutoCheckUpdates) {
+        await setAutoCheckUpdates(autoCheckUpdates);
+        setSavedAutoCheckUpdates(autoCheckUpdates);
+        messages.push(`Auto-check updates ${autoCheckUpdates ? 'enabled' : 'disabled'}`);
+      }
+
       // Set success message
       if (messages.length > 0) {
         setSuccessMessage(messages.join('. '));
@@ -284,9 +322,12 @@ export function Settings() {
     setEpgTimeError(null);
     setScheduleEnabled(savedScheduleEnabled);
     setLogVerbosityState(savedLogVerbosity);
+    setAutoCheckUpdatesState(savedAutoCheckUpdates);
     setError(null);
     setSuccessMessage(null);
-  }, [savedServerPort, savedAutostartEnabled, savedEpgRefreshTime, savedScheduleEnabled, savedLogVerbosity]);
+    setUpdateError(null);
+    setUpdateCheckMessage(null);
+  }, [savedServerPort, savedAutostartEnabled, savedEpgRefreshTime, savedScheduleEnabled, savedLogVerbosity, savedAutoCheckUpdates]);
 
   // Calculate next refresh time display
   const parsedTime = parseTimeString(epgRefreshTime);
@@ -432,6 +473,57 @@ export function Settings() {
     setShowImportDialog(false);
     setImportPreview(null);
     setImportFileContent(null);
+  };
+
+  // Handle check for updates (Story 6-5)
+  const handleCheckForUpdates = async () => {
+    try {
+      setIsCheckingForUpdate(true);
+      setUpdateError(null);
+      setUpdateCheckMessage(null);
+      setUpdateInfo(null);
+
+      const info = await checkForUpdate();
+      setUpdateInfo(info);
+
+      // Refresh update settings to get new lastCheck timestamp
+      const newSettings = await getUpdateSettings();
+      setUpdateSettingsState(newSettings);
+
+      if (info.available) {
+        setUpdateCheckMessage(`Update v${info.version} is available!`);
+      } else {
+        setUpdateCheckMessage('You have the latest version.');
+      }
+    } catch (err) {
+      setUpdateError(`Failed to check for updates: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsCheckingForUpdate(false);
+    }
+  };
+
+  // Handle download and install update (Story 6-5)
+  const handleDownloadAndInstall = async () => {
+    try {
+      setIsDownloadingUpdate(true);
+      setUpdateError(null);
+
+      await downloadAndInstallUpdate();
+
+      // If we reach here, update is ready - prompt restart
+      setUpdateCheckMessage('Update installed. Restart the app to complete the update.');
+    } catch (err) {
+      setUpdateError(`Failed to install update: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsDownloadingUpdate(false);
+    }
+  };
+
+  // Handle remind later (Story 6-5)
+  const handleRemindLater = () => {
+    setUpdateInfo(null);
+    setUpdateCheckMessage(null);
+    setShowReleaseNotes(false);
   };
 
   if (isLoading) {
@@ -684,6 +776,197 @@ export function Settings() {
               <option value="minimal">Minimal</option>
             </select>
           </div>
+        </div>
+      </section>
+
+      {/* Updates Section - Story 6-5 */}
+      <section data-testid="updates-section" className="mb-8">
+        <h2 className="text-lg font-semibold mb-2 text-gray-700">Updates</h2>
+        <p className="text-sm text-gray-500 mb-4">Check for and install application updates</p>
+
+        <div className="bg-white rounded-lg shadow p-4 space-y-4">
+          {/* Current Version Display */}
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <span className="font-medium text-gray-900">Current Version</span>
+              <p
+                data-testid="current-version-display"
+                className="text-sm text-gray-600 mt-1"
+              >
+                v{updateSettings?.currentVersion || '0.0.0'}
+              </p>
+            </div>
+          </div>
+
+          {/* Auto-Check Toggle */}
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <label
+                htmlFor="auto-check-updates-toggle"
+                className="font-medium text-gray-900"
+              >
+                Check for updates automatically
+              </label>
+              <p className="text-sm text-gray-500 mt-1">
+                Automatically check for new versions when the app starts
+              </p>
+            </div>
+
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                id="auto-check-updates-toggle"
+                type="checkbox"
+                role="switch"
+                data-testid="auto-check-updates-toggle"
+                aria-checked={autoCheckUpdates}
+                checked={autoCheckUpdates}
+                onChange={() => setAutoCheckUpdatesState(!autoCheckUpdates)}
+                disabled={isSaving}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
+            </label>
+          </div>
+
+          {/* Last Check Display */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">Last checked:</span>
+            <span
+              data-testid="last-update-check-display"
+              className="text-sm font-medium text-gray-900"
+            >
+              {formatLastCheckTime(updateSettings?.lastCheck || null)}
+            </span>
+          </div>
+
+          {/* Check for Updates Button */}
+          <div className="flex items-center gap-3">
+            <button
+              data-testid="check-for-updates-button"
+              onClick={handleCheckForUpdates}
+              disabled={isCheckingForUpdate || isDownloadingUpdate || isSaving}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isCheckingForUpdate ? (
+                <>
+                  <svg
+                    data-testid="update-checking-spinner"
+                    className="animate-spin h-4 w-4 text-white"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Checking...
+                </>
+              ) : (
+                <>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Check for Updates
+                </>
+              )}
+            </button>
+
+            {/* Update check success/info message */}
+            {updateCheckMessage && !updateError && (
+              <span
+                data-testid="update-check-message"
+                className={`text-sm ${updateInfo?.available ? 'text-green-600 font-medium' : 'text-gray-600'}`}
+              >
+                {updateCheckMessage}
+              </span>
+            )}
+          </div>
+
+          {/* Update error */}
+          {updateError && (
+            <div
+              data-testid="update-error-message"
+              className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm"
+            >
+              {updateError}
+            </div>
+          )}
+
+          {/* Update Available Panel */}
+          {updateInfo?.available && (
+            <div
+              data-testid="update-available-panel"
+              className="p-4 bg-blue-50 border border-blue-200 rounded-lg"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <h4 className="font-medium text-blue-900">
+                    Update Available: v{updateInfo.version}
+                  </h4>
+                  {updateInfo.date && (
+                    <p className="text-sm text-blue-700 mt-1">
+                      Released: {new Date(updateInfo.date).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    data-testid="view-release-notes-button"
+                    onClick={() => setShowReleaseNotes(!showReleaseNotes)}
+                    className="text-sm text-blue-700 hover:text-blue-900 underline"
+                  >
+                    {showReleaseNotes ? 'Hide' : 'View'} Release Notes
+                  </button>
+                </div>
+              </div>
+
+              {/* Release Notes */}
+              {showReleaseNotes && updateInfo.notes && (
+                <div
+                  data-testid="release-notes-content"
+                  className="mt-3 p-3 bg-white rounded border border-blue-100 text-sm text-gray-700 whitespace-pre-wrap"
+                >
+                  {updateInfo.notes}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  data-testid="download-install-button"
+                  onClick={handleDownloadAndInstall}
+                  disabled={isDownloadingUpdate}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isDownloadingUpdate ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Downloading...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Download & Install
+                    </>
+                  )}
+                </button>
+
+                <button
+                  data-testid="remind-later-button"
+                  onClick={handleRemindLater}
+                  disabled={isDownloadingUpdate}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Remind Later
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 

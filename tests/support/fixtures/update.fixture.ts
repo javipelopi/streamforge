@@ -4,9 +4,13 @@
  * Provides fixtures for mocking Tauri updater plugin responses in E2E tests.
  * These fixtures simulate update availability scenarios without requiring
  * actual update server or Tauri backend.
+ *
+ * These fixtures use the main injectSettingsStatefulMock from tauri.mock.ts
+ * and configure update-specific state for different test scenarios.
  */
 
 import { Page } from '@playwright/test';
+import { injectSettingsStatefulMock } from '../mocks/tauri.mock';
 
 /**
  * Update info structure matching Tauri updater plugin response
@@ -49,70 +53,27 @@ For full release notes, visit GitHub releases.`,
     date: '2026-01-24T00:00:00Z',
   }
 ): Promise<void> {
-  const mockScript = `
-    (function() {
-      // Mock update info
-      const updateInfo = ${JSON.stringify(updateInfo)};
+  // Inject the main settings mock first
+  await injectSettingsStatefulMock(page);
 
-      // Mock update settings state
-      let updateSettings = {
+  // Configure update state
+  const updateStateScript = `
+    (function() {
+      // Configure update info to return when check_for_update is called
+      window.__UPDATE_INFO__ = ${JSON.stringify(updateInfo)};
+
+      // Configure update settings
+      window.__UPDATE_STATE__ = {
         autoCheck: true,
         lastCheck: null,
         currentVersion: '1.1.0',
       };
 
-      // Create mock invoke function
-      async function mockInvoke(cmd, args = {}) {
-        console.log('[Update Mock] Invoke:', cmd, args);
-
-        switch (cmd) {
-          case 'check_for_update':
-            // Simulate API delay
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            // Update last check timestamp
-            updateSettings.lastCheck = new Date().toISOString();
-
-            console.log('[Update Mock] Update available:', updateInfo);
-            return updateInfo;
-
-          case 'get_update_settings':
-            console.log('[Update Mock] Get settings:', updateSettings);
-            return updateSettings;
-
-          case 'set_auto_check_updates':
-            updateSettings.autoCheck = args.enabled;
-            console.log('[Update Mock] Set auto-check:', args.enabled);
-            return undefined;
-
-          case 'download_and_install_update':
-            console.log('[Update Mock] Download and install');
-            // Simulate download progress (mock only)
-            // In real implementation, this would trigger progress events
-            return undefined;
-
-          default:
-            console.warn('[Update Mock] Unknown command:', cmd);
-            throw new Error(\`Unknown command: \${cmd}\`);
-        }
-      }
-
-      // Inject the mock into window.__TAURI_INTERNALS__
-      window.__TAURI_INTERNALS__ = window.__TAURI_INTERNALS__ || {};
-      window.__TAURI_INTERNALS__.invoke = mockInvoke;
-
-      // Also expose for direct access in tests
-      window.__UPDATE_MOCK__ = {
-        invoke: mockInvoke,
-        updateInfo: updateInfo,
-        updateSettings: updateSettings,
-      };
-
-      console.log('[Update Mock] Initialized - Update available');
+      console.log('[Update Fixture] Configured update available:', window.__UPDATE_INFO__);
     })();
   `;
 
-  await page.addInitScript(mockScript);
+  await page.addInitScript(updateStateScript);
 }
 
 /**
@@ -128,64 +89,27 @@ export async function injectUpdateNotAvailableMock(page: Page): Promise<void> {
     date: null,
   };
 
-  const mockScript = `
-    (function() {
-      // Mock update info - no update available
-      const updateInfo = ${JSON.stringify(noUpdateInfo)};
+  // Inject the main settings mock first
+  await injectSettingsStatefulMock(page);
 
-      // Mock update settings state
-      let updateSettings = {
+  // Configure update state - no update available
+  const updateStateScript = `
+    (function() {
+      // Configure update info - no update available
+      window.__UPDATE_INFO__ = ${JSON.stringify(noUpdateInfo)};
+
+      // Configure update settings
+      window.__UPDATE_STATE__ = {
         autoCheck: true,
         lastCheck: null,
         currentVersion: '1.1.0',
       };
 
-      // Create mock invoke function
-      async function mockInvoke(cmd, args = {}) {
-        console.log('[Update Mock] Invoke:', cmd, args);
-
-        switch (cmd) {
-          case 'check_for_update':
-            // Simulate API delay
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            // Update last check timestamp
-            updateSettings.lastCheck = new Date().toISOString();
-
-            console.log('[Update Mock] No update available');
-            return updateInfo;
-
-          case 'get_update_settings':
-            console.log('[Update Mock] Get settings:', updateSettings);
-            return updateSettings;
-
-          case 'set_auto_check_updates':
-            updateSettings.autoCheck = args.enabled;
-            console.log('[Update Mock] Set auto-check:', args.enabled);
-            return undefined;
-
-          default:
-            console.warn('[Update Mock] Unknown command:', cmd);
-            throw new Error(\`Unknown command: \${cmd}\`);
-        }
-      }
-
-      // Inject the mock into window.__TAURI_INTERNALS__
-      window.__TAURI_INTERNALS__ = window.__TAURI_INTERNALS__ || {};
-      window.__TAURI_INTERNALS__.invoke = mockInvoke;
-
-      // Also expose for direct access in tests
-      window.__UPDATE_MOCK__ = {
-        invoke: mockInvoke,
-        updateInfo: updateInfo,
-        updateSettings: updateSettings,
-      };
-
-      console.log('[Update Mock] Initialized - No update available');
+      console.log('[Update Fixture] Configured no update available');
     })();
   `;
 
-  await page.addInitScript(mockScript);
+  await page.addInitScript(updateStateScript);
 }
 
 /**
@@ -206,59 +130,40 @@ export async function injectUpdateMockWithSettings(
 
   const mergedSettings = { ...defaultSettings, ...settings };
 
-  const mockScript = `
+  // Inject the main settings mock first
+  await injectSettingsStatefulMock(page);
+
+  // Configure update state with custom settings (but respect localStorage for persistence tests)
+  const updateStateScript = `
     (function() {
-      // Mock update settings state
-      let updateSettings = ${JSON.stringify(mergedSettings)};
+      const UPDATE_STATE_KEY = '__TAURI_MOCK_UPDATE_STATE__';
 
-      // Create mock invoke function
-      async function mockInvoke(cmd, args = {}) {
-        console.log('[Update Mock] Invoke:', cmd, args);
-
-        switch (cmd) {
-          case 'check_for_update':
-            // Simulate API delay
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            // Update last check timestamp
-            updateSettings.lastCheck = new Date().toISOString();
-
-            // Return no update by default
-            return {
-              available: false,
-              version: null,
-              notes: null,
-              date: null,
-            };
-
-          case 'get_update_settings':
-            console.log('[Update Mock] Get settings:', updateSettings);
-            return updateSettings;
-
-          case 'set_auto_check_updates':
-            updateSettings.autoCheck = args.enabled;
-            console.log('[Update Mock] Set auto-check:', args.enabled);
-            return undefined;
-
-          default:
-            console.warn('[Update Mock] Unknown command:', cmd);
-            throw new Error(\`Unknown command: \${cmd}\`);
-        }
-      }
-
-      // Inject the mock into window.__TAURI_INTERNALS__
-      window.__TAURI_INTERNALS__ = window.__TAURI_INTERNALS__ || {};
-      window.__TAURI_INTERNALS__.invoke = mockInvoke;
-
-      // Also expose for direct access in tests
-      window.__UPDATE_MOCK__ = {
-        invoke: mockInvoke,
-        updateSettings: updateSettings,
+      // Configure update info - no update by default
+      window.__UPDATE_INFO__ = {
+        available: false,
+        version: null,
+        notes: null,
+        date: null,
       };
 
-      console.log('[Update Mock] Initialized with custom settings');
+      // Try to load update state from localStorage first (for persistence across reloads)
+      let savedState = null;
+      try {
+        const stored = localStorage.getItem(UPDATE_STATE_KEY);
+        if (stored) {
+          savedState = JSON.parse(stored);
+          console.log('[Update Fixture] Loaded persisted update state:', savedState);
+        }
+      } catch (e) {
+        console.warn('[Update Fixture] Failed to load persisted state:', e);
+      }
+
+      // Use saved state if available, otherwise use initial settings
+      window.__UPDATE_STATE__ = savedState || ${JSON.stringify(mergedSettings)};
+
+      console.log('[Update Fixture] Configured with settings:', window.__UPDATE_STATE__);
     })();
   `;
 
-  await page.addInitScript(mockScript);
+  await page.addInitScript(updateStateScript);
 }
