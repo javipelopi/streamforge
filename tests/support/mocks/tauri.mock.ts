@@ -538,6 +538,105 @@ export async function injectSettingsStatefulMock(
           return undefined;
         },
 
+        // Update commands (Story 6-5)
+        get_update_settings: () => {
+          const UPDATE_STATE_KEY = '__TAURI_MOCK_UPDATE_STATE__';
+          if (!window.__UPDATE_STATE__) {
+            // Try loading from localStorage
+            try {
+              const stored = localStorage.getItem(UPDATE_STATE_KEY);
+              if (stored) {
+                window.__UPDATE_STATE__ = JSON.parse(stored);
+              } else {
+                window.__UPDATE_STATE__ = {
+                  autoCheck: true,
+                  lastCheck: null,
+                  currentVersion: '1.1.0',
+                };
+              }
+            } catch (e) {
+              window.__UPDATE_STATE__ = {
+                autoCheck: true,
+                lastCheck: null,
+                currentVersion: '1.1.0',
+              };
+            }
+          }
+          return window.__UPDATE_STATE__;
+        },
+        set_auto_check_updates: (args) => {
+          const UPDATE_STATE_KEY = '__TAURI_MOCK_UPDATE_STATE__';
+          if (!window.__UPDATE_STATE__) {
+            window.__UPDATE_STATE__ = {
+              autoCheck: true,
+              lastCheck: null,
+              currentVersion: '1.1.0',
+            };
+          }
+          window.__UPDATE_STATE__.autoCheck = args.enabled;
+          // Persist to localStorage
+          try {
+            localStorage.setItem(UPDATE_STATE_KEY, JSON.stringify(window.__UPDATE_STATE__));
+            console.log('[Tauri Mock] Persisted update state:', window.__UPDATE_STATE__);
+          } catch (e) {
+            console.warn('[Tauri Mock] Failed to persist update state:', e);
+          }
+          return undefined;
+        },
+        check_for_update: async () => {
+          const UPDATE_STATE_KEY = '__TAURI_MOCK_UPDATE_STATE__';
+          if (!window.__UPDATE_STATE__) {
+            try {
+              const stored = localStorage.getItem(UPDATE_STATE_KEY);
+              if (stored) {
+                window.__UPDATE_STATE__ = JSON.parse(stored);
+              } else {
+                window.__UPDATE_STATE__ = {
+                  autoCheck: true,
+                  lastCheck: null,
+                  currentVersion: '1.1.0',
+                };
+              }
+            } catch (e) {
+              window.__UPDATE_STATE__ = {
+                autoCheck: true,
+                lastCheck: null,
+                currentVersion: '1.1.0',
+              };
+            }
+          }
+          // Simulate API delay
+          await new Promise(resolve => setTimeout(resolve, 100));
+          // Update last check timestamp
+          window.__UPDATE_STATE__.lastCheck = new Date().toISOString();
+          // Persist to localStorage
+          try {
+            localStorage.setItem(UPDATE_STATE_KEY, JSON.stringify(window.__UPDATE_STATE__));
+          } catch (e) {}
+          // Return the configured update info (or no update by default)
+          if (window.__UPDATE_INFO__) {
+            return window.__UPDATE_INFO__;
+          }
+          return {
+            available: false,
+            version: null,
+            notes: null,
+            date: null,
+          };
+        },
+        download_and_install_update: async () => {
+          // Simulate download delay
+          await new Promise(resolve => setTimeout(resolve, 100));
+          console.log('[Tauri Mock] Download and install update');
+          return undefined;
+        },
+        get_current_version: () => {
+          if (!window.__UPDATE_STATE__) {
+            return '1.1.0';
+          }
+          return window.__UPDATE_STATE__.currentVersion;
+        },
+
         // Configuration export/import commands (Story 6-2)
         export_configuration: () => {
           const state = window.__SETTINGS_STATE__;

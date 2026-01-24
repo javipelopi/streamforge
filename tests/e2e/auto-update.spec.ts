@@ -128,11 +128,12 @@ test.describe('Auto-Update - Auto-Check Toggle', () => {
   test('should persist auto-check setting when toggled', async ({ page }) => {
     // GIVEN: Auto-check is currently enabled
     const autoCheckToggle = page.locator('[data-testid="auto-check-updates-toggle"]');
-    await expect(autoCheckToggle).toBeVisible();
+    await expect(autoCheckToggle).toBeVisible({ timeout: 1000 });
     await expect(autoCheckToggle).toHaveAttribute('aria-checked', 'true');
 
-    // WHEN: User disables auto-check
-    await autoCheckToggle.click();
+    // WHEN: User disables auto-check (click on the toggle's parent label for sr-only inputs)
+    const toggleLabel = page.locator('label:has([data-testid="auto-check-updates-toggle"])');
+    await toggleLabel.click();
     await expect(autoCheckToggle).toHaveAttribute('aria-checked', 'false');
 
     // Save settings (may be auto-save or explicit save button)
@@ -161,8 +162,9 @@ test.describe('Auto-Update - Auto-Check Toggle', () => {
     const autoCheckToggle = page.locator('[data-testid="auto-check-updates-toggle"]');
     await expect(autoCheckToggle).toHaveAttribute('aria-checked', 'false');
 
-    // WHEN: User enables auto-check
-    await autoCheckToggle.click();
+    // WHEN: User enables auto-check (click on the toggle's parent label for sr-only inputs)
+    const toggleLabel = page.locator('label:has([data-testid="auto-check-updates-toggle"])');
+    await toggleLabel.click();
     await expect(autoCheckToggle).toHaveAttribute('aria-checked', 'true');
 
     // Save if needed

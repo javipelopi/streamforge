@@ -27,6 +27,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/16x16.png",
       "icons/24x24.png",
@@ -48,5 +49,16 @@
       "icons/tray-iconTemplate.png",
       "icons/tray-iconTemplate@2x.png"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW5zZXQtcHVia2V5LXBsYWNlaG9sZGVy",
+      "endpoints": [
+        "https://github.com/OWNER/iptv/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
