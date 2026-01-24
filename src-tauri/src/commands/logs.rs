@@ -70,8 +70,10 @@ pub fn log_event(
 
     // Story 6-3: Check verbosity setting for info level events
     if level == "info" {
+        // Fail open: if we can't read verbosity, default to verbose (log everything)
+        // This ensures critical info events are not lost due to database errors
         let verbosity = get_log_verbosity_internal(&mut conn)
-            .map_err(|e| format!("Failed to get log verbosity: {}", e))?;
+            .unwrap_or_else(|_| DEFAULT_LOG_VERBOSITY.to_string());
         if verbosity == "minimal" {
             // Skip info events in minimal mode - return None to indicate event was filtered
             return Ok(None);
@@ -302,7 +304,10 @@ pub fn log_event_internal(
 ) -> Result<(), diesel::result::Error> {
     // Story 6-3: Check verbosity setting for info level events
     if level == "info" {
-        let verbosity = get_log_verbosity_internal(conn)?;
+        // Fail open: if we can't read verbosity, default to verbose (log everything)
+        // This ensures critical info events are not lost due to database errors
+        let verbosity = get_log_verbosity_internal(conn)
+            .unwrap_or_else(|_| DEFAULT_LOG_VERBOSITY.to_string());
         if verbosity == "minimal" {
             // Skip info events in minimal mode
             return Ok(());
