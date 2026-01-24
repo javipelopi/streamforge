@@ -382,14 +382,43 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
    - System startup logging in `lib.rs` (lines 52-67)
    - UI toggle in `Settings.tsx` with Logging Settings section
 
+### Code Review Fixes (2026-01-24)
+
+**Code Review Tool:** bmad:bmm:workflows:code-review (YOLO mode)
+**Issues Found:** 7 total (3 High, 3 Medium, 1 Low)
+**Issues Fixed:** 3 High severity issues
+
+**High Severity Fixes (commit f56dfff):**
+1. **Uncommitted Changes**: Committed server port logging changes from `mod.rs`
+2. **Database Error Handling**: Fixed `log_event_internal()` and `log_event()` to fail-open
+   - Changed verbosity check from `.map_err()` to `.unwrap_or_else(|_| "verbose")`
+   - Ensures critical events are never lost due to database errors
+   - If verbosity setting cannot be read, defaults to verbose mode
+3. **Missing Auto-Start Logging**: Added event logging to `set_autostart_enabled()`
+   - Logs "Configuration changed: Auto-start enabled/disabled" (AC #2)
+   - Maintains consistency with server port configuration logging
+
+**Medium Severity Issues (Documented, Not Fixed):**
+4. **Race Condition**: Verbosity could theoretically change between check and insert
+   - Accepted as acceptable risk (SQLite uses table-level locking)
+5. **JSON Validation**: No validation of `details` field JSON format
+   - Documented requirement: details must be valid JSON
+6. **Missing Migration**: No database migration seeds `log_verbosity` setting
+   - Works via lazy initialization on first use
+
+**Low Severity Issues (Documented):**
+7. **Inconsistent Casing**: Event details use mixed camelCase/snake_case
+   - Style inconsistency noted for future cleanup
+
 ### File List
 
 **Modified Files:**
 - `tests/integration/log-verbosity.spec.ts` - Rewrote to use mocked Tauri commands instead of direct `window.__TAURI__` access
 - `src/lib/routes.ts` - Added missing test IDs for navigation links (dashboard-nav-link, accounts-nav-link, logs-nav-link)
+- `src-tauri/src/commands/logs.rs` - **Code Review Fix**: Added fail-open error handling for verbosity checks
+- `src-tauri/src/commands/mod.rs` - **Code Review Fix**: Added server port logging + auto-start logging
 
 **Existing Implementation Files (verified, no changes needed):**
-- `src-tauri/src/commands/logs.rs` - Log verbosity commands and filtering
 - `src-tauri/src/commands/accounts.rs` - Connection event logging
 - `src-tauri/src/commands/epg.rs` - EPG event logging
 - `src-tauri/src/commands/matcher.rs` - Channel matching event logging
