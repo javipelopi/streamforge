@@ -1,6 +1,6 @@
 # Story 6.4: Event Log Viewer with Notification Badge
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -44,36 +44,36 @@ So that I can see what's happening without checking external files.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Verify existing Logs view meets all AC requirements (AC: #1-#5)
-  - [ ] 1.1: Audit `src/views/Logs.tsx` - verify event list display with timestamp, level icon, category, message
-  - [ ] 1.2: Verify expandable event details functionality
-  - [ ] 1.3: Verify Clear Log button with confirmation dialog
-  - [ ] 1.4: Verify filter controls for level, category, and unread-only
+- [x] Task 1: Verify existing Logs view meets all AC requirements (AC: #1-#5)
+  - [x] 1.1: Audit `src/views/Logs.tsx` - verify event list display with timestamp, level icon, category, message
+  - [x] 1.2: Verify expandable event details functionality
+  - [x] 1.3: Verify Clear Log button with confirmation dialog
+  - [x] 1.4: Verify filter controls for level, category, and unread-only
 
-- [ ] Task 2: Verify notification badge in Sidebar (AC: #2)
-  - [ ] 2.1: Audit `src/components/layout/Sidebar.tsx` - verify unread count badge on Logs nav item
-  - [ ] 2.2: Verify badge shows correct count from `getUnreadEventCount()`
-  - [ ] 2.3: Verify badge polls for updates (10-second interval in place)
+- [x] Task 2: Verify notification badge in Sidebar (AC: #2)
+  - [x] 2.1: Audit `src/components/layout/Sidebar.tsx` - verify unread count badge on Logs nav item
+  - [x] 2.2: Verify badge shows correct count from `getUnreadEventCount()`
+  - [x] 2.3: Verify badge polls for updates (10-second interval in place)
 
-- [ ] Task 3: Enhance auto-mark-as-read behavior (AC: #3)
-  - [ ] 3.1: Current behavior only marks read on click - need to auto-mark on view
-  - [ ] 3.2: Add `useEffect` to call `markAllEventsRead()` when Logs view mounts
-  - [ ] 3.3: Update badge count after marking all read (via refetch or local state)
-  - [ ] 3.4: Consider debouncing to avoid marking read before user actually sees events
+- [x] Task 3: Enhance auto-mark-as-read behavior (AC: #3)
+  - [x] 3.1: Current behavior only marks read on click - need to auto-mark on view ✓ Already implemented
+  - [x] 3.2: Add `useEffect` to call `markAllEventsRead()` when Logs view mounts ✓ Already implemented
+  - [x] 3.3: Update badge count after marking all read (via refetch or local state) ✓ Already implemented
+  - [x] 3.4: Consider debouncing to avoid marking read before user actually sees events ✓ Already implemented (500ms delay)
 
-- [ ] Task 4: Add date range filter (AC: #5)
-  - [ ] 4.1: Add date range filter to `get_events` Tauri command (if not exists)
-  - [ ] 4.2: Add `startDate`/`endDate` parameters to `getEvents()` TypeScript binding
-  - [ ] 4.3: Add date picker controls to Logs view filter section
-  - [ ] 4.4: Wire up date filter to event query
+- [x] Task 4: Add date range filter (AC: #5)
+  - [x] 4.1: Add date range filter to `get_events` Tauri command (if not exists) ✓ Already implemented
+  - [x] 4.2: Add `startDate`/`endDate` parameters to `getEvents()` TypeScript binding ✓ Already implemented
+  - [x] 4.3: Add date picker controls to Logs view filter section ✓ Already implemented
+  - [x] 4.4: Wire up date filter to event query ✓ Already implemented
 
-- [ ] Task 5: Write E2E Tests (All ACs)
-  - [ ] 5.1: Test event list displays with correct format (timestamp, level, category, message)
-  - [ ] 5.2: Test event expansion shows details
-  - [ ] 5.3: Test notification badge appears with unread count
-  - [ ] 5.4: Test auto-mark-read clears badge
-  - [ ] 5.5: Test Clear Log with confirmation deletes events
-  - [ ] 5.6: Test filter controls work (level, category, date range)
+- [x] Task 5: Write E2E Tests (All ACs)
+  - [x] 5.1: Test event list displays with correct format (timestamp, level, category, message)
+  - [x] 5.2: Test event expansion shows details
+  - [x] 5.3: Test notification badge appears with unread count
+  - [x] 5.4: Test auto-mark-read clears badge
+  - [x] 5.5: Test Clear Log with confirmation deletes events
+  - [x] 5.6: Test filter controls work (level, category, date range)
 
 ## Dev Notes
 
@@ -352,11 +352,38 @@ test.describe('Logs View', () => {
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Debug Log References
 
+None required - all functionality verified as already implemented.
+
 ### Completion Notes List
 
+**Implementation Notes:**
+1. **Story 6-4 is a VERIFICATION story** - All acceptance criteria were already fully implemented before dev-story execution
+2. **AC #1 (Logs View Display)**: Fully implemented in `src/views/Logs.tsx` with timestamp, level icon, category, message, and expandable details
+3. **AC #2 (Notification Badge)**: Fully implemented in `src/components/layout/Sidebar.tsx` with 10-second polling interval
+4. **AC #3 (Auto-Mark Read)**: Already implemented with 500ms debounce in Logs.tsx (lines 192-218) via useEffect hook
+5. **AC #4 (Clear Log)**: Fully implemented with confirmation dialog and `clearOldEvents(100)` call
+6. **AC #5 (Filter Controls)**: All filters implemented including date range (createdAfter/createdBefore) in both backend and frontend
+
+**Test Results:**
+- All 19 E2E tests for logs-viewer.spec.ts pass
+- All 246 Rust unit tests pass
+- 6 HTTP server integration tests pass
+
 ### File List
+
+**Verified (no changes needed - already complete):**
+- `src/views/Logs.tsx` - Complete Logs view with all features
+- `src/components/layout/Sidebar.tsx` - Notification badge with polling
+- `src/lib/tauri.ts` - TypeScript bindings for all log commands
+- `src-tauri/src/commands/logs.rs` - Backend logging commands including date range filtering
+- `tests/e2e/logs-viewer.spec.ts` - Comprehensive E2E tests for Story 6-4
+- `tests/support/mocks/tauri.mock.ts` - Mock infrastructure for E2E tests
+
+### Change Log
+
+**2026-01-24**: Verification complete - Story 6-4 found to be fully implemented from previous work. All tasks verified, all E2E tests passing. Story moved to review status.
 
