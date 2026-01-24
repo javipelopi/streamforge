@@ -2,7 +2,7 @@
  * Logs View - Event Log Display and Management
  * Story 3-4: Auto-rematch on provider changes
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ReloadIcon,
   CheckCircledIcon,
@@ -158,6 +158,8 @@ export function Logs() {
     level?: EventLevel;
     category?: string;
     unreadOnly: boolean;
+    startDate?: string;  // Story 6-4 AC #5: Date range filter
+    endDate?: string;    // Story 6-4 AC #5: Date range filter
   }>({ unreadOnly: false });
 
   const loadEvents = useCallback(async () => {
@@ -169,6 +171,8 @@ export function Logs() {
         level: filter.level,
         category: filter.category,
         unreadOnly: filter.unreadOnly,
+        createdAfter: filter.startDate,
+        createdBefore: filter.endDate,
       });
       setEvents(response.events);
       setTotalCount(response.totalCount);
@@ -184,6 +188,39 @@ export function Logs() {
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
+
+  // Story 6-4 AC #3: Auto-mark all events as read when Logs view is opened
+  // Refs to track if auto-mark has been triggered this mount
+  const hasAutoMarked = useRef(false);
+
+  useEffect(() => {
+    // Only auto-mark once per mount, and only after loading completes with unread events
+    if (hasAutoMarked.current || isLoading) {
+      return;
+    }
+
+    // Only proceed if there are actually unread events
+    if (unreadCount === 0) {
+      return;
+    }
+
+    const autoMarkRead = async () => {
+      try {
+        hasAutoMarked.current = true;
+        await markAllEventsRead();
+        setUnreadCount(0);
+        // Update local state to reflect marked-as-read
+        setEvents((prev) => prev.map((e) => ({ ...e, isRead: true })));
+      } catch (err) {
+        console.error('Failed to auto-mark events as read:', err);
+        hasAutoMarked.current = false; // Allow retry on error
+      }
+    };
+
+    // Small delay (500ms) to ensure user sees events before marking read
+    const timer = setTimeout(autoMarkRead, 500);
+    return () => clearTimeout(timer);
+  }, [isLoading]); // FIXED: Only trigger when loading state changes to prevent race conditions
 
   const handleMarkRead = async (eventId: number) => {
     try {
@@ -298,6 +335,25 @@ export function Logs() {
           />
           Unread only
         </label>
+        {/* Story 6-4 AC #5: Date Range Filter */}
+        <div className="flex items-center gap-1">
+          <span className="text-sm text-gray-500">From:</span>
+          <input
+            type="date"
+            value={filter.startDate || ''}
+            onChange={(e) => setFilter((prev) => ({ ...prev, startDate: e.target.value || undefined }))}
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white"
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-sm text-gray-500">To:</span>
+          <input
+            type="date"
+            value={filter.endDate || ''}
+            onChange={(e) => setFilter((prev) => ({ ...prev, endDate: e.target.value || undefined }))}
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white"
+          />
+        </div>
         <span className="ml-auto text-sm text-gray-500">
           Showing {events.length} of {totalCount} events
         </span>

@@ -126,14 +126,16 @@ export function Sidebar() {
                 >
                   <Icon className="w-5 h-5 flex-shrink-0" />
                   {sidebarOpen && <span>{item.label}</span>}
-                  {/* Notification badge for Logs (Story 3-4: AC #5) - only show when sidebar is open */}
-                  {showBadge && sidebarOpen && (
+                  {/* Notification badge for Logs (Story 6-4: AC #2) - show even when sidebar collapsed */}
+                  {showBadge && (
                     <span
                       data-testid="logs-unread-badge"
-                      className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full px-2 py-0.5 min-w-[1.25rem] text-center"
+                      className={`bg-red-500 text-white text-xs font-bold rounded-full min-w-[1.25rem] text-center ${
+                        sidebarOpen ? 'ml-auto px-2 py-0.5' : 'absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center'
+                      }`}
                       title={`${unreadCount} unread event${unreadCount === 1 ? '' : 's'}`}
                     >
-                      {unreadCount > 99 ? '99+' : unreadCount}
+                      {sidebarOpen ? (unreadCount > 99 ? '99+' : unreadCount) : ''}
                     </span>
                   )}
                 </NavLink>
