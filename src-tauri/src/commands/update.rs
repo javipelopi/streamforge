@@ -135,8 +135,12 @@ pub async fn check_for_update(
                 available: true,
                 version: Some(update.version.clone()),
                 notes: update.body.clone(),
-                // Convert OffsetDateTime to string (Display trait gives ISO 8601 format)
-                date: update.date.map(|d| d.to_string()),
+                // Convert OffsetDateTime to RFC 3339 string (explicit ISO 8601 format)
+                date: update.date.map(|d| {
+                    // OffsetDateTime from time crate - format as RFC3339
+                    d.format(&time::format_description::well_known::Rfc3339)
+                        .unwrap_or_else(|_| d.to_string())
+                }),
             })
         }
         Ok(None) => {
@@ -149,8 +153,20 @@ pub async fn check_for_update(
             })
         }
         Err(e) => {
-            // Error checking for updates - log and return error
-            eprintln!("Update check error: {}", e);
+            // Error checking for updates - log to event_log and return error (Story 6-5 AC#4)
+            if let Ok(mut conn) = db.get_connection() {
+                use crate::commands::logs::log_event_internal;
+                let details = serde_json::json!({
+                    "error": e.to_string()
+                });
+                let _ = log_event_internal(
+                    &mut conn,
+                    "error",
+                    "system",
+                    &format!("Update check failed: {}", e),
+                    Some(&details.to_string()),
+                );
+            }
             Err(format!("Failed to check for updates: {}", e))
         }
     }
