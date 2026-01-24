@@ -390,8 +390,143 @@ export async function injectSettingsStatefulMock(
           };
         },
 
-        // Event log commands (stub)
-        get_unread_event_count: () => 0,
+        // Event log commands (Story 6-4)
+        get_events: (args) => {
+          // Initialize event log state from localStorage if not exists
+          if (!window.__EVENT_LOG_STATE__) {
+            const EVENT_LOG_KEY = '__TAURI_MOCK_EVENT_LOG__';
+            try {
+              const stored = localStorage.getItem(EVENT_LOG_KEY);
+              if (stored) {
+                window.__EVENT_LOG_STATE__ = JSON.parse(stored);
+                console.log('[Tauri Mock] Loaded event log state from localStorage');
+              } else {
+                window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+              }
+            } catch (e) {
+              window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+            }
+          }
+
+          const state = window.__EVENT_LOG_STATE__;
+          let filtered = [...state.events];
+
+          // Apply filters
+          if (args.level) {
+            filtered = filtered.filter(e => e.level === args.level);
+          }
+          if (args.category) {
+            filtered = filtered.filter(e => e.category === args.category);
+          }
+          if (args.unreadOnly) {
+            filtered = filtered.filter(e => !e.isRead);
+          }
+          if (args.createdAfter) {
+            filtered = filtered.filter(e => e.timestamp >= args.createdAfter);
+          }
+          if (args.createdBefore) {
+            // Include the entire end date by comparing to end of day
+            const endDate = args.createdBefore + 'T23:59:59';
+            filtered = filtered.filter(e => e.timestamp <= endDate);
+          }
+
+          // Sort by timestamp descending
+          filtered.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+          // Apply pagination
+          const limit = args.limit || 50;
+          const offset = args.offset || 0;
+          const paginated = filtered.slice(offset, offset + limit);
+
+          return {
+            events: paginated,
+            totalCount: filtered.length,
+            unreadCount: state.events.filter(e => !e.isRead).length
+          };
+        },
+
+        get_unread_event_count: () => {
+          const EVENT_LOG_KEY = '__TAURI_MOCK_EVENT_LOG__';
+          if (!window.__EVENT_LOG_STATE__) {
+            try {
+              const stored = localStorage.getItem(EVENT_LOG_KEY);
+              if (stored) {
+                window.__EVENT_LOG_STATE__ = JSON.parse(stored);
+              } else {
+                window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+              }
+            } catch (e) {
+              window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+            }
+          }
+          return window.__EVENT_LOG_STATE__.events.filter(e => !e.isRead).length;
+        },
+
+        log_event: (args) => {
+          if (!window.__EVENT_LOG_STATE__) {
+            window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+          }
+          const state = window.__EVENT_LOG_STATE__;
+          const event = {
+            id: state.nextId++,
+            timestamp: new Date().toISOString(),
+            level: args.level,
+            category: args.category,
+            message: args.message,
+            details: args.details || null,
+            isRead: false
+          };
+          state.events.unshift(event);
+          return event;
+        },
+
+        mark_event_read: (args) => {
+          if (!window.__EVENT_LOG_STATE__) return;
+          const event = window.__EVENT_LOG_STATE__.events.find(e => e.id === args.eventId);
+          if (event) event.isRead = true;
+          return undefined;
+        },
+
+        mark_all_events_read: () => {
+          const EVENT_LOG_KEY = '__TAURI_MOCK_EVENT_LOG__';
+          if (!window.__EVENT_LOG_STATE__) {
+            try {
+              const stored = localStorage.getItem(EVENT_LOG_KEY);
+              if (stored) {
+                window.__EVENT_LOG_STATE__ = JSON.parse(stored);
+              } else {
+                window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+              }
+            } catch (e) {
+              window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+            }
+          }
+          let count = 0;
+          window.__EVENT_LOG_STATE__.events.forEach(e => {
+            if (!e.isRead) {
+              e.isRead = true;
+              count++;
+            }
+          });
+          // Persist after marking
+          try {
+            localStorage.setItem(EVENT_LOG_KEY, JSON.stringify(window.__EVENT_LOG_STATE__));
+          } catch (e) {}
+          return count;
+        },
+
+        clear_old_events: (args) => {
+          if (!window.__EVENT_LOG_STATE__) {
+            window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+          }
+          const keepCount = args.keepCount || 100;
+          const state = window.__EVENT_LOG_STATE__;
+          const originalCount = state.events.length;
+          if (state.events.length > keepCount) {
+            state.events = state.events.slice(0, keepCount);
+          }
+          return originalCount - state.events.length;
+        },
 
         // Log verbosity commands (Story 6-3)
         get_log_verbosity: () => {
@@ -585,4 +720,83 @@ export async function injectSettingsStatefulMock(
   `;
 
   await page.addInitScript(mockScript);
+}
+
+/**
+ * Seed test events in the mock for E2E tests
+ *
+ * Story 6-4: Event Log Viewer with Notification Badge
+ *
+ * @param page - Playwright page object
+ * @param events - Array of test events to seed
+ */
+export async function seedTestEvents(
+  page: Page,
+  events: Array<{
+    level: 'info' | 'warn' | 'error';
+    category: string;
+    message: string;
+    details?: string;
+    isRead?: boolean;
+    timestamp?: string;
+  }>
+): Promise<void> {
+  await page.evaluate((testEvents) => {
+    const EVENT_LOG_KEY = '__TAURI_MOCK_EVENT_LOG__';
+
+    // Load existing state from localStorage or initialize
+    let state;
+    try {
+      const stored = localStorage.getItem(EVENT_LOG_KEY);
+      if (stored) {
+        state = JSON.parse(stored);
+      } else {
+        state = { events: [], nextId: 1 };
+      }
+    } catch (e) {
+      state = { events: [], nextId: 1 };
+    }
+
+    testEvents.forEach((e) => {
+      const event = {
+        id: state.nextId++,
+        timestamp: e.timestamp || new Date().toISOString(),
+        level: e.level,
+        category: e.category,
+        message: e.message,
+        details: e.details || null,
+        isRead: e.isRead ?? false
+      };
+      state.events.push(event);
+    });
+
+    // Sort by timestamp descending
+    state.events.sort((a: any, b: any) => b.timestamp.localeCompare(a.timestamp));
+
+    // Persist to localStorage for survival across page reloads
+    try {
+      localStorage.setItem(EVENT_LOG_KEY, JSON.stringify(state));
+    } catch (e) {
+      console.error('[Tauri Mock] Failed to persist event log state:', e);
+    }
+
+    // Also update in-memory state
+    (window as any).__EVENT_LOG_STATE__ = state;
+
+    console.log('[Tauri Mock] Seeded', testEvents.length, 'test events');
+  }, events);
+}
+
+/**
+ * Clear all test events from the mock
+ *
+ * @param page - Playwright page object
+ */
+export async function clearTestEvents(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const EVENT_LOG_KEY = '__TAURI_MOCK_EVENT_LOG__';
+    localStorage.removeItem(EVENT_LOG_KEY);
+    (window as any).__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+    console.log('[Tauri Mock] Cleared all test events');
+  });
 }

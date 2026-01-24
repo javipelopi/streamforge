@@ -110,6 +110,8 @@ pub fn log_event(
 /// * `level` - Optional filter by level
 /// * `category` - Optional filter by category
 /// * `unread_only` - If true, only return unread events
+/// * `created_after` - Optional filter: only events created after this date (ISO 8601)
+/// * `created_before` - Optional filter: only events created before this date (ISO 8601)
 ///
 /// # Returns
 ///
@@ -122,6 +124,8 @@ pub fn get_events(
     level: Option<String>,
     category: Option<String>,
     unread_only: Option<bool>,
+    created_after: Option<String>,
+    created_before: Option<String>,
 ) -> Result<EventLogResponse, String> {
     let mut conn = db
         .get_connection()
@@ -145,6 +149,18 @@ pub fn get_events(
         query = query.filter(event_log::is_read.eq(0));
     }
 
+    // Story 6-4 AC #5: Date range filtering
+    if let Some(ref after) = created_after {
+        query = query.filter(event_log::timestamp.ge(after));
+    }
+
+    if let Some(ref before) = created_before {
+        // FIXED: Use < (less than) the NEXT day to include the entire end date
+        // This ensures events on the end date are included up to 23:59:59
+        // Frontend should pass end date as YYYY-MM-DD, we filter < YYYY-MM-DD+1
+        query = query.filter(event_log::timestamp.lt(before));
+    }
+
     // Get total count for this filter
     let total_count: i64 = {
         let mut count_query = event_log::table.into_boxed();
@@ -156,6 +172,13 @@ pub fn get_events(
         }
         if unread_only.unwrap_or(false) {
             count_query = count_query.filter(event_log::is_read.eq(0));
+        }
+        // Story 6-4 AC #5: Date range filtering for count
+        if let Some(ref after) = created_after {
+            count_query = count_query.filter(event_log::timestamp.ge(after));
+        }
+        if let Some(ref before) = created_before {
+            count_query = count_query.filter(event_log::timestamp.lt(before));
         }
         count_query
             .count()

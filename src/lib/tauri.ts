@@ -929,6 +929,8 @@ export async function getEvents(options?: {
   level?: EventLevel;
   category?: string;
   unreadOnly?: boolean;
+  createdAfter?: string;  // Story 6-4 AC #5: ISO 8601 date string
+  createdBefore?: string; // Story 6-4 AC #5: ISO 8601 date string
 }): Promise<EventLogResponse> {
   return invoke<EventLogResponse>('get_events', {
     limit: options?.limit,
@@ -936,6 +938,8 @@ export async function getEvents(options?: {
     level: options?.level,
     category: options?.category,
     unreadOnly: options?.unreadOnly,
+    createdAfter: options?.createdAfter,
+    createdBefore: options?.createdBefore,
   });
 }
 

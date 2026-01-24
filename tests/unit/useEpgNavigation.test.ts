@@ -7,11 +7,11 @@
  * Actual runtime behavior is tested via E2E tests (epg-tv-layout.spec.ts, etc.)
  */
 
-import { test, expect, describe } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { useEpgNavigation } from '../../src/hooks/useEpgNavigation';
 import type { EpgPanelId } from '../../src/hooks/useEpgNavigation';
 
-describe('useEpgNavigation - Type Signature Verification', () => {
+test.describe('useEpgNavigation - Type Signature Verification', () => {
   test('hook is exported as a function', () => {
     expect(typeof useEpgNavigation).toBe('function');
   });
@@ -23,7 +23,7 @@ describe('useEpgNavigation - Type Signature Verification', () => {
   });
 });
 
-describe('useEpgNavigation - refs', () => {
+test.describe('useEpgNavigation - refs', () => {
   test('provides refs for all four panels', () => {
     // EXPECTED: Returns headerRef, channelsRef, scheduleRef, detailsRef
     // All are RefObject<HTMLDivElement>
@@ -41,7 +41,7 @@ describe('useEpgNavigation - refs', () => {
   });
 });
 
-describe('useEpgNavigation - focusPanel', () => {
+test.describe('useEpgNavigation - focusPanel', () => {
   test('focuses first focusable element in header panel', () => {
     // EXPECTED: Uses focusFirst from useFocusManager on headerRef
     expect(true).toBe(true);
@@ -63,14 +63,14 @@ describe('useEpgNavigation - focusPanel', () => {
   });
 });
 
-describe('useEpgNavigation - navigateFromHeader', () => {
+test.describe('useEpgNavigation - navigateFromHeader', () => {
   test('down navigation focuses channels panel', () => {
     // EXPECTED: navigateFromHeader('down') calls focusPanel('channels')
     expect(true).toBe(true);
   });
 });
 
-describe('useEpgNavigation - navigateFromChannels', () => {
+test.describe('useEpgNavigation - navigateFromChannels', () => {
   test('up navigation focuses header panel', () => {
     // EXPECTED: navigateFromChannels('up') calls focusPanel('header')
     expect(true).toBe(true);
@@ -88,7 +88,7 @@ describe('useEpgNavigation - navigateFromChannels', () => {
   });
 });
 
-describe('useEpgNavigation - navigateFromSchedule', () => {
+test.describe('useEpgNavigation - navigateFromSchedule', () => {
   test('left navigation focuses channels panel', () => {
     // EXPECTED: navigateFromSchedule('left') calls focusPanel('channels')
     expect(true).toBe(true);
@@ -100,14 +100,14 @@ describe('useEpgNavigation - navigateFromSchedule', () => {
   });
 });
 
-describe('useEpgNavigation - navigateFromDetails', () => {
+test.describe('useEpgNavigation - navigateFromDetails', () => {
   test('left navigation focuses schedule panel', () => {
     // EXPECTED: navigateFromDetails('left') calls focusPanel('schedule')
     expect(true).toBe(true);
   });
 });
 
-describe('useEpgNavigation - function stability', () => {
+test.describe('useEpgNavigation - function stability', () => {
   test('all navigation functions maintain stable identity across renders', () => {
     // EXPECTED: useCallback ensures functions don't change on re-render
     // - focusPanel
@@ -119,7 +119,7 @@ describe('useEpgNavigation - function stability', () => {
   });
 });
 
-describe('useEpgNavigation - Navigation Model Documentation', () => {
+test.describe('useEpgNavigation - Navigation Model Documentation', () => {
   test('documents the complete navigation model', () => {
     // Navigation Model:
     // - Header: Left/Right between search, day chips, date picker
