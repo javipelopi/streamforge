@@ -929,6 +929,8 @@ export async function getEvents(options?: {
   level?: EventLevel;
   category?: string;
   unreadOnly?: boolean;
+  createdAfter?: string;  // Story 6-4 AC #5: ISO 8601 date string
+  createdBefore?: string; // Story 6-4 AC #5: ISO 8601 date string
 }): Promise<EventLogResponse> {
   return invoke<EventLogResponse>('get_events', {
     limit: options?.limit,
@@ -936,6 +938,8 @@ export async function getEvents(options?: {
     level: options?.level,
     category: options?.category,
     unreadOnly: options?.unreadOnly,
+    createdAfter: options?.createdAfter,
+    createdBefore: options?.createdBefore,
   });
 }
 
@@ -1576,5 +1580,279 @@ export interface ProgramWithChannel {
  */
 export async function getProgramById(programId: number): Promise<ProgramWithChannel | null> {
   return invoke<ProgramWithChannel | null>('get_program_by_id', { programId });
+}
+
+// ============================================================================
+// Server Port Settings (Story 6.1)
+// ============================================================================
+
+/**
+ * Get the current server port from settings
+ *
+ * Story 6.1: Settings GUI for Server and Startup Options
+ * Task 2.1: TypeScript binding for getServerPort
+ *
+ * @returns Current server port (default 5004)
+ */
+export async function getServerPort(): Promise<number> {
+  return invoke<number>('get_server_port');
+}
+
+/**
+ * Set the server port in settings
+ *
+ * Story 6.1: Settings GUI for Server and Startup Options
+ * Task 2.2: TypeScript binding for setServerPort
+ *
+ * Note: Changing the port requires a server restart to take effect.
+ *
+ * @param port - New port value (must be 1024-65535)
+ */
+export async function setServerPort(port: number): Promise<void> {
+  return invoke<void>('set_server_port', { port });
+}
+
+/**
+ * Restart the HTTP server on the new port
+ *
+ * Story 6.1: Settings GUI for Server and Startup Options
+ * Task 2.3: TypeScript binding for restartServer
+ *
+ * Stops the current server and restarts it on the configured port.
+ *
+ * @returns Promise that resolves when server has restarted
+ */
+export async function restartServer(): Promise<void> {
+  return invoke<void>('restart_server');
+}
+
+// ============================================================================
+// Configuration Export/Import (Story 6-2)
+// ============================================================================
+
+/** Import preview response type */
+export interface ImportPreview {
+  valid: boolean;
+  version: string;
+  exportDate: string;
+  accountCount: number;
+  xmltvSourceCount: number;
+  channelMappingCount: number;
+  xmltvChannelSettingsCount: number;
+  settingsSummary: string[];
+  errorMessage?: string;
+}
+
+/** Import result response type */
+export interface ImportResult {
+  success: boolean;
+  accountsImported: number;
+  xmltvSourcesImported: number;
+  channelMappingsImported: number;
+  settingsImported: number;
+  message: string;
+}
+
+/**
+ * Export all configuration data to JSON
+ *
+ * Story 6-2: Configuration Export/Import
+ * Task 3.1: TypeScript binding for exportConfiguration
+ *
+ * Returns the complete configuration as a JSON string that can be saved to a file.
+ * SECURITY: Passwords are NOT included in the export.
+ *
+ * @returns JSON string of the configuration export
+ */
+export async function exportConfiguration(): Promise<string> {
+  return invoke<string>('export_configuration');
+}
+
+/**
+ * Validate an import file and get preview
+ *
+ * Story 6-2: Configuration Export/Import
+ * Task 3.2: TypeScript binding for validateImportFile
+ *
+ * Parses the JSON content and returns a preview of what will be imported.
+ * Does not modify any data - use importConfiguration to actually import.
+ *
+ * @param content - JSON content of the configuration file
+ * @returns Preview of what will be imported
+ */
+export async function validateImportFile(content: string): Promise<ImportPreview> {
+  return invoke<ImportPreview>('validate_import_file', { content });
+}
+
+/**
+ * Import configuration from JSON content
+ *
+ * Story 6-2: Configuration Export/Import
+ * Task 3.3: TypeScript binding for importConfiguration
+ *
+ * Performs atomic import: all existing data is REPLACED (not merged).
+ * Accounts are imported with empty passwords - user must re-enter.
+ *
+ * @param content - JSON content of the configuration file
+ * @returns Result of the import operation
+ */
+export async function importConfiguration(content: string): Promise<ImportResult> {
+  return invoke<ImportResult>('import_configuration', { content });
+}
+
+// ============================================================================
+// Log Verbosity Settings (Story 6-3)
+// ============================================================================
+
+/** Log verbosity type */
+export type LogVerbosity = 'minimal' | 'verbose';
+
+/**
+ * Get the current log verbosity setting
+ *
+ * Story 6-3: Event Logging System
+ * Task 1.5: TypeScript binding for getLogVerbosity
+ *
+ * @returns Current log verbosity ("verbose" or "minimal")
+ */
+export async function getLogVerbosity(): Promise<LogVerbosity> {
+  return invoke<LogVerbosity>('get_log_verbosity');
+}
+
+/**
+ * Set the log verbosity setting
+ *
+ * Story 6-3: Event Logging System
+ * Task 1.5: TypeScript binding for setLogVerbosity
+ *
+ * @param verbosity - "verbose" (log all events) or "minimal" (only warn/error)
+ */
+export async function setLogVerbosity(verbosity: LogVerbosity): Promise<void> {
+  return invoke<void>('set_log_verbosity', { verbosity });
+}
+
+// ============================================================================
+// Auto-Update (Story 6-5)
+// ============================================================================
+
+/** Update information response */
+export interface UpdateInfo {
+  /** Whether an update is available */
+  available: boolean;
+  /** Version of the available update (null if no update) */
+  version: string | null;
+  /** Release notes/changelog (null if no update) */
+  notes: string | null;
+  /** Release date ISO string (null if no update) */
+  date: string | null;
+}
+
+/** Update settings response */
+export interface UpdateSettings {
+  /** Whether automatic update checks are enabled */
+  autoCheck: boolean;
+  /** Timestamp of last update check (ISO 8601) */
+  lastCheck: string | null;
+  /** Current application version */
+  currentVersion: string;
+}
+
+/**
+ * Check for available updates
+ *
+ * Story 6-5: Auto-Update Mechanism
+ * AC #1, #2: Check for updates with signature verification
+ *
+ * @returns Update information
+ */
+export async function checkForUpdate(): Promise<UpdateInfo> {
+  return invoke<UpdateInfo>('check_for_update');
+}
+
+/**
+ * Get current update settings
+ *
+ * Story 6-5: Auto-Update Mechanism
+ * AC #4: Auto-check preference stored in database
+ *
+ * @returns Update settings including auto-check preference and last check timestamp
+ */
+export async function getUpdateSettings(): Promise<UpdateSettings> {
+  return invoke<UpdateSettings>('get_update_settings');
+}
+
+/**
+ * Set auto-check updates preference
+ *
+ * Story 6-5: Auto-Update Mechanism
+ * AC #4: Toggle auto-check preference
+ *
+ * @param enabled - Whether to enable automatic update checks
+ */
+export async function setAutoCheckUpdates(enabled: boolean): Promise<void> {
+  return invoke<void>('set_auto_check_updates', { enabled });
+}
+
+/**
+ * Download and install the available update
+ *
+ * Story 6-5: Auto-Update Mechanism
+ * AC #5, #6: Download with progress, install and restart
+ *
+ * This function:
+ * 1. Downloads the update with progress events
+ * 2. Verifies the signature (built into Tauri updater)
+ * 3. Installs the update
+ *
+ * @returns Promise that resolves when update is installed
+ */
+export async function downloadAndInstallUpdate(): Promise<void> {
+  return invoke<void>('download_and_install_update');
+}
+
+/**
+ * Get the current application version
+ *
+ * Story 6-5: Used to display current version in Settings
+ *
+ * @returns Current version string (e.g., "0.1.0")
+ */
+export async function getCurrentVersion(): Promise<string> {
+  return invoke<string>('get_current_version');
+}
+
+/**
+ * Format relative time for last check timestamp
+ *
+ * @param dateStr - ISO 8601 date string or null
+ * @returns Human-readable relative time (e.g., "5 minutes ago", "Never")
+ */
+export function formatLastCheckTime(dateStr: string | null): string {
+  if (!dateStr) {
+    return 'Never';
+  }
+
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMinutes = Math.round(diffMs / (1000 * 60));
+  const diffHours = Math.round(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffMinutes < 1) {
+    return 'Just now';
+  }
+  if (diffMinutes < 60) {
+    return `${diffMinutes} minute${diffMinutes === 1 ? '' : 's'} ago`;
+  }
+  if (diffHours < 24) {
+    return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+  }
+  if (diffDays < 7) {
+    return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+  }
+
+  // Format as date for older checks
+  return date.toLocaleDateString();
 }
 

@@ -12,9 +12,9 @@
  * src-tauri/src/matcher/mod.rs (using #[cfg(test)])
  */
 
-import { test, expect, describe } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
-describe('Name Normalization (Task 3)', () => {
+test.describe('Name Normalization (Task 3)', () => {
   test('should convert to lowercase', () => {
     // Expected Rust function: normalize_channel_name("ESPN HD") => "espn"
     const testCases = [
@@ -90,7 +90,7 @@ describe('Name Normalization (Task 3)', () => {
   });
 });
 
-describe('Scoring Algorithm (Task 4)', () => {
+test.describe('Scoring Algorithm (Task 4)', () => {
   test('should calculate Jaro-Winkler similarity', () => {
     // Expected Rust: use strsim::jaro_winkler(s1, s2)
     const testCases = [
@@ -149,7 +149,7 @@ describe('Scoring Algorithm (Task 4)', () => {
   });
 });
 
-describe('Core Matching Logic (Task 5)', () => {
+test.describe('Core Matching Logic (Task 5)', () => {
   test('should find all candidates above threshold', () => {
     // GIVEN: 1 XMLTV channel, 5 Xtream channels
     // EXPECTED: Return only matches with score >= 0.85
@@ -193,7 +193,7 @@ describe('Core Matching Logic (Task 5)', () => {
   });
 });
 
-describe('Performance Edge Cases', () => {
+test.describe('Performance Edge Cases', () => {
   test('should handle 1000 x 1000 channel matrix', () => {
     // GIVEN: 1000 XMLTV channels, 1000 Xtream channels
     // EXPECTED: Complete matching within 60 seconds

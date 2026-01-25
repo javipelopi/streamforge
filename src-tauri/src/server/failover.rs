@@ -362,6 +362,7 @@ pub fn get_all_streams_for_channel(
 
 /// Log a failover event to the event_log table
 ///
+/// Story 6-3: Updated to use log_event_internal for verbosity support.
 /// Logs with level "warn" for successful failover, "error" for all streams exhausted.
 /// Details include channel_id, from_stream_id, to_stream_id, reason, and timestamp.
 pub fn log_failover_event(
@@ -371,7 +372,7 @@ pub fn log_failover_event(
     to_stream_id: Option<i32>,
     reason: &FailureReason,
 ) -> Result<(), diesel::result::Error> {
-    use crate::db::schema::event_log::dsl::*;
+    use crate::commands::logs::log_event_internal;
 
     let level_str = if to_stream_id.is_some() {
         "warn"
@@ -386,23 +387,19 @@ pub fn log_failover_event(
     };
 
     let details_json = serde_json::json!({
-        "channel_id": channel_id,
-        "from_stream_id": from_stream_id,
-        "to_stream_id": to_stream_id,
+        "channelId": channel_id,
+        "fromStreamId": from_stream_id,
+        "toStreamId": to_stream_id,
         "reason": format!("{:?}", reason),
-        "timestamp": chrono::Utc::now().to_rfc3339(),
     });
 
-    diesel::insert_into(event_log)
-        .values((
-            timestamp.eq(chrono::Utc::now().to_rfc3339()),
-            level.eq(level_str),
-            category.eq("stream"),
-            message.eq(&message_str),
-            details.eq(details_json.to_string()),
-            is_read.eq(0),
-        ))
-        .execute(conn)?;
+    log_event_internal(
+        conn,
+        level_str,
+        "stream",
+        &message_str,
+        Some(&details_json.to_string()),
+    )?;
 
     eprintln!(
         "Failover event - {}: {} (from: {}, to: {:?}, reason: {})",
@@ -413,6 +410,8 @@ pub fn log_failover_event(
 }
 
 /// Log a quality upgrade event to the event_log table
+///
+/// Story 6-3: Updated to use log_event_internal for verbosity support.
 pub fn log_upgrade_event(
     conn: &mut DbPooledConnection,
     channel_id: i32,
@@ -420,7 +419,7 @@ pub fn log_upgrade_event(
     to_stream_id: i32,
     success: bool,
 ) -> Result<(), diesel::result::Error> {
-    use crate::db::schema::event_log::dsl::*;
+    use crate::commands::logs::log_event_internal;
 
     let level_str = if success { "info" } else { "warn" };
     let message_str = if success {
@@ -436,23 +435,19 @@ pub fn log_upgrade_event(
     };
 
     let details_json = serde_json::json!({
-        "channel_id": channel_id,
-        "from_stream_id": from_stream_id,
-        "to_stream_id": to_stream_id,
+        "channelId": channel_id,
+        "fromStreamId": from_stream_id,
+        "toStreamId": to_stream_id,
         "success": success,
-        "timestamp": chrono::Utc::now().to_rfc3339(),
     });
 
-    diesel::insert_into(event_log)
-        .values((
-            timestamp.eq(chrono::Utc::now().to_rfc3339()),
-            level.eq(level_str),
-            category.eq("stream"),
-            message.eq(&message_str),
-            details.eq(details_json.to_string()),
-            is_read.eq(0),
-        ))
-        .execute(conn)?;
+    log_event_internal(
+        conn,
+        level_str,
+        "stream",
+        &message_str,
+        Some(&details_json.to_string()),
+    )?;
 
     eprintln!("Upgrade event - {}: {}", level_str, message_str);
 
@@ -461,6 +456,7 @@ pub fn log_upgrade_event(
 
 /// Log a mid-stream failover event to the event_log table (Story 4.7)
 ///
+/// Story 6-3: Updated to use log_event_internal for verbosity support.
 /// Logs failover events that occur during an active stream session,
 /// as opposed to initial connection failover.
 ///
@@ -471,7 +467,7 @@ pub fn log_mid_stream_failover_event(
     conn: &mut DbPooledConnection,
     event: &FailoverEvent,
 ) -> Result<(), diesel::result::Error> {
-    use crate::db::schema::event_log::dsl::*;
+    use crate::commands::logs::log_event_internal;
 
     let level_str = if event.success { "warn" } else { "error" };
 
@@ -492,26 +488,22 @@ pub fn log_mid_stream_failover_event(
     };
 
     let details_json = serde_json::json!({
-        "failover_type": "mid_stream",
-        "session_id": event.session_id,
-        "channel_id": event.xmltv_channel_id,
-        "from_stream_id": event.from_stream_id,
-        "to_stream_id": event.to_stream_id,
-        "stall_duration_secs": event.stall_duration.as_secs_f64(),
+        "failoverType": "mid_stream",
+        "sessionId": event.session_id,
+        "channelId": event.xmltv_channel_id,
+        "fromStreamId": event.from_stream_id,
+        "toStreamId": event.to_stream_id,
+        "stallDurationSecs": event.stall_duration.as_secs_f64(),
         "success": event.success,
-        "timestamp": chrono::Utc::now().to_rfc3339(),
     });
 
-    diesel::insert_into(event_log)
-        .values((
-            timestamp.eq(chrono::Utc::now().to_rfc3339()),
-            level.eq(level_str),
-            category.eq("stream"),
-            message.eq(&message_str),
-            details.eq(details_json.to_string()),
-            is_read.eq(0),
-        ))
-        .execute(conn)?;
+    log_event_internal(
+        conn,
+        level_str,
+        "stream",
+        &message_str,
+        Some(&details_json.to_string()),
+    )?;
 
     eprintln!(
         "Mid-stream failover - {}: {} (session: {})",

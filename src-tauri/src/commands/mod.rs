@@ -1,9 +1,11 @@
 pub mod accounts;
 pub mod channels;
+pub mod config;
 pub mod epg;
 pub mod logs;
 pub mod matcher;
 pub mod test_data;
+pub mod update;
 pub mod xmltv_channels;
 pub mod xtream_sources;
 
@@ -69,37 +71,41 @@ pub fn set_setting(db: State<DbConnection>, key: String, value: String) -> Resul
     Ok(())
 }
 
+/// Internal helper to get server port without State wrapper
+fn get_server_port_internal(conn: &mut diesel::SqliteConnection) -> Result<u16, diesel::result::Error> {
+    const DEFAULT_SERVER_PORT: u16 = 5004;
+    const SERVER_PORT_KEY: &str = "server_port";
+
+    let result = settings::table
+        .filter(settings::key.eq(SERVER_PORT_KEY))
+        .select(settings::value)
+        .first::<String>(conn)
+        .optional()?;
+
+    match result {
+        Some(port_str) => port_str.parse::<u16>().map_err(|_| diesel::result::Error::NotFound),
+        None => Ok(DEFAULT_SERVER_PORT),
+    }
+}
+
 /// Get the current server port from settings
 ///
 /// Returns the configured server port, or the default (5004) if not set.
 #[allow(dead_code)] // Used by lib crate via tauri invoke_handler
 #[tauri::command]
 pub fn get_server_port(db: State<DbConnection>) -> Result<u16, String> {
-    const DEFAULT_SERVER_PORT: u16 = 5004;
-    const SERVER_PORT_KEY: &str = "server_port";
-
     let mut conn = db
         .get_connection()
         .map_err(|e| format!("Database connection error: {}", e))?;
 
-    let result = settings::table
-        .filter(settings::key.eq(SERVER_PORT_KEY))
-        .select(settings::value)
-        .first::<String>(&mut conn)
-        .optional()
-        .map_err(|e| format!("Query error: {}", e))?;
-
-    match result {
-        Some(port_str) => port_str
-            .parse::<u16>()
-            .map_err(|e| format!("Invalid port value in settings: {}", e)),
-        None => Ok(DEFAULT_SERVER_PORT),
-    }
+    get_server_port_internal(&mut conn)
+        .map_err(|e| format!("Query error: {}", e))
 }
 
 /// Set the server port in settings
 ///
 /// Note: Changing the port requires an application restart to take effect.
+/// Story 6-3: Logs configuration change event (AC #2)
 #[allow(dead_code)] // Used by lib crate via tauri invoke_handler
 #[tauri::command]
 pub fn set_server_port(db: State<DbConnection>, port: u16) -> Result<(), String> {
@@ -114,12 +120,61 @@ pub fn set_server_port(db: State<DbConnection>, port: u16) -> Result<(), String>
         .get_connection()
         .map_err(|e| format!("Database connection error: {}", e))?;
 
+    // Get old port for logging (Story 6-3: AC #2)
+    let old_port = get_server_port_internal(&mut conn).unwrap_or(5004);
+
     let setting = Setting::new(SERVER_PORT_KEY.to_string(), port.to_string());
 
     diesel::replace_into(settings::table)
         .values(&setting)
         .execute(&mut conn)
         .map_err(|e| format!("Insert error: {}", e))?;
+
+    // Story 6-3: Log configuration change (AC #2)
+    use crate::commands::logs::log_event_internal;
+    let details = serde_json::json!({
+        "setting": "server_port",
+        "oldValue": old_port,
+        "newValue": port
+    });
+    let _ = log_event_internal(
+        &mut conn,
+        "info",
+        "system",
+        &format!("Configuration changed: Server port {} → {}", old_port, port),
+        Some(&details.to_string()),
+    );
+
+    Ok(())
+}
+
+/// Restart the HTTP server on the new port
+///
+/// Story 6.1: Settings GUI for Server and Startup Options
+/// Task 3.1: Add restart_server Tauri command
+///
+/// IMPLEMENTATION NOTE: This is a placeholder implementation (Option A).
+/// Port changes do NOT take effect immediately - they require a full application restart.
+/// The frontend has been updated to inform users: "Port saved. Restart the app to apply changes."
+///
+/// Why Option A was chosen:
+/// - Simpler implementation with no risk of server state corruption
+/// - No need to manage server handle lifecycle or graceful connection shutdown
+/// - Clear user expectation (restart required)
+/// - Recommended approach in Dev Notes
+///
+/// Future enhancement (Option B): Implement hot restart by:
+/// 1. Storing server handle in Tauri managed state
+/// 2. Implementing graceful shutdown with connection draining
+/// 3. Restarting server on same Tokio runtime with new port
+#[allow(dead_code)] // Used by lib crate via tauri invoke_handler
+#[tauri::command]
+pub async fn restart_server() -> Result<(), String> {
+    // Placeholder implementation - actual restart requires app restart
+    println!("INFO: Server port change saved. Port will take effect on next application restart.");
+
+    // This command exists to maintain API compatibility and allow future enhancement
+    // Frontend correctly handles this by informing user to restart the app
 
     Ok(())
 }
@@ -192,6 +247,20 @@ pub fn set_autostart_enabled(
             eprintln!("Database insert error for autostart setting: {}", e);
             "Failed to save autostart setting".to_string()
         })?;
+
+    // Story 6-3: Log configuration change (AC #2)
+    use crate::commands::logs::log_event_internal;
+    let details = serde_json::json!({
+        "setting": "autostart_enabled",
+        "newValue": enabled
+    });
+    let _ = log_event_internal(
+        &mut conn,
+        "info",
+        "system",
+        &format!("Configuration changed: Auto-start {}", if enabled { "enabled" } else { "disabled" }),
+        Some(&details.to_string()),
+    );
 
     Ok(())
 }

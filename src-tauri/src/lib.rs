@@ -23,13 +23,17 @@ const MAIN_WINDOW_NAME: &str = "main";
 pub fn run() {
     let mut builder = tauri::Builder::default().plugin(tauri_plugin_shell::init());
 
-    // Initialize autostart plugin only on desktop platforms
+    // Initialize desktop-only plugins (autostart, dialog, updater, process)
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_autostart::init(
-            MacosLauncher::LaunchAgent,
-            Some(vec!["--minimized"]),
-        ));
+        builder = builder
+            .plugin(tauri_plugin_autostart::init(
+                MacosLauncher::LaunchAgent,
+                Some(vec!["--minimized"]),
+            ))
+            .plugin(tauri_plugin_dialog::init())
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .plugin(tauri_plugin_process::init());
     }
 
     builder.setup(|app| {
@@ -46,6 +50,23 @@ pub fn run() {
             // Create connection pool and store for later use by commands
             let db_connection = db::DbConnection::new(database_url)
                 .map_err(|e| format!("Failed to create connection pool: {}", e))?;
+
+            // Story 6-3: Log application startup event (AC #1)
+            {
+                use commands::logs::log_event_internal;
+                if let Ok(mut log_conn) = db_connection.get_connection() {
+                    let details = serde_json::json!({
+                        "version": env!("CARGO_PKG_VERSION"),
+                    });
+                    let _ = log_event_internal(
+                        &mut log_conn,
+                        "info",
+                        "system",
+                        &format!("StreamForge v{} started", env!("CARGO_PKG_VERSION")),
+                        Some(&details.to_string()),
+                    );
+                }
+            }
 
             // Get app data directory for credential retrieval in stream proxy
             let app_data_dir = app.path()
@@ -287,6 +308,7 @@ pub fn run() {
             commands::set_setting,
             commands::get_server_port,
             commands::set_server_port,
+            commands::restart_server,
             commands::get_autostart_enabled,
             commands::set_autostart_enabled,
             commands::get_plex_config,
@@ -350,6 +372,18 @@ pub fn run() {
             commands::logs::mark_event_read,
             commands::logs::mark_all_events_read,
             commands::logs::clear_old_events,
+            commands::logs::get_log_verbosity,
+            commands::logs::set_log_verbosity,
+            // Configuration export/import commands (Story 6-2)
+            commands::config::export_configuration,
+            commands::config::validate_import_file,
+            commands::config::import_configuration,
+            // Update commands (Story 6-5)
+            commands::update::check_for_update,
+            commands::update::get_update_settings,
+            commands::update::set_auto_check_updates,
+            commands::update::download_and_install_update,
+            commands::update::get_current_version,
             // Test data commands (only functional when IPTV_TEST_MODE=1)
             commands::test_data::seed_stream_proxy_test_data,
             commands::test_data::clear_stream_proxy_test_data,
