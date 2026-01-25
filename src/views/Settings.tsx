@@ -538,7 +538,7 @@ export function Settings() {
   }
 
   return (
-    <div data-testid="settings-view">
+    <div data-testid="settings-view" className="pb-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Settings</h1>
         {hasUnsavedChanges && (
