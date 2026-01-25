@@ -135,12 +135,9 @@ pub async fn check_for_update(
                 available: true,
                 version: Some(update.version.clone()),
                 notes: update.body.clone(),
-                // Convert OffsetDateTime to RFC 3339 string (explicit ISO 8601 format)
-                date: update.date.map(|d| {
-                    // OffsetDateTime from time crate - format as RFC3339
-                    d.format(&time::format_description::well_known::Rfc3339)
-                        .unwrap_or_else(|_| d.to_string())
-                }),
+                // Convert OffsetDateTime to string
+                // Note: OffsetDateTime's Display impl outputs ISO 8601 format
+                date: update.date.map(|d| d.to_string()),
             })
         }
         Ok(None) => {
