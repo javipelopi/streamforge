@@ -27,7 +27,13 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard', path: ROUTES.DASHBOARD, icon: 'dashboard' },
+  {
+    label: 'Dashboard',
+    path: ROUTES.DASHBOARD,
+    icon: 'dashboard',
+    testId: 'dashboard-nav-link',
+    ariaLabel: 'Dashboard - Home view',
+  },
   {
     label: 'Target Lineup',
     path: ROUTES.TARGET_LINEUP,
@@ -49,7 +55,25 @@ export const NAV_ITEMS: NavItem[] = [
     testId: 'epg-nav-item',
     ariaLabel: 'EPG - Electronic program guide',
   },
-  { label: 'Accounts', path: ROUTES.ACCOUNTS, icon: 'person' },
-  { label: 'Settings', path: ROUTES.SETTINGS, icon: 'gear' },
-  { label: 'Logs', path: ROUTES.LOGS, icon: 'file' },
+  {
+    label: 'Accounts',
+    path: ROUTES.ACCOUNTS,
+    icon: 'person',
+    testId: 'accounts-nav-link',
+    ariaLabel: 'Accounts - Manage Xtream accounts',
+  },
+  {
+    label: 'Settings',
+    path: ROUTES.SETTINGS,
+    icon: 'gear',
+    testId: 'settings-nav-link',
+    ariaLabel: 'Settings - Configure server, startup, and EPG options',
+  },
+  {
+    label: 'Logs',
+    path: ROUTES.LOGS,
+    icon: 'file',
+    testId: 'logs-nav-link',
+    ariaLabel: 'Logs - View system events and logs',
+  },
 ];

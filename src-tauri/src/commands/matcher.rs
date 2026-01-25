@@ -1,11 +1,13 @@
 //! Matcher Commands
 //!
 //! Tauri commands for channel matching operations.
+//! Story 6-3: Channel matching event logging
 
 use diesel::prelude::*;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
+use crate::commands::logs::log_event_internal;
 use crate::db::models::{ChannelMapping, XmltvChannel, XmltvChannelSettings, XtreamChannel};
 use crate::db::schema::{settings, xmltv_channels, xtream_channels};
 use crate::db::{DbConnection, Setting};
@@ -110,6 +112,27 @@ pub async fn run_channel_matching(
         "matched": stats.matched,
         "unmatched": stats.unmatched
     }));
+
+    // Story 6-3: Log channel matching event (AC #1)
+    let details = serde_json::json!({
+        "matchedCount": stats.matched,
+        "unmatchedCount": stats.unmatched,
+        "totalXmltv": stats.total_xmltv,
+        "totalXtream": stats.total_xtream,
+        "threshold": threshold,
+        "durationMs": stats.duration_ms,
+        "mappingsSaved": saved_count,
+    });
+    let _ = log_event_internal(
+        &mut conn,
+        "info",
+        "match",
+        &format!(
+            "Channel matching completed: {} of {} channels matched (threshold: {:.0}%)",
+            stats.matched, stats.total_xmltv, threshold * 100.0
+        ),
+        Some(&details.to_string()),
+    );
 
     Ok(MatchResponse {
         success: true,

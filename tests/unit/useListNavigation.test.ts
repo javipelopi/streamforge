@@ -7,11 +7,11 @@
  * Actual runtime behavior is tested via E2E tests (epg-channel-list-panel.spec.ts, etc.)
  */
 
-import { test, expect, describe } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { useListNavigation } from '../../src/hooks/useListNavigation';
 import type { ScrollStrategy } from '../../src/hooks/useListNavigation';
 
-describe('useListNavigation - Type Signature Verification', () => {
+test.describe('useListNavigation - Type Signature Verification', () => {
   test('hook is exported as a function', () => {
     expect(typeof useListNavigation).toBe('function');
   });
@@ -37,7 +37,7 @@ describe('useListNavigation - Type Signature Verification', () => {
   });
 });
 
-describe('useListNavigation - currentIndex behavior', () => {
+test.describe('useListNavigation - currentIndex behavior', () => {
   test('returns -1 when selectedId is null', () => {
     // EXPECTED: currentIndex = -1 when no item selected
     expect(true).toBe(true);
@@ -54,7 +54,7 @@ describe('useListNavigation - currentIndex behavior', () => {
   });
 });
 
-describe('useListNavigation - handleArrowDown behavior', () => {
+test.describe('useListNavigation - handleArrowDown behavior', () => {
   test('returns false when items array is empty', () => {
     // EXPECTED: No action, return false
     expect(true).toBe(true);
@@ -81,7 +81,7 @@ describe('useListNavigation - handleArrowDown behavior', () => {
   });
 });
 
-describe('useListNavigation - handleArrowUp behavior', () => {
+test.describe('useListNavigation - handleArrowUp behavior', () => {
   test('returns false when items array is empty', () => {
     // EXPECTED: No action, return false
     expect(true).toBe(true);
@@ -103,7 +103,7 @@ describe('useListNavigation - handleArrowUp behavior', () => {
   });
 });
 
-describe('useListNavigation - handleKeyDown behavior', () => {
+test.describe('useListNavigation - handleKeyDown behavior', () => {
   test('handles ArrowDown key and prevents default', () => {
     // EXPECTED: e.preventDefault() called, handleArrowDown executed
     expect(true).toBe(true);
@@ -120,7 +120,7 @@ describe('useListNavigation - handleKeyDown behavior', () => {
   });
 });
 
-describe('useListNavigation - scroll strategies', () => {
+test.describe('useListNavigation - scroll strategies', () => {
   test('virtualizer strategy calls scrollToIndex', () => {
     // EXPECTED: virtualizer.scrollToIndex(index, { align: 'auto' })
     expect(true).toBe(true);

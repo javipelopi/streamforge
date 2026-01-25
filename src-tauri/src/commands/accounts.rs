@@ -2,12 +2,15 @@
 //!
 //! This module provides commands for adding, retrieving, updating, and deleting
 //! Xtream Codes account credentials with secure password storage.
+//!
+//! Story 6-3: Connection event logging for Xtream authentication
 
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 use thiserror::Error;
 
+use crate::commands::logs::log_event_internal;
 use crate::credentials::CredentialManager;
 use crate::db::{
     schema::accounts,
@@ -436,6 +439,21 @@ pub async fn test_connection(
                 .execute(&mut conn)
                 .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
 
+            // Story 6-3: Log successful connection event (AC #1)
+            let details = serde_json::json!({
+                "accountId": account_id,
+                "accountName": account.name,
+                "maxConnections": info.max_connections,
+                "activeConnections": info.active_connections
+            });
+            let _ = log_event_internal(
+                &mut conn,
+                "info",
+                "connection",
+                &format!("Connection successful: {}", account.name),
+                Some(&details.to_string()),
+            );
+
             Ok(TestConnectionResponse {
                 success: true,
                 status: Some(info.status),
@@ -461,13 +479,28 @@ pub async fn test_connection(
                 .set(&status_update)
                 .execute(&mut conn);
 
+            // Story 6-3: Log connection failure event (AC #1, AC #2)
+            let error_message = e.user_message();
+            let details = serde_json::json!({
+                "accountId": account_id,
+                "accountName": account.name,
+                "error": error_message
+            });
+            let _ = log_event_internal(
+                &mut conn,
+                "error",
+                "connection",
+                &format!("Connection failed: {} - {}", account.name, error_message),
+                Some(&details.to_string()),
+            );
+
             Ok(TestConnectionResponse {
                 success: false,
                 status: None,
                 expiry_date: None,
                 max_connections: None,
                 active_connections: None,
-                error_message: Some(e.user_message()),
+                error_message: Some(error_message),
                 suggestions: Some(e.suggestions()),
             })
         }

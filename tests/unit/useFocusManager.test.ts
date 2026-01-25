@@ -7,10 +7,10 @@
  * Actual runtime behavior is tested via E2E tests (epg-channel-list-panel.spec.ts, etc.)
  */
 
-import { test, expect, describe } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { useFocusManager, useCombinedRef } from '../../src/hooks/useFocusManager';
 
-describe('useFocusManager - Type Signature Verification', () => {
+test.describe('useFocusManager - Type Signature Verification', () => {
   test('hook returns expected interface', () => {
     // Verify the hook export exists and is a function
     expect(typeof useFocusManager).toBe('function');
@@ -21,7 +21,7 @@ describe('useFocusManager - Type Signature Verification', () => {
   });
 });
 
-describe('useFocusManager - Expected Behavior Documentation', () => {
+test.describe('useFocusManager - Expected Behavior Documentation', () => {
   test('focusFirst should find first focusable element', () => {
     // EXPECTED BEHAVIOR:
     // - Returns false when container is null
@@ -57,7 +57,7 @@ describe('useFocusManager - Expected Behavior Documentation', () => {
   });
 });
 
-describe('useCombinedRef - Expected Behavior Documentation', () => {
+test.describe('useCombinedRef - Expected Behavior Documentation', () => {
   test('should set both local ref and forwarded ref', () => {
     // EXPECTED BEHAVIOR:
     // - Sets localRef.current = element

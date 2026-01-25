@@ -247,3 +247,655 @@ export async function injectStatefulTauriMock(
 
   await page.addInitScript(mockScript);
 }
+
+/**
+ * Injects comprehensive stateful Tauri mock for Settings GUI tests
+ *
+ * Story 6.1: Settings GUI for Server and Startup Options
+ *
+ * This version tracks all settings state changes across multiple invoke calls,
+ * supporting server port, autostart, and EPG schedule settings.
+ * State is persisted to localStorage to survive page reloads.
+ *
+ * @param page - Playwright page object
+ * @param initialState - Initial settings state
+ */
+export async function injectSettingsStatefulMock(
+  page: Page,
+  initialState: {
+    serverPort?: number;
+    autostartEnabled?: boolean;
+    epgSchedule?: { hour: number; minute: number; enabled: boolean };
+    logVerbosity?: 'minimal' | 'verbose';
+  } = {}
+): Promise<void> {
+  const serverPort = initialState.serverPort ?? 5004;
+  const autostartEnabled = initialState.autostartEnabled ?? false;
+  const epgHour = initialState.epgSchedule?.hour ?? 4;
+  const epgMinute = initialState.epgSchedule?.minute ?? 0;
+  const epgEnabled = initialState.epgSchedule?.enabled ?? true;
+  const logVerbosity = initialState.logVerbosity ?? 'verbose';
+
+  const mockScript = `
+    // Comprehensive Stateful Tauri Mock for Settings GUI - Injected by Playwright
+    (function() {
+      const STORAGE_KEY = '__TAURI_MOCK_SETTINGS__';
+
+      // Try to load state from localStorage (for persistence across reloads)
+      let savedState = null;
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          savedState = JSON.parse(stored);
+          console.log('[Tauri Mock] Loaded persisted state from localStorage:', savedState);
+        }
+      } catch (e) {
+        console.warn('[Tauri Mock] Failed to load persisted state:', e);
+      }
+
+      // Initialize all settings state (use saved state if available, otherwise defaults)
+      window.__SETTINGS_STATE__ = savedState || {
+        serverPort: ${serverPort},
+        autostartEnabled: ${autostartEnabled},
+        epgSchedule: {
+          hour: ${epgHour},
+          minute: ${epgMinute},
+          enabled: ${epgEnabled},
+          lastScheduledRefresh: null
+        },
+        logVerbosity: '${logVerbosity}'
+      };
+
+      // Keep legacy state for backwards compatibility
+      window.__AUTOSTART_STATE__ = { enabled: window.__SETTINGS_STATE__.autostartEnabled };
+
+      // Helper to persist state to localStorage
+      function persistState() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(window.__SETTINGS_STATE__));
+          console.log('[Tauri Mock] Persisted state to localStorage');
+        } catch (e) {
+          console.warn('[Tauri Mock] Failed to persist state:', e);
+        }
+      }
+
+      const mockCommands = {
+        greet: (args) => \`Hello, \${args.name}! Welcome to StreamForge.\`,
+        get_setting: () => null,
+        set_setting: () => undefined,
+
+        // Server port commands
+        get_server_port: () => {
+          return window.__SETTINGS_STATE__.serverPort;
+        },
+        set_server_port: (args) => {
+          const port = args.port;
+          if (port < 1024) {
+            throw new Error('Port must be 1024 or higher (non-privileged ports)');
+          }
+          window.__SETTINGS_STATE__.serverPort = port;
+          persistState();
+          return undefined;
+        },
+        restart_server: () => {
+          // Simulate server restart - just returns success
+          console.log('[Tauri Mock] Server restart triggered on port:', window.__SETTINGS_STATE__.serverPort);
+          return undefined;
+        },
+
+        // Autostart commands
+        get_autostart_enabled: () => {
+          return { enabled: window.__SETTINGS_STATE__.autostartEnabled };
+        },
+        set_autostart_enabled: (args) => {
+          window.__SETTINGS_STATE__.autostartEnabled = args.enabled;
+          window.__AUTOSTART_STATE__.enabled = args.enabled;
+          persistState();
+          return undefined;
+        },
+
+        // EPG Schedule commands
+        get_epg_schedule: () => {
+          return {
+            hour: window.__SETTINGS_STATE__.epgSchedule.hour,
+            minute: window.__SETTINGS_STATE__.epgSchedule.minute,
+            enabled: window.__SETTINGS_STATE__.epgSchedule.enabled,
+            lastScheduledRefresh: window.__SETTINGS_STATE__.epgSchedule.lastScheduledRefresh
+          };
+        },
+        set_epg_schedule: (args) => {
+          window.__SETTINGS_STATE__.epgSchedule.hour = args.hour;
+          window.__SETTINGS_STATE__.epgSchedule.minute = args.minute;
+          window.__SETTINGS_STATE__.epgSchedule.enabled = args.enabled;
+          persistState();
+          return {
+            hour: args.hour,
+            minute: args.minute,
+            enabled: args.enabled,
+            lastScheduledRefresh: window.__SETTINGS_STATE__.epgSchedule.lastScheduledRefresh
+          };
+        },
+
+        // Plex config command (for verifying port changes)
+        get_plex_config: () => {
+          const port = window.__SETTINGS_STATE__.serverPort;
+          return {
+            server_running: true,
+            local_ip: '192.168.1.100',
+            port: port,
+            m3u_url: \`http://192.168.1.100:\${port}/playlist.m3u\`,
+            epg_url: \`http://192.168.1.100:\${port}/epg.xml\`,
+            hdhr_url: \`http://192.168.1.100:\${port}\`,
+            tuner_count: 2
+          };
+        },
+
+        // Event log commands (Story 6-4)
+        get_events: (args) => {
+          // Initialize event log state from localStorage if not exists
+          if (!window.__EVENT_LOG_STATE__) {
+            const EVENT_LOG_KEY = '__TAURI_MOCK_EVENT_LOG__';
+            try {
+              const stored = localStorage.getItem(EVENT_LOG_KEY);
+              if (stored) {
+                window.__EVENT_LOG_STATE__ = JSON.parse(stored);
+                console.log('[Tauri Mock] Loaded event log state from localStorage');
+              } else {
+                window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+              }
+            } catch (e) {
+              window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+            }
+          }
+
+          const state = window.__EVENT_LOG_STATE__;
+          let filtered = [...state.events];
+
+          // Apply filters
+          if (args.level) {
+            filtered = filtered.filter(e => e.level === args.level);
+          }
+          if (args.category) {
+            filtered = filtered.filter(e => e.category === args.category);
+          }
+          if (args.unreadOnly) {
+            filtered = filtered.filter(e => !e.isRead);
+          }
+          if (args.createdAfter) {
+            filtered = filtered.filter(e => e.timestamp >= args.createdAfter);
+          }
+          if (args.createdBefore) {
+            // Include the entire end date by comparing to end of day
+            const endDate = args.createdBefore + 'T23:59:59';
+            filtered = filtered.filter(e => e.timestamp <= endDate);
+          }
+
+          // Sort by timestamp descending
+          filtered.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+          // Apply pagination
+          const limit = args.limit || 50;
+          const offset = args.offset || 0;
+          const paginated = filtered.slice(offset, offset + limit);
+
+          return {
+            events: paginated,
+            totalCount: filtered.length,
+            unreadCount: state.events.filter(e => !e.isRead).length
+          };
+        },
+
+        get_unread_event_count: () => {
+          const EVENT_LOG_KEY = '__TAURI_MOCK_EVENT_LOG__';
+          if (!window.__EVENT_LOG_STATE__) {
+            try {
+              const stored = localStorage.getItem(EVENT_LOG_KEY);
+              if (stored) {
+                window.__EVENT_LOG_STATE__ = JSON.parse(stored);
+              } else {
+                window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+              }
+            } catch (e) {
+              window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+            }
+          }
+          return window.__EVENT_LOG_STATE__.events.filter(e => !e.isRead).length;
+        },
+
+        log_event: (args) => {
+          if (!window.__EVENT_LOG_STATE__) {
+            window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+          }
+          const state = window.__EVENT_LOG_STATE__;
+          const event = {
+            id: state.nextId++,
+            timestamp: new Date().toISOString(),
+            level: args.level,
+            category: args.category,
+            message: args.message,
+            details: args.details || null,
+            isRead: false
+          };
+          state.events.unshift(event);
+          return event;
+        },
+
+        mark_event_read: (args) => {
+          if (!window.__EVENT_LOG_STATE__) return;
+          const event = window.__EVENT_LOG_STATE__.events.find(e => e.id === args.eventId);
+          if (event) event.isRead = true;
+          return undefined;
+        },
+
+        mark_all_events_read: () => {
+          const EVENT_LOG_KEY = '__TAURI_MOCK_EVENT_LOG__';
+          if (!window.__EVENT_LOG_STATE__) {
+            try {
+              const stored = localStorage.getItem(EVENT_LOG_KEY);
+              if (stored) {
+                window.__EVENT_LOG_STATE__ = JSON.parse(stored);
+              } else {
+                window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+              }
+            } catch (e) {
+              window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+            }
+          }
+          let count = 0;
+          window.__EVENT_LOG_STATE__.events.forEach(e => {
+            if (!e.isRead) {
+              e.isRead = true;
+              count++;
+            }
+          });
+          // Persist after marking
+          try {
+            localStorage.setItem(EVENT_LOG_KEY, JSON.stringify(window.__EVENT_LOG_STATE__));
+          } catch (e) {}
+          return count;
+        },
+
+        clear_old_events: (args) => {
+          if (!window.__EVENT_LOG_STATE__) {
+            window.__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+          }
+          const keepCount = args.keepCount || 100;
+          const state = window.__EVENT_LOG_STATE__;
+          const originalCount = state.events.length;
+          if (state.events.length > keepCount) {
+            state.events = state.events.slice(0, keepCount);
+          }
+          return originalCount - state.events.length;
+        },
+
+        // Log verbosity commands (Story 6-3)
+        get_log_verbosity: () => {
+          return window.__SETTINGS_STATE__.logVerbosity || 'verbose';
+        },
+        set_log_verbosity: (args) => {
+          window.__SETTINGS_STATE__.logVerbosity = args.verbosity;
+          persistState();
+          return undefined;
+        },
+
+        // Update commands (Story 6-5)
+        get_update_settings: () => {
+          const UPDATE_STATE_KEY = '__TAURI_MOCK_UPDATE_STATE__';
+          if (!window.__UPDATE_STATE__) {
+            // Try loading from localStorage
+            try {
+              const stored = localStorage.getItem(UPDATE_STATE_KEY);
+              if (stored) {
+                window.__UPDATE_STATE__ = JSON.parse(stored);
+              } else {
+                window.__UPDATE_STATE__ = {
+                  autoCheck: true,
+                  lastCheck: null,
+                  currentVersion: '1.1.0',
+                };
+              }
+            } catch (e) {
+              window.__UPDATE_STATE__ = {
+                autoCheck: true,
+                lastCheck: null,
+                currentVersion: '1.1.0',
+              };
+            }
+          }
+          return window.__UPDATE_STATE__;
+        },
+        set_auto_check_updates: (args) => {
+          const UPDATE_STATE_KEY = '__TAURI_MOCK_UPDATE_STATE__';
+          if (!window.__UPDATE_STATE__) {
+            window.__UPDATE_STATE__ = {
+              autoCheck: true,
+              lastCheck: null,
+              currentVersion: '1.1.0',
+            };
+          }
+          window.__UPDATE_STATE__.autoCheck = args.enabled;
+          // Persist to localStorage
+          try {
+            localStorage.setItem(UPDATE_STATE_KEY, JSON.stringify(window.__UPDATE_STATE__));
+            console.log('[Tauri Mock] Persisted update state:', window.__UPDATE_STATE__);
+          } catch (e) {
+            console.warn('[Tauri Mock] Failed to persist update state:', e);
+          }
+          return undefined;
+        },
+        check_for_update: async () => {
+          const UPDATE_STATE_KEY = '__TAURI_MOCK_UPDATE_STATE__';
+          if (!window.__UPDATE_STATE__) {
+            try {
+              const stored = localStorage.getItem(UPDATE_STATE_KEY);
+              if (stored) {
+                window.__UPDATE_STATE__ = JSON.parse(stored);
+              } else {
+                window.__UPDATE_STATE__ = {
+                  autoCheck: true,
+                  lastCheck: null,
+                  currentVersion: '1.1.0',
+                };
+              }
+            } catch (e) {
+              window.__UPDATE_STATE__ = {
+                autoCheck: true,
+                lastCheck: null,
+                currentVersion: '1.1.0',
+              };
+            }
+          }
+          // Simulate API delay
+          await new Promise(resolve => setTimeout(resolve, 100));
+          // Update last check timestamp
+          window.__UPDATE_STATE__.lastCheck = new Date().toISOString();
+          // Persist to localStorage
+          try {
+            localStorage.setItem(UPDATE_STATE_KEY, JSON.stringify(window.__UPDATE_STATE__));
+          } catch (e) {}
+          // Return the configured update info (or no update by default)
+          if (window.__UPDATE_INFO__) {
+            return window.__UPDATE_INFO__;
+          }
+          return {
+            available: false,
+            version: null,
+            notes: null,
+            date: null,
+          };
+        },
+        download_and_install_update: async () => {
+          // Simulate download delay
+          await new Promise(resolve => setTimeout(resolve, 100));
+          console.log('[Tauri Mock] Download and install update');
+          return undefined;
+        },
+        get_current_version: () => {
+          if (!window.__UPDATE_STATE__) {
+            return '1.1.0';
+          }
+          return window.__UPDATE_STATE__.currentVersion;
+        },
+
+        // Configuration export/import commands (Story 6-2)
+        export_configuration: () => {
+          const state = window.__SETTINGS_STATE__;
+          const exportData = {
+            version: '1.0',
+            exportDate: new Date().toISOString(),
+            appVersion: '0.1.0',
+            data: {
+              settings: {
+                server_port: String(state.serverPort),
+                autostart_enabled: String(state.autostartEnabled),
+                epg_schedule_hour: String(state.epgSchedule.hour),
+                epg_schedule_minute: String(state.epgSchedule.minute),
+                epg_schedule_enabled: String(state.epgSchedule.enabled),
+              },
+              accounts: window.__MOCK_ACCOUNTS__ || [],
+              xmltv_sources: window.__MOCK_XMLTV_SOURCES__ || [],
+              channel_mappings: [],
+              xmltv_channel_settings: [],
+            },
+          };
+          return JSON.stringify(exportData, null, 2);
+        },
+
+        validate_import_file: (args) => {
+          try {
+            const content = args.content;
+            const config = JSON.parse(content);
+
+            // Check version
+            if (!config.version || parseFloat(config.version) < 1.0) {
+              return {
+                valid: false,
+                version: config.version || 'unknown',
+                exportDate: '',
+                accountCount: 0,
+                xmltvSourceCount: 0,
+                channelMappingCount: 0,
+                xmltvChannelSettingsCount: 0,
+                settingsSummary: [],
+                errorMessage: 'Unsupported configuration version: ' + (config.version || 'unknown') + '. Minimum supported: 1.0',
+              };
+            }
+
+            const data = config.data || {};
+            const settings = data.settings || {};
+            const settingsSummary = [];
+            if (settings.server_port) settingsSummary.push('Server port: ' + settings.server_port);
+            if (settings.autostart_enabled) settingsSummary.push('Autostart: ' + (settings.autostart_enabled === 'true' ? 'enabled' : 'disabled'));
+
+            return {
+              valid: true,
+              version: config.version,
+              exportDate: config.exportDate || '',
+              accountCount: (data.accounts || []).length,
+              xmltvSourceCount: (data.xmltv_sources || []).length,
+              channelMappingCount: (data.channel_mappings || []).length,
+              xmltvChannelSettingsCount: (data.xmltv_channel_settings || []).length,
+              settingsSummary: settingsSummary,
+              errorMessage: null,
+            };
+          } catch (e) {
+            return {
+              valid: false,
+              version: '',
+              exportDate: '',
+              accountCount: 0,
+              xmltvSourceCount: 0,
+              channelMappingCount: 0,
+              xmltvChannelSettingsCount: 0,
+              settingsSummary: [],
+              errorMessage: 'Invalid JSON format: ' + e.message,
+            };
+          }
+        },
+
+        import_configuration: (args) => {
+          try {
+            const config = JSON.parse(args.content);
+            const data = config.data || {};
+            const settings = data.settings || {};
+
+            // Apply settings to state
+            if (settings.server_port) {
+              window.__SETTINGS_STATE__.serverPort = parseInt(settings.server_port, 10);
+            }
+            if (settings.autostart_enabled) {
+              window.__SETTINGS_STATE__.autostartEnabled = settings.autostart_enabled === 'true';
+              window.__AUTOSTART_STATE__.enabled = window.__SETTINGS_STATE__.autostartEnabled;
+            }
+            if (settings.epg_schedule_hour) {
+              window.__SETTINGS_STATE__.epgSchedule.hour = parseInt(settings.epg_schedule_hour, 10);
+            }
+            if (settings.epg_schedule_minute) {
+              window.__SETTINGS_STATE__.epgSchedule.minute = parseInt(settings.epg_schedule_minute, 10);
+            }
+            if (settings.epg_schedule_enabled) {
+              window.__SETTINGS_STATE__.epgSchedule.enabled = settings.epg_schedule_enabled === 'true';
+            }
+
+            // Store mock accounts/sources for later verification
+            window.__MOCK_ACCOUNTS__ = data.accounts || [];
+            window.__MOCK_XMLTV_SOURCES__ = data.xmltv_sources || [];
+
+            return {
+              success: true,
+              accountsImported: (data.accounts || []).length,
+              xmltvSourcesImported: (data.xmltv_sources || []).length,
+              channelMappingsImported: 0,
+              settingsImported: Object.keys(settings).length,
+              message: 'Configuration imported successfully.',
+            };
+          } catch (e) {
+            return {
+              success: false,
+              accountsImported: 0,
+              xmltvSourcesImported: 0,
+              channelMappingsImported: 0,
+              settingsImported: 0,
+              message: 'Import failed: ' + e.message,
+            };
+          }
+        },
+      };
+
+      async function mockInvoke(cmd, args = {}) {
+        console.log('[Tauri Mock] Invoke:', cmd, args);
+
+        if (mockCommands[cmd]) {
+          try {
+            const result = await Promise.resolve(mockCommands[cmd](args));
+            console.log('[Tauri Mock] Result:', cmd, result);
+            return result;
+          } catch (error) {
+            console.error('[Tauri Mock] Error:', cmd, error);
+            throw error;
+          }
+        }
+
+        console.warn('[Tauri Mock] Unknown command:', cmd);
+        throw new Error(\`Unknown command: \${cmd}\`);
+      }
+
+      window.__TAURI_INTERNALS__ = {
+        invoke: mockInvoke,
+        metadata: {
+          currentWindow: { label: 'main' },
+          currentWebview: { label: 'main' },
+          windows: [{ label: 'main' }],
+          webviews: [{ label: 'main' }],
+        },
+        plugins: {
+          autostart: {
+            isEnabled: async () => window.__SETTINGS_STATE__.autostartEnabled,
+            enable: async () => { window.__SETTINGS_STATE__.autostartEnabled = true; window.__AUTOSTART_STATE__.enabled = true; persistState(); },
+            disable: async () => { window.__SETTINGS_STATE__.autostartEnabled = false; window.__AUTOSTART_STATE__.enabled = false; persistState(); },
+          },
+        },
+      };
+
+      window.__TAURI_MOCK__ = {
+        invoke: mockInvoke,
+        commands: mockCommands,
+        getState: () => window.__SETTINGS_STATE__,
+        setState: (state) => {
+          window.__SETTINGS_STATE__ = { ...window.__SETTINGS_STATE__, ...state };
+          if (state.autostartEnabled !== undefined) {
+            window.__AUTOSTART_STATE__.enabled = state.autostartEnabled;
+          }
+          persistState();
+        },
+        clearPersistedState: () => {
+          localStorage.removeItem(STORAGE_KEY);
+          console.log('[Tauri Mock] Cleared persisted state');
+        },
+      };
+
+      console.log('[Tauri Mock] Settings stateful mock initialized:', window.__SETTINGS_STATE__);
+    })();
+  `;
+
+  await page.addInitScript(mockScript);
+}
+
+/**
+ * Seed test events in the mock for E2E tests
+ *
+ * Story 6-4: Event Log Viewer with Notification Badge
+ *
+ * @param page - Playwright page object
+ * @param events - Array of test events to seed
+ */
+export async function seedTestEvents(
+  page: Page,
+  events: Array<{
+    level: 'info' | 'warn' | 'error';
+    category: string;
+    message: string;
+    details?: string;
+    isRead?: boolean;
+    timestamp?: string;
+  }>
+): Promise<void> {
+  await page.evaluate((testEvents) => {
+    const EVENT_LOG_KEY = '__TAURI_MOCK_EVENT_LOG__';
+
+    // Load existing state from localStorage or initialize
+    let state;
+    try {
+      const stored = localStorage.getItem(EVENT_LOG_KEY);
+      if (stored) {
+        state = JSON.parse(stored);
+      } else {
+        state = { events: [], nextId: 1 };
+      }
+    } catch (e) {
+      state = { events: [], nextId: 1 };
+    }
+
+    testEvents.forEach((e) => {
+      const event = {
+        id: state.nextId++,
+        timestamp: e.timestamp || new Date().toISOString(),
+        level: e.level,
+        category: e.category,
+        message: e.message,
+        details: e.details || null,
+        isRead: e.isRead ?? false
+      };
+      state.events.push(event);
+    });
+
+    // Sort by timestamp descending
+    state.events.sort((a: any, b: any) => b.timestamp.localeCompare(a.timestamp));
+
+    // Persist to localStorage for survival across page reloads
+    try {
+      localStorage.setItem(EVENT_LOG_KEY, JSON.stringify(state));
+    } catch (e) {
+      console.error('[Tauri Mock] Failed to persist event log state:', e);
+    }
+
+    // Also update in-memory state
+    (window as any).__EVENT_LOG_STATE__ = state;
+
+    console.log('[Tauri Mock] Seeded', testEvents.length, 'test events');
+  }, events);
+}
+
+/**
+ * Clear all test events from the mock
+ *
+ * @param page - Playwright page object
+ */
+export async function clearTestEvents(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const EVENT_LOG_KEY = '__TAURI_MOCK_EVENT_LOG__';
+    localStorage.removeItem(EVENT_LOG_KEY);
+    (window as any).__EVENT_LOG_STATE__ = { events: [], nextId: 1 };
+    console.log('[Tauri Mock] Cleared all test events');
+  });
+}

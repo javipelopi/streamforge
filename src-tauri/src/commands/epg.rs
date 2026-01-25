@@ -2,6 +2,8 @@
 //!
 //! This module provides commands for adding, retrieving, updating, and deleting
 //! XMLTV source URLs for EPG data, as well as refreshing EPG data from sources.
+//!
+//! Story 6-3: EPG event logging for refresh success/failure
 
 use std::collections::HashMap;
 
@@ -10,6 +12,7 @@ use serde::Serialize;
 use tauri::State;
 use thiserror::Error;
 
+use crate::commands::logs::log_event_internal;
 use crate::db::{
     schema::{channel_mappings, programs, xmltv_channel_settings, xmltv_channels, xmltv_sources},
     ChannelMapping, DbConnection, NewChannelMapping, NewProgram, NewXmltvChannel,
@@ -534,6 +537,7 @@ const BATCH_SIZE: usize = 500;
 
 /// Refresh EPG data for a single source
 ///
+/// Story 6-3: Logs EPG refresh success/failure events.
 /// Downloads, parses, and stores XMLTV data from the source URL.
 /// Clears existing data before inserting new data.
 #[tauri::command]
@@ -557,13 +561,53 @@ pub async fn refresh_epg_source(
             }
         })?;
 
-    // Fetch and parse XMLTV data
-    let data = fetch_xmltv(&source.url, &source.format)
-        .await
-        .map_err(EpgSourceError::from)?;
+    let source_name = source.name.clone();
 
-    let (parsed_channels, parsed_programs) =
-        parse_xmltv_data(&data).map_err(EpgSourceError::from)?;
+    // Fetch and parse XMLTV data
+    let data = match fetch_xmltv(&source.url, &source.format).await {
+        Ok(d) => d,
+        Err(e) => {
+            // Story 6-3: Log EPG fetch failure (AC #2)
+            let epg_error = EpgSourceError::from(e);
+            let details = serde_json::json!({
+                "sourceId": source_id,
+                "sourceName": source_name,
+                "error": epg_error.to_string(),
+            });
+            let _ = log_event_internal(
+                &mut conn,
+                "error",
+                "epg",
+                &format!("EPG refresh failed: {} - {}", source_name, epg_error),
+                Some(&details.to_string()),
+            );
+            return Err(epg_error.to_string());
+        }
+    };
+
+    let (parsed_channels, parsed_programs) = match parse_xmltv_data(&data) {
+        Ok(result) => result,
+        Err(e) => {
+            // Story 6-3: Log EPG parse failure (AC #2)
+            let epg_error = EpgSourceError::from(e);
+            let details = serde_json::json!({
+                "sourceId": source_id,
+                "sourceName": source_name,
+                "error": epg_error.to_string(),
+            });
+            let _ = log_event_internal(
+                &mut conn,
+                "error",
+                "epg",
+                &format!("EPG parse failed: {} - {}", source_name, epg_error),
+                Some(&details.to_string()),
+            );
+            return Err(epg_error.to_string());
+        }
+    };
+
+    let channel_count = parsed_channels.len();
+    let program_count = parsed_programs.len();
 
     // Wrap all database operations in a transaction for atomicity
     conn.transaction::<_, EpgSourceError, _>(|conn| {
@@ -651,6 +695,21 @@ pub async fn refresh_epg_source(
             .set(xmltv_sources::last_refresh.eq(&now))
             .execute(conn)
             .map_err(|e| EpgSourceError::DatabaseError(e.to_string()))?;
+
+        // Story 6-3: Log EPG refresh success (AC #1)
+        let details = serde_json::json!({
+            "sourceId": source_id,
+            "sourceName": source_name,
+            "channelCount": channel_count,
+            "programCount": program_count,
+        });
+        let _ = log_event_internal(
+            conn,
+            "info",
+            "epg",
+            &format!("EPG refresh completed: {} ({} channels, {} programs)", source_name, channel_count, program_count),
+            Some(&details.to_string()),
+        );
 
         Ok(())
     }).map_err(|e: EpgSourceError| e.to_string())?;

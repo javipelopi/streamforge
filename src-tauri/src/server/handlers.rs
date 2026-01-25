@@ -20,8 +20,7 @@ use super::m3u;
 use super::state::AppState;
 use super::stream::{build_stream_url, select_best_quality, StreamSession};
 use crate::credentials::CredentialManager;
-use crate::db::models::NewEventLog;
-use crate::db::schema::{accounts, channel_mappings, event_log, xmltv_channel_settings, xtream_channels};
+use crate::db::schema::{accounts, channel_mappings, xmltv_channel_settings, xtream_channels};
 
 /// Health check response structure
 #[derive(Serialize)]
@@ -661,16 +660,22 @@ async fn try_connect_stream(
 }
 
 /// Log tuner limit event to event_log table
+///
+/// Story 6-3: Updated to use log_event_internal for verbosity support.
 fn log_tuner_limit_event(conn: &mut crate::db::DbPooledConnection, channel_id: i32) {
-    let event = NewEventLog::warn(
-        "stream",
-        format!("Tuner limit reached - rejected stream request for channel {}", channel_id),
-    );
+    use crate::commands::logs::log_event_internal;
 
-    if let Err(e) = diesel::insert_into(event_log::table)
-        .values(&event)
-        .execute(conn)
-    {
+    let details_json = serde_json::json!({
+        "channelId": channel_id,
+    });
+
+    if let Err(e) = log_event_internal(
+        conn,
+        "warn",
+        "stream",
+        &format!("Tuner limit reached - rejected stream request for channel {}", channel_id),
+        Some(&details_json.to_string()),
+    ) {
         eprintln!("Failed to log tuner limit event: {}", e);
     }
 }
