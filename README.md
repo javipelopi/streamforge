@@ -32,13 +32,28 @@ StreamForge acts as a bridge between your Xtream Codes IPTV provider and Plex Me
 - **Automatic Channel Matching** - Intelligently matches IPTV streams to EPG channels
 - **Quality-Based Stream Selection** - Automatically select HD, FHD, or 4K streams based on availability
 - **Multiple Provider Support** - Manage multiple Xtream Codes accounts
+- **Secure Credential Storage** - Uses OS Keychain for password protection
 - **System Tray Integration** - Runs quietly in the background
+
+## Documentation
+
+For a deep dive into the system design, components, and data flow, please refer to the **[Architecture Documentation](ARCHITECTURE.md)**.
+
+## Project Structure
+
+- **`src/`** - Frontend (React, TypeScript, Zustand, Tailwind)
+- **`src-tauri/`** - Backend (Rust, Axum, Diesel, Tauri)
+  - **`src/server/`** - HDHomeRun emulation server
+  - **`src/xtream/`** - Xtream Codes API client
+  - **`src/matcher/`** - Channel matching logic
+  - **`src/db/`** - Database schema and models
+  - **`src/credentials/`** - Secure credential storage
 
 ## Tech Stack
 
 - **Backend**: Rust + Tauri 2.0 + Axum + Diesel/SQLite
 - **Frontend**: React 18 + TypeScript + Tailwind + Zustand
-- **Testing**: Playwright
+- **Testing**: Playwright (E2E), Rust `cargo test`
 
 ## Getting Started
 
@@ -129,6 +144,12 @@ StreamForge stores its data in the platform-specific application data directory:
 - **macOS**: `~/Library/Application Support/com.streamforge.app/`
 - **Windows**: `%APPDATA%\com.streamforge.app\`
 - **Linux**: `~/.local/share/com.streamforge.app/`
+
+## Troubleshooting
+
+- **FFmpeg not found**: Ensure `ffmpeg` is in your system PATH. StreamForge relies on it for stream processing.
+- **Plex not finding device**: Check that StreamForge is running and your firewall allows traffic on the configured port (usually 3000 or randomly assigned).
+- **Channels not playing**: Verify your Xtream provider is active and supports the number of concurrent connections you are attempting.
 
 ## License
 
