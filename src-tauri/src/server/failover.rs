@@ -285,16 +285,7 @@ pub fn get_all_streams_for_channel(
     // ORDER BY stream_priority ASC, is_primary DESC ensures:
     // - Lower priority numbers tried first
     // - Primary streams tried first among equal priority
-    let results: Vec<(
-        i32,           // xtream_channel_id
-        i32,           // stream_id
-        Option<i32>,   // stream_priority
-        Option<String>, // qualities JSON
-        String,        // server_url
-        String,        // username
-        Vec<u8>,       // password_encrypted
-        i32,           // account_id
-    )> = channel_mappings::table
+    let query_result = channel_mappings::table
         .inner_join(
             xtream_channels::table
                 .on(channel_mappings::xtream_channel_id.eq(xtream_channels::id.assume_not_null())),
@@ -318,11 +309,29 @@ pub fn get_all_streams_for_channel(
             accounts::password_encrypted,
             accounts::id.assume_not_null(),
         ))
-        .load(conn)
-        .map_err(|e| {
-            eprintln!("Failover - database query failed: {}", e);
-            FailoverError::DatabaseError(e.to_string())
-        })?;
+        .load::<(i32, i32, Option<i32>, Option<String>, String, String, Vec<u8>, i32)>(conn);
+
+    let results = match query_result {
+        Ok(r) => r,
+        Err(e) => {
+            // Log to event log for visibility in UI
+            // Note: We log the failure but continue with the error return regardless
+            if let Err(log_err) = crate::commands::logs::log_event_internal(
+                conn,
+                "error",
+                "stream",
+                &format!("Failover database query failed for channel {}: {}", xmltv_channel_id, e),
+                Some(&serde_json::json!({
+                    "channelId": xmltv_channel_id,
+                    "error": e.to_string(),
+                }).to_string().as_str()),
+            ) {
+                eprintln!("[ERROR] Failed to log failover error to database: {}", log_err);
+            }
+            eprintln!("[ERROR] stream: Failover database query failed for channel {}: {}", xmltv_channel_id, e);
+            return Err(FailoverError::DatabaseError(e.to_string()));
+        }
+    };
 
     // Convert to BackupStream structs
     let streams = results

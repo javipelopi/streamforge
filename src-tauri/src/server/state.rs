@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
+use crate::commands::logs::log_event_internal;
 use crate::db::{schema::settings, DbPool, DbPooledConnection};
 use super::stream::StreamManager;
 
@@ -22,8 +23,12 @@ pub struct EpgCache {
 
 /// Application state for the HTTP server
 ///
-/// Holds shared resources needed by request handlers, primarily
-/// the database connection pool, caches, stream manager, and app data directory.
+/// Holds shared resources needed by request handlers:
+/// - Database connection pool for queries
+/// - EPG cache for XMLTV responses
+/// - Stream manager for tracking active sessions and connection limits
+/// - App data directory for credential retrieval
+/// - Event logging methods for UI visibility (`log_event`, `log_stream_event`)
 #[derive(Clone)]
 pub struct AppState {
     pool: DbPool,
@@ -161,5 +166,99 @@ impl AppState {
     /// Get reference to the app data directory
     pub fn app_data_dir(&self) -> &PathBuf {
         &self.app_data_dir
+    }
+
+    /// Log an event to the database event log
+    ///
+    /// This routes server events to the event log system so they can be
+    /// viewed in the UI. Also prints to stderr for console visibility.
+    ///
+    /// # Arguments
+    /// * `level` - "info", "warn", or "error"
+    /// * `category` - "stream", "connection", "provider", "system", etc.
+    /// * `message` - Human-readable message
+    /// * `details` - Optional JSON details
+    ///
+    /// # Note
+    /// This method acquires a database connection from the pool for each call.
+    /// The connection pool (r2d2) handles contention efficiently, but callers
+    /// should avoid excessive logging in tight loops. For high-frequency events,
+    /// consider batching or rate-limiting at the call site.
+    pub fn log_event(&self, level: &str, category: &str, message: &str, details: Option<&str>) {
+        // Always print to stderr for console visibility
+        let level_tag = match level {
+            "error" => "[ERROR]",
+            "warn" => "[WARN]",
+            _ => "[INFO]",
+        };
+        if let Some(d) = details {
+            eprintln!("{} {}: {} - {}", level_tag, category, message, d);
+        } else {
+            eprintln!("{} {}: {}", level_tag, category, message);
+        }
+
+        // Log to database event log
+        if let Ok(mut conn) = self.get_connection() {
+            if let Err(e) = log_event_internal(&mut conn, level, category, message, details) {
+                eprintln!("[ERROR] Failed to log event to database: {}", e);
+            }
+        }
+    }
+
+    /// Log a stream-related event (convenience method)
+    pub fn log_stream_event(&self, level: &str, message: &str, details: Option<&str>) {
+        self.log_event(level, "stream", message, details);
+    }
+
+    /// Log a connection-related event (convenience method)
+    ///
+    /// Use for upstream IPTV provider connection issues (DNS, timeout, auth).
+    pub fn log_connection_event(&self, level: &str, message: &str, details: Option<&str>) {
+        self.log_event(level, "connection", message, details);
+    }
+
+    /// Log a system-related event (convenience method)
+    ///
+    /// Use for M3U, EPG, HDHomeRun, and other system-level operations.
+    pub fn log_system_event(&self, level: &str, message: &str, details: Option<&str>) {
+        self.log_event(level, "system", message, details);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_server_port_constant() {
+        assert_eq!(DEFAULT_SERVER_PORT, 5004);
+    }
+
+    #[test]
+    fn test_default_max_connections_constant() {
+        assert_eq!(DEFAULT_MAX_CONNECTIONS, 2);
+    }
+
+    #[test]
+    fn test_epg_cache_creation() {
+        let cache = EpgCache {
+            content: "test content".to_string(),
+            etag: "abc123".to_string(),
+            generated_at: Instant::now(),
+        };
+        assert_eq!(cache.content, "test content");
+        assert_eq!(cache.etag, "abc123");
+    }
+
+    #[test]
+    fn test_epg_cache_clone() {
+        let cache = EpgCache {
+            content: "original".to_string(),
+            etag: "etag1".to_string(),
+            generated_at: Instant::now(),
+        };
+        let cloned = cache.clone();
+        assert_eq!(cloned.content, "original");
+        assert_eq!(cloned.etag, "etag1");
     }
 }
