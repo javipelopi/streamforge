@@ -61,14 +61,22 @@ pub async fn playlist_m3u(State(state): State<AppState>) -> Result<impl IntoResp
     let mut conn = state
         .get_connection()
         .map_err(|e| {
-            eprintln!("M3U playlist error - database connection failed: {}", e);
+            state.log_system_event(
+                "error",
+                &format!("M3U playlist - database connection failed: {}", e),
+                Some(&serde_json::json!({"error": e.to_string()}).to_string()),
+            );
             (StatusCode::INTERNAL_SERVER_ERROR, "Service temporarily unavailable".to_string())
         })?;
 
     let port = state.get_port();
     let m3u_content = m3u::generate_m3u_playlist(&mut conn, port)
         .map_err(|e| {
-            eprintln!("M3U playlist error - generation failed: {}", e);
+            state.log_system_event(
+                "error",
+                &format!("M3U playlist - generation failed: {}", e),
+                Some(&serde_json::json!({"error": e.to_string()}).to_string()),
+            );
             (StatusCode::INTERNAL_SERVER_ERROR, "Unable to generate playlist".to_string())
         })?;
 
@@ -161,7 +169,11 @@ pub async fn epg_xml(
 
     // Cache miss - generate fresh EPG
     let mut conn = state.get_connection().map_err(|e| {
-        eprintln!("EPG endpoint error - database connection failed: {}", e);
+        state.log_system_event(
+            "error",
+            &format!("EPG endpoint - database connection failed: {}", e),
+            Some(&serde_json::json!({"error": e.to_string()}).to_string()),
+        );
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal server error".to_string(),
@@ -169,7 +181,11 @@ pub async fn epg_xml(
     })?;
 
     let xml_content = epg::generate_xmltv_epg(&mut conn).map_err(|e| {
-        eprintln!("EPG endpoint error - generation failed: {}", e);
+        state.log_system_event(
+            "error",
+            &format!("EPG endpoint - generation failed: {}", e),
+            Some(&serde_json::json!({"error": e.to_string()}).to_string()),
+        );
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal server error".to_string(),
@@ -228,7 +244,11 @@ pub async fn discover_json(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let mut conn = state.get_connection().map_err(|e| {
-        eprintln!("HDHR discover error - database connection failed: {}", e);
+        state.log_system_event(
+            "error",
+            &format!("HDHR discover - database connection failed: {}", e),
+            Some(&serde_json::json!({"error": e.to_string()}).to_string()),
+        );
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal server error".to_string(),
@@ -237,7 +257,11 @@ pub async fn discover_json(
 
     let port = state.get_port();
     let response = hdhr::generate_discover_response(&mut conn, port).map_err(|e| {
-        eprintln!("HDHR discover error - generation failed: {}", e);
+        state.log_system_event(
+            "error",
+            &format!("HDHR discover - generation failed: {}", e),
+            Some(&serde_json::json!({"error": e.to_string()}).to_string()),
+        );
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal server error".to_string(),
@@ -266,7 +290,11 @@ pub async fn lineup_json(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let mut conn = state.get_connection().map_err(|e| {
-        eprintln!("HDHR lineup error - database connection failed: {}", e);
+        state.log_system_event(
+            "error",
+            &format!("HDHR lineup - database connection failed: {}", e),
+            Some(&serde_json::json!({"error": e.to_string()}).to_string()),
+        );
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal server error".to_string(),
@@ -275,7 +303,11 @@ pub async fn lineup_json(
 
     let port = state.get_port();
     let lineup = hdhr::generate_lineup(&mut conn, port).map_err(|e| {
-        eprintln!("HDHR lineup error - generation failed: {}", e);
+        state.log_system_event(
+            "error",
+            &format!("HDHR lineup - generation failed: {}", e),
+            Some(&serde_json::json!({"error": e.to_string()}).to_string()),
+        );
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal server error".to_string(),
@@ -347,17 +379,17 @@ pub async fn stream_proxy(
     // Step 1: Check connection limit FIRST (before expensive DB/crypto operations)
     let stream_manager = state.stream_manager();
     if !stream_manager.can_start_stream() {
-        eprintln!(
-            "Stream proxy error - tuner limit reached ({}/{}) for channel {}",
-            stream_manager.active_count(),
-            stream_manager.max_connections(),
-            channel_id
+        let details = serde_json::json!({
+            "channelId": channel_id,
+            "activeConnections": stream_manager.active_count(),
+            "maxConnections": stream_manager.max_connections(),
+        });
+        state.log_stream_event(
+            "warn",
+            &format!("Tuner limit reached ({}/{}) - rejected channel {}",
+                stream_manager.active_count(), stream_manager.max_connections(), channel_id),
+            Some(&details.to_string()),
         );
-
-        // Log tuner limit event (requires DB connection)
-        if let Ok(mut conn) = state.get_connection() {
-            log_tuner_limit_event(&mut conn, channel_id);
-        }
 
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
@@ -367,7 +399,14 @@ pub async fn stream_proxy(
 
     // Step 2: Get database connection
     let mut conn = state.get_connection().map_err(|e| {
-        eprintln!("Stream proxy error - database connection failed: {}", e);
+        state.log_stream_event(
+            "error",
+            &format!("Database connection failed for channel {}: {}", channel_id, e),
+            Some(&serde_json::json!({
+                "channelId": channel_id,
+                "error": e.to_string(),
+            }).to_string()),
+        );
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal server error".to_string(),
@@ -381,7 +420,14 @@ pub async fn stream_proxy(
         .first(&mut conn)
         .optional()
         .map_err(|e| {
-            eprintln!("Stream lookup error - settings query failed: {}", e);
+            state.log_stream_event(
+                "error",
+                &format!("Settings query failed for channel {}: {}", channel_id, e),
+                Some(&serde_json::json!({
+                    "channelId": channel_id,
+                    "error": e.to_string(),
+                }).to_string()),
+            );
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_string(),
@@ -395,9 +441,13 @@ pub async fn stream_proxy(
 
     // Step 4: Load ALL available streams for failover (Story 4-5)
     let available_streams = get_all_streams_for_channel(&mut conn, channel_id).map_err(|e| {
-        eprintln!(
-            "Stream proxy error - stream lookup failed for channel {}: {}",
-            channel_id, e
+        state.log_stream_event(
+            "error",
+            &format!("Stream lookup failed for channel {}: {}", channel_id, e),
+            Some(&serde_json::json!({
+                "channelId": channel_id,
+                "error": e.to_string(),
+            }).to_string()),
         );
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -420,7 +470,14 @@ pub async fn stream_proxy(
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         .build()
         .map_err(|e| {
-            eprintln!("Stream proxy error - HTTP client creation failed: {}", e);
+            state.log_stream_event(
+                "error",
+                &format!("HTTP client creation failed for channel {}: {}", channel_id, e),
+                Some(&serde_json::json!({
+                    "channelId": channel_id,
+                    "error": e.to_string(),
+                }).to_string()),
+            );
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_string(),
@@ -435,9 +492,14 @@ pub async fn stream_proxy(
     loop {
         // Check total failover timeout
         if failover_start.elapsed() > FAILOVER_TOTAL_TIMEOUT {
-            eprintln!(
-                "Stream proxy error - failover timeout exceeded for channel {}",
-                channel_id
+            state.log_stream_event(
+                "error",
+                &format!("Failover timeout exceeded for channel {} ({}ms)", channel_id, failover_start.elapsed().as_millis()),
+                Some(&serde_json::json!({
+                    "channelId": channel_id,
+                    "elapsedMs": failover_start.elapsed().as_millis(),
+                    "timeoutMs": FAILOVER_TOTAL_TIMEOUT.as_millis(),
+                }).to_string()),
             );
             break;
         }
@@ -448,7 +510,7 @@ pub async fn stream_proxy(
         };
 
         // Try to connect to current stream
-        match try_connect_stream(&client, &credential_manager, &current_stream).await {
+        match try_connect_stream(&client, &credential_manager, &current_stream, &state).await {
             Ok((url, response)) => {
                 // Success! Log failover if we're not on the first stream
                 if failover_state.is_on_backup() {
@@ -468,9 +530,16 @@ pub async fn stream_proxy(
                 break;
             }
             Err(reason) => {
-                eprintln!(
-                    "Stream proxy - stream {} failed for channel {}: {}",
-                    current_stream.stream_id, channel_id, reason
+                state.log_stream_event(
+                    "warn",
+                    &format!("Stream {} failed for channel {}: {}", current_stream.stream_id, channel_id, reason),
+                    Some(&serde_json::json!({
+                        "channelId": channel_id,
+                        "streamId": current_stream.stream_id,
+                        "accountId": current_stream.account_id,
+                        "priority": current_stream.stream_priority,
+                        "reason": reason.to_string(),
+                    }).to_string()),
                 );
                 last_failure_reason = Some(reason);
 
@@ -492,10 +561,15 @@ pub async fn stream_proxy(
                 let _ = log_failover_event(&mut conn, channel_id, from_stream_id, None, reason);
             }
 
-            eprintln!(
-                "Stream proxy error - all {} streams failed for channel {}",
-                failover_state.stream_count(),
-                channel_id
+            state.log_stream_event(
+                "error",
+                &format!("All {} streams failed for channel {}", failover_state.stream_count(), channel_id),
+                Some(&serde_json::json!({
+                    "channelId": channel_id,
+                    "streamCount": failover_state.stream_count(),
+                    "elapsedMs": failover_start.elapsed().as_millis(),
+                    "lastReason": last_failure_reason.as_ref().map(|r| r.to_string()),
+                }).to_string()),
             );
             return Err((
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -514,9 +588,15 @@ pub async fn stream_proxy(
 
     let session = StreamSession::new(channel_id, stream_info.stream_id, quality.clone());
     let session_id = stream_manager.start_session(session).ok_or_else(|| {
-        eprintln!(
-            "Stream proxy error - failed to start session (limit reached) for channel {}",
-            channel_id
+        state.log_stream_event(
+            "warn",
+            &format!("Failed to start session (limit reached) for channel {}", channel_id),
+            Some(&serde_json::json!({
+                "channelId": channel_id,
+                "streamId": stream_info.stream_id,
+                "activeConnections": stream_manager.active_count(),
+                "maxConnections": stream_manager.max_connections(),
+            }).to_string()),
         );
         (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -546,7 +626,15 @@ pub async fn stream_proxy(
         stream_manager.clone(),
     ).map_err(|e| {
         stream_manager.end_session(&session_id);
-        eprintln!("Stream proxy error - FFmpeg failed to start: {}", e);
+        state.log_stream_event(
+            "error",
+            &format!("FFmpeg failed to start for channel {}: {}", channel_id, e),
+            Some(&serde_json::json!({
+                "channelId": channel_id,
+                "streamId": stream_info.stream_id,
+                "error": e.to_string(),
+            }).to_string()),
+        );
         (
             StatusCode::SERVICE_UNAVAILABLE,
             format!("Stream processing unavailable: {}", e),
@@ -611,14 +699,20 @@ async fn try_connect_stream(
     client: &reqwest::Client,
     credential_manager: &CredentialManager,
     stream: &BackupStream,
+    state: &AppState,
 ) -> Result<(String, reqwest::Response), FailureReason> {
     // Decrypt password
     let password = credential_manager
         .retrieve_password(&stream.account_id.to_string(), &stream.password_encrypted)
         .map_err(|e| {
-            eprintln!(
-                "Stream failover - credential decryption failed for account {}: {}",
-                stream.account_id, e
+            state.log_connection_event(
+                "error",
+                &format!("Credential decryption failed for account {}: {}", stream.account_id, e),
+                Some(&serde_json::json!({
+                    "accountId": stream.account_id,
+                    "streamId": stream.stream_id,
+                    "error": e.to_string(),
+                }).to_string()),
             );
             FailureReason::ConnectionError(format!("Credential error: {}", e))
         })?;
@@ -639,9 +733,14 @@ async fn try_connect_stream(
         stream.stream_id,
     );
 
-    eprintln!(
-        "Stream failover - trying stream {} (priority {}, quality {})",
-        stream.stream_id, stream.stream_priority, quality
+    state.log_connection_event(
+        "info",
+        &format!("Trying stream {} (priority {}, quality {})", stream.stream_id, stream.stream_priority, quality),
+        Some(&serde_json::json!({
+            "streamId": stream.stream_id,
+            "priority": stream.stream_priority,
+            "quality": quality,
+        }).to_string()),
     );
 
     // Attempt connection
@@ -657,27 +756,6 @@ async fn try_connect_stream(
     }
 
     Ok((stream_url, response))
-}
-
-/// Log tuner limit event to event_log table
-///
-/// Story 6-3: Updated to use log_event_internal for verbosity support.
-fn log_tuner_limit_event(conn: &mut crate::db::DbPooledConnection, channel_id: i32) {
-    use crate::commands::logs::log_event_internal;
-
-    let details_json = serde_json::json!({
-        "channelId": channel_id,
-    });
-
-    if let Err(e) = log_event_internal(
-        conn,
-        "warn",
-        "stream",
-        &format!("Tuner limit reached - rejected stream request for channel {}", channel_id),
-        Some(&details_json.to_string()),
-    ) {
-        eprintln!("Failed to log tuner limit event: {}", e);
-    }
 }
 
 /// Test data seeding endpoint (only available when IPTV_TEST_MODE=1)
@@ -700,7 +778,11 @@ pub async fn seed_test_data(
     }
 
     let mut conn = state.get_connection().map_err(|e| {
-        eprintln!("Test seed error - database connection failed: {}", e);
+        state.log_system_event(
+            "error",
+            &format!("Test seed - database connection failed: {}", e),
+            Some(&serde_json::json!({"error": e.to_string()}).to_string()),
+        );
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Database connection failed".to_string(),
@@ -739,7 +821,11 @@ pub async fn clear_test_data_endpoint(
     }
 
     let mut conn = state.get_connection().map_err(|e| {
-        eprintln!("Test clear error - database connection failed: {}", e);
+        state.log_system_event(
+            "error",
+            &format!("Test clear - database connection failed: {}", e),
+            Some(&serde_json::json!({"error": e.to_string()}).to_string()),
+        );
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Database connection failed".to_string(),
