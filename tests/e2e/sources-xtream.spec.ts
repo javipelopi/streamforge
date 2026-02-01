@@ -436,10 +436,8 @@ test.describe('Sources View - Xtream Tab (Story 3-11)', () => {
       const linkedPopover = page.locator('[data-testid="linked-channels-popover"]');
       await expect(linkedPopover).toBeVisible({ timeout: 2000 });
 
-      // Should display XMLTV channel IDs (in a real scenario, would show names)
-      for (const xmltvId of linkedStream.linkedXmltvIds) {
-        await expect(linkedPopover).toContainText(xmltvId.toString());
-      }
+      // Should display count of linked XMLTV channels
+      await expect(linkedPopover).toContainText(`${linkedStream.linkedXmltvIds.length}`);
     });
 
     test('should unlink stream and update badge when "Unlink" clicked', async ({
@@ -580,7 +578,7 @@ test.describe('Sources View - Xtream Tab (Story 3-11)', () => {
       await expect(promotedBadge).toBeVisible({ timeout: 1000 });
     });
 
-    test('should open stream search dropdown when "Link to XMLTV" clicked', async ({
+    test('should open link to XMLTV dialog when "Link to XMLTV" clicked', async ({
       page,
       xtreamSourcesWithStreams,
     }) => {
@@ -601,12 +599,12 @@ test.describe('Sources View - Xtream Tab (Story 3-11)', () => {
       );
       await linkButton.click();
 
-      // THEN: Stream search dropdown opens
-      const searchDropdown = page.locator('[data-testid="stream-search-dropdown"]');
-      await expect(searchDropdown).toBeVisible({ timeout: 2000 });
+      // THEN: Link to XMLTV dialog opens
+      const linkDialog = page.locator('[data-testid="link-to-xmltv-dialog"]');
+      await expect(linkDialog).toBeVisible({ timeout: 2000 });
 
       // Has search input
-      const searchInput = page.locator('[data-testid="stream-search-input"]');
+      const searchInput = page.locator('[data-testid="xmltv-search-input"]');
       await expect(searchInput).toBeVisible();
     });
   });

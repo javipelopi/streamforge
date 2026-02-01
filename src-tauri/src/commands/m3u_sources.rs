@@ -45,6 +45,10 @@ pub struct M3uChannelResponse {
     pub tvg_name: Option<String>,
     pub tvg_logo: Option<String>,
     pub group_title: Option<String>,
+    /// "linked" | "orphan" | "promoted"
+    pub link_status: String,
+    /// XMLTV channel IDs this channel is linked to
+    pub linked_xmltv_ids: Vec<i32>,
 }
 
 /// Input for adding a new M3U source
@@ -408,12 +412,14 @@ pub fn delete_m3u_source(db: State<DbConnection>, source_id: i32) -> Result<(), 
 ///
 /// # Returns
 ///
-/// List of channels from the source
+/// List of channels from the source with link status
 #[tauri::command]
 pub fn get_m3u_channels(
     db: State<DbConnection>,
     source_id: i32,
 ) -> Result<Vec<M3uChannelResponse>, String> {
+    use crate::db::schema::{channel_mappings, xmltv_channels};
+
     if source_id <= 0 {
         return Err("Invalid source ID".to_string());
     }
@@ -428,11 +434,62 @@ pub fn get_m3u_channels(
         .load(&mut conn)
         .map_err(|e| format!("Failed to load M3U channels: {}", e))?;
 
+    // Get all channel mappings for M3U channels in this source
+    let channel_ids: Vec<i32> = channels.iter().filter_map(|ch| ch.id).collect();
+
+    let mappings: Vec<(Option<i32>, i32)> = channel_mappings::table
+        .filter(channel_mappings::m3u_channel_id.is_not_null())
+        .filter(channel_mappings::m3u_channel_id.eq_any(&channel_ids))
+        .select((
+            channel_mappings::m3u_channel_id,
+            channel_mappings::xmltv_channel_id,
+        ))
+        .load(&mut conn)
+        .unwrap_or_default();
+
+    // Check which xmltv_channels are synthetic (promoted)
+    let xmltv_ids: Vec<i32> = mappings.iter().map(|(_, xmltv_id)| *xmltv_id).collect();
+    let synthetic_ids: Vec<i32> = xmltv_channels::table
+        .filter(xmltv_channels::id.eq_any(&xmltv_ids))
+        .filter(xmltv_channels::is_synthetic.eq(1))
+        .select(xmltv_channels::id)
+        .load::<Option<i32>>(&mut conn)
+        .unwrap_or_default()
+        .into_iter()
+        .flatten()
+        .collect();
+
+    // Build a map of m3u_channel_id -> (linked_xmltv_ids, has_synthetic)
+    let mut link_map: std::collections::HashMap<i32, (Vec<i32>, bool)> = std::collections::HashMap::new();
+    for (m3u_id_opt, xmltv_id) in mappings {
+        if let Some(m3u_id) = m3u_id_opt {
+            let entry = link_map.entry(m3u_id).or_insert_with(|| (Vec::new(), false));
+            entry.0.push(xmltv_id);
+            if synthetic_ids.contains(&xmltv_id) {
+                entry.1 = true;
+            }
+        }
+    }
+
     let result: Vec<M3uChannelResponse> = channels
         .into_iter()
         .filter_map(|ch| {
+            let channel_id = ch.id?;
+            let (linked_xmltv_ids, has_synthetic) = link_map
+                .get(&channel_id)
+                .cloned()
+                .unwrap_or_else(|| (Vec::new(), false));
+
+            let link_status = if has_synthetic {
+                "promoted".to_string()
+            } else if !linked_xmltv_ids.is_empty() {
+                "linked".to_string()
+            } else {
+                "orphan".to_string()
+            };
+
             Some(M3uChannelResponse {
-                id: ch.id?,
+                id: channel_id,
                 source_id: ch.source_id,
                 stream_url: ch.stream_url,
                 name: ch.name,
@@ -440,6 +497,8 @@ pub fn get_m3u_channels(
                 tvg_name: ch.tvg_name,
                 tvg_logo: ch.tvg_logo,
                 group_title: ch.group_title,
+                link_status,
+                linked_xmltv_ids,
             })
         })
         .collect();

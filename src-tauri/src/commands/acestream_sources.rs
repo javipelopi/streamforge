@@ -30,6 +30,10 @@ pub struct AcestreamSourceResponse {
     pub created_at: String,
     /// Pre-computed stream URL for display
     pub stream_url: Option<String>,
+    /// "linked" | "orphan" | "promoted"
+    pub link_status: String,
+    /// XMLTV channel IDs this source is linked to
+    pub linked_xmltv_ids: Vec<i32>,
 }
 
 /// Input for adding a new Acestream source
@@ -152,6 +156,8 @@ pub fn add_acestream_source(
         is_active: source.is_active != 0,
         created_at: source.created_at,
         stream_url,
+        link_status: "orphan".to_string(), // Newly added sources are always orphans
+        linked_xmltv_ids: vec![],
     })
 }
 
@@ -164,6 +170,8 @@ pub fn add_acestream_source(
 pub fn get_acestream_sources(
     db: State<DbConnection>,
 ) -> Result<Vec<AcestreamSourceResponse>, String> {
+    use crate::db::schema::{channel_mappings, xmltv_channels};
+
     let mut conn = db
         .get_connection()
         .map_err(|e| {
@@ -178,6 +186,43 @@ pub fn get_acestream_sources(
             tracing::error!("Database query error in get_acestream_sources: {}", e);
             "Failed to load Acestream sources. Please try again.".to_string()
         })?;
+
+    // Get all channel mappings for Acestream sources
+    let source_ids: Vec<i32> = sources.iter().filter_map(|s| s.id).collect();
+
+    let mappings: Vec<(Option<i32>, i32)> = channel_mappings::table
+        .filter(channel_mappings::acestream_source_id.is_not_null())
+        .filter(channel_mappings::acestream_source_id.eq_any(&source_ids))
+        .select((
+            channel_mappings::acestream_source_id,
+            channel_mappings::xmltv_channel_id,
+        ))
+        .load(&mut conn)
+        .unwrap_or_default();
+
+    // Check which xmltv_channels are synthetic (promoted)
+    let xmltv_ids: Vec<i32> = mappings.iter().map(|(_, xmltv_id)| *xmltv_id).collect();
+    let synthetic_ids: Vec<i32> = xmltv_channels::table
+        .filter(xmltv_channels::id.eq_any(&xmltv_ids))
+        .filter(xmltv_channels::is_synthetic.eq(1))
+        .select(xmltv_channels::id)
+        .load::<Option<i32>>(&mut conn)
+        .unwrap_or_default()
+        .into_iter()
+        .flatten()
+        .collect();
+
+    // Build a map of acestream_source_id -> (linked_xmltv_ids, has_synthetic)
+    let mut link_map: std::collections::HashMap<i32, (Vec<i32>, bool)> = std::collections::HashMap::new();
+    for (acestream_id_opt, xmltv_id) in mappings {
+        if let Some(acestream_id) = acestream_id_opt {
+            let entry = link_map.entry(acestream_id).or_insert_with(|| (Vec::new(), false));
+            entry.0.push(xmltv_id);
+            if synthetic_ids.contains(&xmltv_id) {
+                entry.1 = true;
+            }
+        }
+    }
 
     let result: Vec<AcestreamSourceResponse> = sources
         .into_iter()
@@ -195,6 +240,19 @@ pub fn get_acestream_sources(
             };
             let stream_url = build_acestream_url(&source.content_id).ok();
 
+            let (linked_xmltv_ids, has_synthetic) = link_map
+                .get(&source_id)
+                .cloned()
+                .unwrap_or_else(|| (Vec::new(), false));
+
+            let link_status = if has_synthetic {
+                "promoted".to_string()
+            } else if !linked_xmltv_ids.is_empty() {
+                "linked".to_string()
+            } else {
+                "orphan".to_string()
+            };
+
             Some(AcestreamSourceResponse {
                 id: source_id,
                 name: source.name,
@@ -202,6 +260,8 @@ pub fn get_acestream_sources(
                 is_active: source.is_active != 0,
                 created_at: source.created_at,
                 stream_url,
+                link_status,
+                linked_xmltv_ids,
             })
         })
         .collect();

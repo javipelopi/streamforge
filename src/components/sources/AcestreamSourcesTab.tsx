@@ -5,24 +5,21 @@
  * Displays Acestream sources and shows platform-specific warnings.
  * On macOS, shows a banner explaining Acestream is unsupported.
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { Radio, Plus, AlertTriangle, Loader2, Trash2, CheckCircle, XCircle } from 'lucide-react';
+import { Radio, Plus, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import {
   getAcestreamSources,
   addAcestreamSource,
-  deleteAcestreamSource,
-  toggleAcestreamSource,
   checkAcestreamStatus,
-  type AcestreamSource,
   type AcestreamStatus,
 } from '../../lib/tauri';
 import { SourcesErrorBoundary } from './SourcesErrorBoundary';
 import { AddAcestreamDialog } from './AddAcestreamDialog';
+import { AcestreamSourceRow } from './AcestreamSourceRow';
 
 export function AcestreamSourcesTab() {
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [mutatingId, setMutatingId] = useState<number | null>(null);
   const queryClient = useQueryClient();
 
   // Check Acestream status (platform + engine)
@@ -64,36 +61,10 @@ export function AcestreamSourcesTab() {
     },
   });
 
-  // Delete mutation
-  const deleteMutation = useMutation({
-    mutationFn: (sourceId: number) => deleteAcestreamSource(sourceId),
-    onSuccess: () => {
-      setMutatingId(null);
-      queryClient.invalidateQueries({ queryKey: ['acestream-sources'] });
-    },
-    onError: (error) => {
-      setMutatingId(null);
-      console.error('Failed to delete Acestream source:', error);
-      // TODO: Show toast notification
-      window.alert(`Failed to delete source: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    },
-  });
-
-  // Toggle mutation
-  const toggleMutation = useMutation({
-    mutationFn: ({ sourceId, active }: { sourceId: number; active: boolean }) =>
-      toggleAcestreamSource(sourceId, active),
-    onSuccess: () => {
-      setMutatingId(null);
-      queryClient.invalidateQueries({ queryKey: ['acestream-sources'] });
-    },
-    onError: (error) => {
-      setMutatingId(null);
-      console.error('Failed to toggle Acestream source:', error);
-      // TODO: Show toast notification
-      window.alert(`Failed to toggle source: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    },
-  });
+  // Handler for source updates from rows
+  const handleSourceUpdate = () => {
+    queryClient.invalidateQueries({ queryKey: ['acestream-sources'] });
+  };
 
   // Platform warning for macOS
   const showPlatformWarning = status && !status.isSupported;
@@ -242,16 +213,7 @@ export function AcestreamSourcesTab() {
             >
               <AcestreamSourceRow
                 source={source}
-                onDelete={() => {
-                  setMutatingId(source.id);
-                  deleteMutation.mutate(source.id);
-                }}
-                onToggle={(active) => {
-                  setMutatingId(source.id);
-                  toggleMutation.mutate({ sourceId: source.id, active });
-                }}
-                isDeleting={deleteMutation.isPending && mutatingId === source.id}
-                isToggling={toggleMutation.isPending && mutatingId === source.id}
+                onUpdate={handleSourceUpdate}
               />
             </SourcesErrorBoundary>
           ))}
@@ -266,138 +228,6 @@ export function AcestreamSourcesTab() {
         error={addMutation.error?.message}
         onResetError={() => addMutation.reset()}
       />
-    </div>
-  );
-}
-
-// Acestream source row component
-function AcestreamSourceRow({
-  source,
-  onDelete,
-  onToggle,
-  isDeleting,
-  isToggling,
-}: {
-  source: AcestreamSource;
-  onDelete: () => void;
-  onToggle: (active: boolean) => void;
-  isDeleting: boolean;
-  isToggling: boolean;
-}) {
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  // eslint-disable-next-line no-undef
-  const cancelButtonRef = useRef<HTMLButtonElement>(null);
-
-  // Focus Cancel button when dialog opens
-  useEffect(() => {
-    if (showDeleteConfirm && cancelButtonRef.current) {
-      cancelButtonRef.current.focus();
-    }
-  }, [showDeleteConfirm]);
-
-  return (
-    <div
-      data-testid={`acestream-source-row-${source.id}`}
-      className="border border-gray-200 rounded-lg px-4 py-3 flex items-center justify-between bg-white"
-    >
-      <div className="flex items-center gap-4">
-        <Radio className="w-5 h-5 text-gray-400" />
-        <div>
-          <div className="font-medium text-gray-900">{source.name}</div>
-          <div className="text-sm text-gray-500 font-mono">{source.contentId}</div>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2">
-        {/* Active status badge */}
-        <span
-          data-testid={`acestream-status-badge-${source.id}`}
-          data-status={source.isActive ? 'active' : 'inactive'}
-          className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-            source.isActive
-              ? 'bg-green-100 text-green-800'
-              : 'bg-gray-100 text-gray-600'
-          }`}
-        >
-          {source.isActive ? 'Active' : 'Inactive'}
-        </span>
-
-        {/* Toggle button */}
-        <button
-          onClick={() => onToggle(!source.isActive)}
-          disabled={isToggling}
-          className="px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
-        >
-          {isToggling ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : source.isActive ? (
-            'Disable'
-          ) : (
-            'Enable'
-          )}
-        </button>
-
-        {/* Delete button */}
-        <button
-          onClick={() => setShowDeleteConfirm(true)}
-          disabled={isDeleting}
-          className="p-2 text-gray-400 hover:text-red-600 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
-          title="Delete source"
-          aria-label="Delete source"
-        >
-          {isDeleting ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Trash2 className="w-4 h-4" />
-          )}
-        </button>
-      </div>
-
-      {/* Delete confirmation dialog */}
-      {showDeleteConfirm && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={`delete-acestream-dialog-title-${source.id}`}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              setShowDeleteConfirm(false);
-            }
-          }}
-        >
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3
-              id={`delete-acestream-dialog-title-${source.id}`}
-              className="text-lg font-semibold text-gray-900 mb-2"
-            >
-              Delete Acestream Source?
-            </h3>
-            <p className="text-gray-600 mb-4">
-              This will delete &ldquo;{source.name}&rdquo;. This action cannot be undone.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                ref={cancelButtonRef}
-                onClick={() => setShowDeleteConfirm(false)}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  onDelete();
-                  setShowDeleteConfirm(false);
-                }}
-                disabled={isDeleting}
-                className="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
-              >
-                {isDeleting ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

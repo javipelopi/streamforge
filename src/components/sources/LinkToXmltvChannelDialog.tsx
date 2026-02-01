@@ -1,8 +1,8 @@
 /**
- * Xtream Link to Channel Dialog Component
- * Story 3-11: Implement Sources View with Xtream Tab
+ * Link to XMLTV Channel Dialog Component
+ * Multi-Source Stream Support
  *
- * Dialog for linking an orphan Xtream stream to an existing XMLTV channel.
+ * Generic dialog for linking any stream source (Xtream, M3U, Acestream) to an XMLTV channel.
  * Uses inline Primary/Backup buttons for quick linking.
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -11,23 +11,36 @@ import { Search, X, Loader2 } from 'lucide-react';
 import {
   getXmltvChannelsWithMappings,
   addManualStreamMapping,
-  type XtreamAccountStream,
+  addM3uChannelMapping,
+  addAcestreamChannelMapping,
 } from '../../lib/tauri';
 import { TOAST_DURATION_MS } from '../../lib/constants';
 
-interface XtreamLinkToChannelDialogProps {
-  stream: XtreamAccountStream;
-  accountId: number;
+export type SourceType = 'xtream' | 'm3u' | 'acestream';
+
+interface LinkToXmltvChannelDialogProps {
+  /** Type of source being linked */
+  sourceType: SourceType;
+  /** ID of the source (M3U channel ID or Acestream source ID) */
+  sourceId: number;
+  /** Display name of the source for the header */
+  sourceName: string;
+  /** Callback when dialog is closed */
   onClose: () => void;
+  /** Callback when linking is successful */
   onSuccess: () => void;
+  /** Query keys to invalidate on success */
+  invalidateQueryKeys?: (string | number)[][];
 }
 
-export function XtreamLinkToChannelDialog({
-  stream,
-  accountId,
+export function LinkToXmltvChannelDialog({
+  sourceType,
+  sourceId,
+  sourceName,
   onClose,
   onSuccess,
-}: XtreamLinkToChannelDialogProps) {
+  invalidateQueryKeys = [],
+}: LinkToXmltvChannelDialogProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [linkingChannelId, setLinkingChannelId] = useState<number | null>(null);
   const [toast, setToast] = useState<{ show: boolean; message: string; type: 'success' | 'error' }>({
@@ -36,7 +49,6 @@ export function XtreamLinkToChannelDialog({
     type: 'success',
   });
   const queryClient = useQueryClient();
-  // Store toast timeout to prevent memory leak
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch all XMLTV channels
@@ -52,7 +64,7 @@ export function XtreamLinkToChannelDialog({
       channel.channelId.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Show toast notification - clears previous timeout to prevent memory leak
+  // Show toast notification
   const showToast = useCallback((message: string, type: 'success' | 'error') => {
     if (toastTimeoutRef.current) {
       clearTimeout(toastTimeoutRef.current);
@@ -72,14 +84,43 @@ export function XtreamLinkToChannelDialog({
     };
   }, []);
 
-  // Mutation for linking stream to channel
+  // Mutation for linking source to channel
   const linkMutation = useMutation({
-    mutationFn: ({ channelId, setAsPrimary }: { channelId: number; setAsPrimary: boolean }) =>
-      addManualStreamMapping(channelId, stream.id, setAsPrimary),
+    mutationFn: async ({ channelId, setAsPrimary }: { channelId: number; setAsPrimary: boolean }) => {
+      switch (sourceType) {
+        case 'xtream':
+          return addManualStreamMapping(channelId, sourceId, setAsPrimary);
+        case 'm3u':
+          return addM3uChannelMapping(channelId, sourceId, setAsPrimary);
+        case 'acestream':
+          return addAcestreamChannelMapping(channelId, sourceId, setAsPrimary);
+      }
+    },
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['account-stream-stats', accountId] });
-      queryClient.invalidateQueries({ queryKey: ['xtream-streams', accountId] });
+      // Invalidate common queries
       queryClient.invalidateQueries({ queryKey: ['xmltv-channels-with-mappings'] });
+      queryClient.invalidateQueries({ queryKey: ['targetLineupChannels'] });
+
+      // Invalidate source-specific queries
+      switch (sourceType) {
+        case 'xtream':
+          queryClient.invalidateQueries({ queryKey: ['xtream-streams'] });
+          queryClient.invalidateQueries({ queryKey: ['account-stream-stats'] });
+          break;
+        case 'm3u':
+          queryClient.invalidateQueries({ queryKey: ['m3u-channels'] });
+          queryClient.invalidateQueries({ queryKey: ['m3u-sources'] });
+          break;
+        case 'acestream':
+          queryClient.invalidateQueries({ queryKey: ['acestream-sources'] });
+          break;
+      }
+
+      // Invalidate any additional query keys provided
+      invalidateQueryKeys.forEach((queryKey) => {
+        queryClient.invalidateQueries({ queryKey });
+      });
+
       const channel = channels.find((c) => c.id === variables.channelId);
       const actionText = variables.setAsPrimary ? 'as primary' : 'as backup';
       showToast(`Linked to ${channel?.displayName} ${actionText}`, 'success');
@@ -90,7 +131,7 @@ export function XtreamLinkToChannelDialog({
     },
     onError: (error: Error) => {
       setLinkingChannelId(null);
-      showToast(error.message || 'Failed to link stream', 'error');
+      showToast(error.message || 'Failed to link source', 'error');
     },
   });
 
@@ -114,14 +155,25 @@ export function XtreamLinkToChannelDialog({
     return () => document.removeEventListener('keydown', handleEscape);
   }, [onClose]);
 
+  const sourceLabel = sourceType === 'xtream'
+    ? 'Xtream Stream'
+    : sourceType === 'm3u'
+      ? 'M3U Channel'
+      : 'Acestream Source';
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg w-full max-w-lg max-h-[80vh] flex flex-col">
+      <div
+        data-testid="link-to-xmltv-dialog"
+        className="bg-white rounded-lg w-full max-w-lg max-h-[80vh] flex flex-col"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
             <h2 className="text-xl font-semibold">Link to XMLTV Channel</h2>
-            <p className="text-sm text-gray-500 mt-1">{stream.name}</p>
+            <p className="text-sm text-gray-500 mt-1">
+              {sourceLabel}: {sourceName}
+            </p>
           </div>
           <button
             type="button"
@@ -138,7 +190,7 @@ export function XtreamLinkToChannelDialog({
           <div className="relative mb-4">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
-              data-testid="stream-search-input"
+              data-testid="xmltv-search-input"
               type="text"
               placeholder="Search XMLTV channels..."
               value={searchQuery}
@@ -183,6 +235,7 @@ export function XtreamLinkToChannelDialog({
                     return (
                       <div
                         key={channel.id}
+                        data-testid={`xmltv-channel-option-${channel.id}`}
                         className="px-4 py-3 flex items-center gap-3 hover:bg-gray-50"
                       >
                         {/* Channel icon */}
@@ -220,6 +273,7 @@ export function XtreamLinkToChannelDialog({
                         <div className="flex gap-1 flex-shrink-0">
                           <button
                             type="button"
+                            data-testid={`link-primary-${channel.id}`}
                             onClick={() => handleLink(channel.id, true)}
                             disabled={isLinking || linkMutation.isPending}
                             className="px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -228,6 +282,7 @@ export function XtreamLinkToChannelDialog({
                           </button>
                           <button
                             type="button"
+                            data-testid={`link-backup-${channel.id}`}
                             onClick={() => handleLink(channel.id, false)}
                             disabled={isLinking || linkMutation.isPending}
                             className="px-2 py-1 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"

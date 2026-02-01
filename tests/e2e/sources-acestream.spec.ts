@@ -82,7 +82,7 @@ test.describe('Sources View - Acestream Tab (Multi-Source Support)', () => {
 
       // THEN: Each source displays as list item
       for (const source of sources) {
-        const sourceItem = page.locator(`[data-testid="acestream-source-item-${source.id}"]`);
+        const sourceItem = page.locator(`[data-testid="acestream-source-row-${source.id}"]`);
         await expect(sourceItem).toBeVisible();
 
         // Source name is displayed
@@ -103,7 +103,7 @@ test.describe('Sources View - Acestream Tab (Multi-Source Support)', () => {
       await page.click('[data-testid="acestream-tab"]');
 
       // THEN: Content ID is displayed (truncated or partial)
-      const sourceItem = page.locator(`[data-testid="acestream-source-item-${source.id}"]`);
+      const sourceItem = page.locator(`[data-testid="acestream-source-row-${source.id}"]`);
       // Should show at least first 8 chars of content ID
       const shortId = source.contentId.substring(0, 8);
       await expect(sourceItem).toContainText(shortId);
@@ -372,7 +372,7 @@ test.describe('Sources View - Acestream Tab (Multi-Source Support)', () => {
       await expect(dialog).not.toBeVisible({ timeout: 2000 });
 
       // AND: New source appears in list
-      const sourceItems = page.locator('[data-testid^="acestream-source-item-"]');
+      const sourceItems = page.locator('[data-testid^="acestream-source-row-"]');
       const count = await sourceItems.count();
       expect(count).toBeGreaterThan(3); // 3 existing + 1 new
     });
@@ -470,7 +470,7 @@ test.describe('Sources View - Acestream Tab (Multi-Source Support)', () => {
       await expect(toast).toBeVisible({ timeout: 2000 });
 
       // AND: Source no longer appears in list
-      const deletedItem = page.locator(`[data-testid="acestream-source-item-${sourceToDelete.id}"]`);
+      const deletedItem = page.locator(`[data-testid="acestream-source-row-${sourceToDelete.id}"]`);
       await expect(deletedItem).not.toBeVisible({ timeout: 2000 });
     });
 
@@ -495,7 +495,7 @@ test.describe('Sources View - Acestream Tab (Multi-Source Support)', () => {
       await expect(dialog).not.toBeVisible({ timeout: 1000 });
 
       // AND: Source still exists
-      const sourceItem = page.locator(`[data-testid="acestream-source-item-${source.id}"]`);
+      const sourceItem = page.locator(`[data-testid="acestream-source-row-${source.id}"]`);
       await expect(sourceItem).toBeVisible();
     });
   });
