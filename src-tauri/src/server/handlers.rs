@@ -18,7 +18,10 @@ use super::failover::{
 use super::hdhr;
 use super::m3u;
 use super::state::AppState;
-use super::stream::{build_stream_url, select_best_quality, StreamSession};
+use super::stream::{
+    build_stream_url_for_source, select_best_quality, source_requires_tuner, StreamSession,
+    StreamSourceType,
+};
 use crate::credentials::CredentialManager;
 use crate::db::schema::{accounts, channel_mappings, xmltv_channel_settings, xtream_channels};
 
@@ -366,6 +369,7 @@ pub async fn device_xml(State(state): State<AppState>) -> impl IntoResponse {
 /// - Failover completes in <2 seconds (NFR2)
 /// - Selects highest available quality for each stream (4K > FHD > HD > SD)
 /// - Enforces connection limits (tuner limit from account settings)
+/// - Only Xtream sources consume tuner slots (M3U/Acestream are "free")
 /// - Logs failover events to event_log table
 ///
 /// Returns:
@@ -376,28 +380,9 @@ pub async fn stream_proxy(
     Path(channel_id): Path<i32>,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    // Step 1: Check connection limit FIRST (before expensive DB/crypto operations)
     let stream_manager = state.stream_manager();
-    if !stream_manager.can_start_stream() {
-        let details = serde_json::json!({
-            "channelId": channel_id,
-            "activeConnections": stream_manager.active_count(),
-            "maxConnections": stream_manager.max_connections(),
-        });
-        state.log_stream_event(
-            "warn",
-            &format!("Tuner limit reached ({}/{}) - rejected channel {}",
-                stream_manager.active_count(), stream_manager.max_connections(), channel_id),
-            Some(&details.to_string()),
-        );
 
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Tuner limit reached".to_string(),
-        ));
-    }
-
-    // Step 2: Get database connection
+    // Step 1: Get database connection
     let mut conn = state.get_connection().map_err(|e| {
         state.log_stream_event(
             "error",
@@ -459,6 +444,27 @@ pub async fn stream_proxy(
         return Err((StatusCode::NOT_FOUND, "Channel not found".to_string()));
     }
 
+    // FIX #2 (HIGH): Check Acestream platform compatibility BEFORE failover loop
+    // This prevents platform errors from being treated as connection errors during failover
+    for stream in &available_streams {
+        if let StreamSourceType::Acestream { .. } = &stream.source_type {
+            if !crate::acestream::is_acestream_supported() {
+                state.log_stream_event(
+                    "error",
+                    &format!("Acestream not supported on this platform for channel {}", channel_id),
+                    Some(&serde_json::json!({
+                        "channelId": channel_id,
+                        "platform": std::env::consts::OS,
+                    }).to_string()),
+                );
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Acestream is not supported on this platform (macOS)".to_string(),
+                ));
+            }
+        }
+    }
+
     // Step 5: Initialize failover state
     let mut failover_state = FailoverState::new(channel_id, available_streams);
     let credential_manager = CredentialManager::new(state.app_data_dir().clone());
@@ -485,12 +491,13 @@ pub async fn stream_proxy(
         })?;
 
     // Step 7: Try streams in order until one works
+    // FIX #7 (MEDIUM): Track per-stream timeout instead of total elapsed
     let failover_start = std::time::Instant::now();
     let mut last_failure_reason: Option<FailureReason> = None;
     let mut successful_stream: Option<(BackupStream, String, reqwest::Response)> = None;
 
     loop {
-        // Check total failover timeout
+        // Check total failover timeout (outer bound)
         if failover_start.elapsed() > FAILOVER_TOTAL_TIMEOUT {
             state.log_stream_event(
                 "error",
@@ -508,6 +515,9 @@ pub async fn stream_proxy(
             Some(s) => s.clone(),
             None => break,
         };
+
+        // FIX #7: Start per-stream timer
+        let stream_attempt_start = std::time::Instant::now();
 
         // Try to connect to current stream
         match try_connect_stream(&client, &credential_manager, &current_stream, &state).await {
@@ -530,16 +540,26 @@ pub async fn stream_proxy(
                 break;
             }
             Err(reason) => {
+                // FIX #9 (MEDIUM): Use Display trait for consistent source type naming
+                let source_type_name = current_stream.source_type.to_string();
                 state.log_stream_event(
                     "warn",
-                    &format!("Stream {} failed for channel {}: {}", current_stream.stream_id, channel_id, reason),
-                    Some(&serde_json::json!({
-                        "channelId": channel_id,
-                        "streamId": current_stream.stream_id,
-                        "accountId": current_stream.account_id,
-                        "priority": current_stream.stream_priority,
-                        "reason": reason.to_string(),
-                    }).to_string()),
+                    &format!(
+                        "{} stream {} failed for channel {}: {} (attempt took {}ms)",
+                        source_type_name, current_stream.stream_id, channel_id, reason,
+                        stream_attempt_start.elapsed().as_millis()
+                    ),
+                    Some(
+                        &serde_json::json!({
+                            "channelId": channel_id,
+                            "streamId": current_stream.stream_id,
+                            "sourceType": source_type_name,
+                            "priority": current_stream.stream_priority,
+                            "reason": reason.to_string(),
+                            "attemptMs": stream_attempt_start.elapsed().as_millis(),
+                        })
+                        .to_string(),
+                    ),
                 );
                 last_failure_reason = Some(reason);
 
@@ -579,6 +599,7 @@ pub async fn stream_proxy(
     };
 
     // Step 9: Select quality and start session tracking
+    // Only Xtream sources consume tuner slots (CR-1, CR-2, CR-9 fix)
     let qualities_json = if stream_info.qualities.is_empty() {
         None
     } else {
@@ -586,23 +607,50 @@ pub async fn stream_proxy(
     };
     let quality = select_best_quality(qualities_json.as_deref());
 
+    let requires_tuner = source_requires_tuner(&stream_info.source_type);
     let session = StreamSession::new(channel_id, stream_info.stream_id, quality.clone());
-    let session_id = stream_manager.start_session(session).ok_or_else(|| {
+
+    // FIX #1 (CRITICAL): Track ALL sessions in StreamManager
+    // Previously M3U/Acestream sessions were created without tracking, breaking mid-stream failover.
+    // Now we track all sessions, but only enforce tuner limits for Xtream sources.
+    let session_id = if requires_tuner {
+        // Xtream sources: enforce tuner limit
+        stream_manager.start_session(session).ok_or_else(|| {
+            state.log_stream_event(
+                "warn",
+                &format!("Failed to start session (tuner limit reached) for channel {}", channel_id),
+                Some(&serde_json::json!({
+                    "channelId": channel_id,
+                    "streamId": stream_info.stream_id,
+                    "sourceType": "xtream",
+                    "activeConnections": stream_manager.active_count(),
+                    "maxConnections": stream_manager.max_connections(),
+                }).to_string()),
+            );
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Tuner limit reached".to_string(),
+            )
+        })?
+    } else {
+        // M3U/Acestream: track session but don't enforce tuner limit
+        let source_type_name = match &stream_info.source_type {
+            StreamSourceType::M3u { .. } => "m3u",
+            StreamSourceType::Acestream { .. } => "acestream",
+            _ => "unknown",
+        };
         state.log_stream_event(
-            "warn",
-            &format!("Failed to start session (limit reached) for channel {}", channel_id),
+            "debug",
+            &format!("Starting {} stream for channel {} (no tuner slot required)", source_type_name, channel_id),
             Some(&serde_json::json!({
                 "channelId": channel_id,
                 "streamId": stream_info.stream_id,
-                "activeConnections": stream_manager.active_count(),
-                "maxConnections": stream_manager.max_connections(),
+                "sourceType": source_type_name,
             }).to_string()),
         );
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Tuner limit reached".to_string(),
-        )
-    })?;
+        // Track session without enforcing limit
+        stream_manager.start_session_no_limit(session)
+    };
 
     // Step 10: Stream through FFmpeg for timestamp normalization and reconnection
     //
@@ -625,7 +673,10 @@ pub async fn stream_proxy(
         session_id.clone(),
         stream_manager.clone(),
     ).map_err(|e| {
-        stream_manager.end_session(&session_id);
+        // Only end session for sources that were tracked against tuner limit
+        if requires_tuner {
+            stream_manager.end_session(&session_id);
+        }
         state.log_stream_event(
             "error",
             &format!("FFmpeg failed to start for channel {}: {}", channel_id, e),
@@ -646,20 +697,18 @@ pub async fn stream_proxy(
     // If backups are available, wrap the stream to enable seamless failover
     // during playback if the current stream stalls.
     let body = if failover_state.has_more_backups() {
-        let failover_context = FailoverContext::new(
+        // FIX #8 (MEDIUM): Pass current_stream_idx to FailoverContext constructor
+        // Previously, context started at 0 and manual advancement skipped current stream
+        let failover_context = FailoverContext::new_with_index(
             failover_state.available_streams.clone(),
             session_id.clone(),
             channel_id,
+            failover_state.current_stream_idx,
         );
-        // Advance context to current stream index
-        let mut ctx = failover_context;
-        for _ in 0..failover_state.current_stream_idx {
-            ctx.advance();
-        }
 
         let failover_stream = create_failover_stream(
             buffered_stream,
-            ctx,
+            failover_context,
             stream_manager.clone(),
             credential_manager,
             None, // Failover events logged via eprintln
@@ -695,26 +744,49 @@ pub async fn stream_proxy(
 }
 
 /// Try to connect to a stream and return the response if successful
+///
+/// Updated for multi-source support: handles Xtream, M3U, and Acestream sources
 async fn try_connect_stream(
     client: &reqwest::Client,
     credential_manager: &CredentialManager,
     stream: &BackupStream,
     state: &AppState,
 ) -> Result<(String, reqwest::Response), FailureReason> {
-    // Decrypt password
-    let password = credential_manager
-        .retrieve_password(&stream.account_id.to_string(), &stream.password_encrypted)
+    // Build URL based on source type (handles credentials for Xtream)
+    // FIX #5 (HIGH): Map credential errors to CredentialError variant
+    let stream_url = build_stream_url_for_source(&stream.source_type, Some(credential_manager))
         .map_err(|e| {
+            use super::stream::StreamUrlError;
+
+            let source_type_name = stream.source_type.to_string();
             state.log_connection_event(
                 "error",
-                &format!("Credential decryption failed for account {}: {}", stream.account_id, e),
-                Some(&serde_json::json!({
-                    "accountId": stream.account_id,
-                    "streamId": stream.stream_id,
-                    "error": e.to_string(),
-                }).to_string()),
+                &format!(
+                    "URL build failed for {} stream {}: {}",
+                    source_type_name, stream.stream_id, e
+                ),
+                Some(
+                    &serde_json::json!({
+                        "sourceType": source_type_name,
+                        "streamId": stream.stream_id,
+                        "error": e.to_string(),
+                    })
+                    .to_string(),
+                ),
             );
-            FailureReason::ConnectionError(format!("Credential error: {}", e))
+
+            // Map StreamUrlError to appropriate FailureReason
+            match e {
+                StreamUrlError::CredentialError(msg) => {
+                    FailureReason::CredentialError(msg)
+                }
+                StreamUrlError::AcestreamUnsupported => {
+                    FailureReason::ConnectionError("Acestream not supported on this platform".to_string())
+                }
+                StreamUrlError::AcestreamError(msg) => {
+                    FailureReason::ConnectionError(msg)
+                }
+            }
         })?;
 
     // Select quality
@@ -725,22 +797,28 @@ async fn try_connect_stream(
     };
     let quality = select_best_quality(qualities_json.as_deref());
 
-    // Build URL
-    let stream_url = build_stream_url(
-        &stream.server_url,
-        &stream.username,
-        &password,
-        stream.stream_id,
-    );
+    // Get source type name for logging
+    let source_type_name = match &stream.source_type {
+        StreamSourceType::Xtream { .. } => "Xtream",
+        StreamSourceType::M3u { .. } => "M3U",
+        StreamSourceType::Acestream { .. } => "Acestream",
+    };
 
     state.log_connection_event(
         "info",
-        &format!("Trying stream {} (priority {}, quality {})", stream.stream_id, stream.stream_priority, quality),
-        Some(&serde_json::json!({
-            "streamId": stream.stream_id,
-            "priority": stream.stream_priority,
-            "quality": quality,
-        }).to_string()),
+        &format!(
+            "Trying {} stream {} (priority {}, quality {})",
+            source_type_name, stream.stream_id, stream.stream_priority, quality
+        ),
+        Some(
+            &serde_json::json!({
+                "sourceType": source_type_name,
+                "streamId": stream.stream_id,
+                "priority": stream.stream_priority,
+                "quality": quality,
+            })
+            .to_string(),
+        ),
     );
 
     // Attempt connection
@@ -1049,8 +1127,8 @@ fn seed_stream_proxy_data(conn: &mut crate::db::DbPooledConnection) -> Result<us
 
     for (id, xmltv_id, xtream_id, confidence, is_manual, is_primary, priority) in &mappings {
         diesel::sql_query(format!(
-            "INSERT OR REPLACE INTO channel_mappings (id, xmltv_channel_id, xtream_channel_id, match_confidence, is_manual, is_primary, stream_priority, created_at)
-             VALUES ({}, {}, {}, {}, {}, {}, {}, datetime('now'))",
+            "INSERT OR REPLACE INTO channel_mappings (id, xmltv_channel_id, xtream_channel_id, match_confidence, is_manual, is_primary, stream_priority, source_type, created_at)
+             VALUES ({}, {}, {}, {}, {}, {}, {}, 'xtream', datetime('now'))",
             id, xmltv_id, xtream_id, confidence, is_manual, is_primary, priority
         ))
         .execute(conn)

@@ -101,16 +101,27 @@ pub struct ExportedXmltvSource {
     pub is_active: bool,
 }
 
-/// Exported channel mapping
+/// Exported channel mapping (CR-5: xtream_channel_id is now Option<i32>)
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedChannelMapping {
     pub xmltv_channel_id: i32,
-    pub xtream_channel_id: i32,
+    pub xtream_channel_id: Option<i32>,
     pub match_confidence: Option<f32>,
     pub is_manual: bool,
     pub is_primary: bool,
     pub stream_priority: i32,
+    /// Source type: "xtream", "m3u", or "acestream"
+    #[serde(default = "default_source_type")]
+    pub source_type: String,
+    /// M3U channel ID (if source_type = "m3u")
+    pub m3u_channel_id: Option<i32>,
+    /// Acestream source ID (if source_type = "acestream")
+    pub acestream_source_id: Option<i32>,
+}
+
+fn default_source_type() -> String {
+    "xtream".to_string()
 }
 
 /// Exported XMLTV channel settings
@@ -265,11 +276,14 @@ pub fn export_configuration(db: State<DbConnection>) -> Result<String, String> {
         .into_iter()
         .map(|m| ExportedChannelMapping {
             xmltv_channel_id: m.xmltv_channel_id,
-            xtream_channel_id: m.xtream_channel_id,
+            xtream_channel_id: m.xtream_channel_id, // CR-5: now Option<i32>
             match_confidence: m.match_confidence,
             is_manual: m.is_manual.map(|v| v != 0).unwrap_or(false),
             is_primary: m.is_primary.map(|v| v != 0).unwrap_or(false),
             stream_priority: m.stream_priority.unwrap_or(0),
+            source_type: m.source_type,
+            m3u_channel_id: m.m3u_channel_id,
+            acestream_source_id: m.acestream_source_id,
         })
         .collect();
 
@@ -721,11 +735,14 @@ mod tests {
                 }],
                 channel_mappings: vec![ExportedChannelMapping {
                     xmltv_channel_id: 1,
-                    xtream_channel_id: 42,
+                    xtream_channel_id: Some(42), // CR-5: now Option<i32>
                     match_confidence: Some(0.95),
                     is_manual: false,
                     is_primary: true,
                     stream_priority: 0,
+                    source_type: "xtream".to_string(),
+                    m3u_channel_id: None,
+                    acestream_source_id: None,
                 }],
                 xmltv_channel_settings: vec![ExportedXmltvChannelSettings {
                     xmltv_channel_id: 1,

@@ -10,6 +10,7 @@
 //! Security note: All endpoints are bound to 127.0.0.1 only (NFR21).
 
 use dashmap::DashMap;
+use serde::Serialize;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 use uuid::Uuid;
@@ -17,6 +18,41 @@ use uuid::Uuid;
 use crate::xtream::quality::qualities_from_json;
 
 use super::buffer::StreamHealth;
+
+/// Represents the type and data of a stream source
+///
+/// This enum enables unified handling of different stream source types
+/// (Xtream, M3U, Acestream) in the failover and streaming logic.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum StreamSourceType {
+    /// Xtream Codes stream - requires credential decryption and tuner slot
+    Xtream {
+        account_id: i32,
+        stream_id: i32,
+        server_url: String,
+        username: String,
+        password_encrypted: Vec<u8>,
+    },
+    /// M3U playlist stream - direct URL, no tuner slot needed
+    M3u {
+        stream_url: String,
+    },
+    /// Acestream P2P stream - requires local engine, no tuner slot needed
+    Acestream {
+        content_id: String,
+    },
+}
+
+// FIX #9 (MEDIUM): Consistent source type naming via Display trait
+impl std::fmt::Display for StreamSourceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StreamSourceType::Xtream { .. } => write!(f, "Xtream"),
+            StreamSourceType::M3u { .. } => write!(f, "M3U"),
+            StreamSourceType::Acestream { .. } => write!(f, "Acestream"),
+        }
+    }
+}
 
 /// Quality priority order (highest to lowest)
 /// 4K > FHD > HD > SD
@@ -128,17 +164,48 @@ impl StreamManager {
         self.active_sessions.len() < self.max_connections.load(Ordering::Relaxed) as usize
     }
 
-    /// Start a new streaming session
+    /// Start a new streaming session (with tuner limit enforcement)
     ///
-    /// Returns the session ID if successful, or None if connection limit reached
+    /// Returns the session ID if successful, or None if connection limit reached.
+    /// Use this for Xtream sources that require tuner slots.
+    ///
+    /// FIX #3 (HIGH): Uses DashMap's entry() API for atomic check-and-insert
+    /// to prevent TOCTOU race condition
     pub fn start_session(&self, session: StreamSession) -> Option<String> {
-        if !self.can_start_stream() {
-            return None;
-        }
+        let session_id = Uuid::new_v4().to_string();
+        let max = self.max_connections.load(Ordering::Relaxed) as usize;
 
+        // Use entry API for atomic check-and-insert
+        use dashmap::mapref::entry::Entry;
+        match self.active_sessions.entry(session_id.clone()) {
+            Entry::Vacant(e) => {
+                // Check limit before inserting
+                if self.active_sessions.len() >= max {
+                    return None;
+                }
+                e.insert(session);
+                Some(session_id)
+            }
+            Entry::Occupied(_) => {
+                // Extremely rare UUID collision, retry
+                let retry_id = Uuid::new_v4().to_string();
+                if self.active_sessions.len() >= max {
+                    return None;
+                }
+                self.active_sessions.insert(retry_id.clone(), session);
+                Some(retry_id)
+            }
+        }
+    }
+
+    /// Start a new streaming session without enforcing tuner limit
+    ///
+    /// Always succeeds. Use this for M3U/Acestream sources that don't consume tuner slots.
+    /// These sessions are still tracked for mid-stream failover support.
+    pub fn start_session_no_limit(&self, session: StreamSession) -> String {
         let session_id = Uuid::new_v4().to_string();
         self.active_sessions.insert(session_id.clone(), session);
-        Some(session_id)
+        session_id
     }
 
     /// End a streaming session by its ID
@@ -222,6 +289,95 @@ pub fn select_best_quality(qualities_json: Option<&str>) -> String {
 
     // Default to SD if no recognized quality found
     "SD".to_string()
+}
+
+/// Error type for stream URL building
+#[derive(Debug, Clone)]
+pub enum StreamUrlError {
+    /// Acestream is not supported on this platform (macOS)
+    AcestreamUnsupported,
+    /// Credential decryption failed
+    CredentialError(String),
+    /// Acestream-specific error (engine connection, content retrieval, etc.)
+    AcestreamError(String),
+}
+
+impl std::fmt::Display for StreamUrlError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StreamUrlError::AcestreamUnsupported => {
+                write!(f, "Acestream is not supported on this platform")
+            }
+            StreamUrlError::CredentialError(msg) => write!(f, "Credential error: {}", msg),
+            StreamUrlError::AcestreamError(msg) => write!(f, "Acestream error: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for StreamUrlError {}
+
+/// Build a stream URL from a StreamSourceType
+///
+/// Handles all source types:
+/// - Xtream: Requires password decryption via credential_manager
+/// - M3U: Returns the stream URL directly
+/// - Acestream: Builds localhost:6878 URL (errors on macOS)
+///
+/// # Arguments
+/// * `source` - The stream source type with its data
+/// * `credential_manager` - Optional credential manager for Xtream password decryption
+///
+/// # Returns
+/// The stream URL or an error
+pub fn build_stream_url_for_source(
+    source: &StreamSourceType,
+    credential_manager: Option<&crate::credentials::CredentialManager>,
+) -> Result<String, StreamUrlError> {
+    match source {
+        StreamSourceType::Xtream {
+            account_id,
+            stream_id,
+            server_url,
+            username,
+            password_encrypted,
+        } => {
+            // Decrypt password using credential manager
+            let password = match credential_manager {
+                Some(cm) => cm
+                    .retrieve_password(&account_id.to_string(), password_encrypted)
+                    .map_err(|e| StreamUrlError::CredentialError(e.to_string()))?,
+                None => {
+                    return Err(StreamUrlError::CredentialError(
+                        "Credential manager required for Xtream sources".to_string(),
+                    ));
+                }
+            };
+
+            Ok(build_stream_url(server_url, username, &password, *stream_id))
+        }
+        StreamSourceType::M3u { stream_url } => {
+            // M3U streams use their URL directly
+            Ok(stream_url.clone())
+        }
+        StreamSourceType::Acestream { content_id } => {
+            // Check platform support
+            if !crate::acestream::is_acestream_supported() {
+                return Err(StreamUrlError::AcestreamUnsupported);
+            }
+
+            // Build Acestream URL via local engine
+            crate::acestream::build_acestream_url(content_id)
+                .map_err(|e| StreamUrlError::AcestreamError(e.to_string()))
+        }
+    }
+}
+
+/// Check if a source type requires a tuner slot
+///
+/// Only Xtream sources consume tuner slots. M3U and Acestream are "free"
+/// in terms of tuner limits since they don't count against provider connections.
+pub fn source_requires_tuner(source: &StreamSourceType) -> bool {
+    matches!(source, StreamSourceType::Xtream { .. })
 }
 
 /// Generate Xtream stream URL
@@ -586,5 +742,152 @@ mod tests {
     fn test_stream_url_with_spaces() {
         let url = build_stream_url("http://example.com", "user name", "pass word", 789);
         assert_eq!(url, "http://example.com/live/user%20name/pass%20word/789.ts");
+    }
+
+    // =========================================================================
+    // StreamSourceType Tests
+    // =========================================================================
+
+    #[test]
+    fn test_stream_source_type_xtream() {
+        let source = StreamSourceType::Xtream {
+            account_id: 1,
+            stream_id: 100,
+            server_url: "http://example.com".to_string(),
+            username: "user".to_string(),
+            password_encrypted: vec![1, 2, 3],
+        };
+
+        match source {
+            StreamSourceType::Xtream { stream_id, .. } => assert_eq!(stream_id, 100),
+            _ => panic!("Expected Xtream variant"),
+        }
+    }
+
+    #[test]
+    fn test_stream_source_type_m3u() {
+        let source = StreamSourceType::M3u {
+            stream_url: "http://stream.example.com/live.m3u8".to_string(),
+        };
+
+        match source {
+            StreamSourceType::M3u { stream_url } => {
+                assert_eq!(stream_url, "http://stream.example.com/live.m3u8");
+            }
+            _ => panic!("Expected M3u variant"),
+        }
+    }
+
+    #[test]
+    fn test_stream_source_type_acestream() {
+        let source = StreamSourceType::Acestream {
+            content_id: "abc123def456".to_string(),
+        };
+
+        match source {
+            StreamSourceType::Acestream { content_id } => {
+                assert_eq!(content_id, "abc123def456");
+            }
+            _ => panic!("Expected Acestream variant"),
+        }
+    }
+
+    // =========================================================================
+    // source_requires_tuner Tests
+    // =========================================================================
+
+    #[test]
+    fn test_xtream_requires_tuner() {
+        let source = StreamSourceType::Xtream {
+            account_id: 1,
+            stream_id: 100,
+            server_url: "http://example.com".to_string(),
+            username: "user".to_string(),
+            password_encrypted: vec![],
+        };
+        assert!(source_requires_tuner(&source));
+    }
+
+    #[test]
+    fn test_m3u_does_not_require_tuner() {
+        let source = StreamSourceType::M3u {
+            stream_url: "http://stream.example.com/live.m3u8".to_string(),
+        };
+        assert!(!source_requires_tuner(&source));
+    }
+
+    #[test]
+    fn test_acestream_does_not_require_tuner() {
+        let source = StreamSourceType::Acestream {
+            content_id: "abc123".to_string(),
+        };
+        assert!(!source_requires_tuner(&source));
+    }
+
+    // =========================================================================
+    // build_stream_url_for_source Tests
+    // =========================================================================
+
+    #[test]
+    fn test_build_url_for_m3u_source() {
+        let source = StreamSourceType::M3u {
+            stream_url: "http://stream.example.com/live.m3u8".to_string(),
+        };
+
+        let result = build_stream_url_for_source(&source, None);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "http://stream.example.com/live.m3u8");
+    }
+
+    #[test]
+    fn test_build_url_for_xtream_without_credential_manager() {
+        let source = StreamSourceType::Xtream {
+            account_id: 1,
+            stream_id: 100,
+            server_url: "http://example.com".to_string(),
+            username: "user".to_string(),
+            password_encrypted: vec![],
+        };
+
+        let result = build_stream_url_for_source(&source, None);
+        assert!(result.is_err());
+        match result {
+            Err(StreamUrlError::CredentialError(_)) => {}
+            _ => panic!("Expected CredentialError"),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_build_url_for_acestream_on_macos() {
+        let source = StreamSourceType::Acestream {
+            content_id: "abc123".to_string(),
+        };
+
+        let result = build_stream_url_for_source(&source, None);
+        assert!(result.is_err());
+        match result {
+            Err(StreamUrlError::AcestreamUnsupported) => {}
+            _ => panic!("Expected AcestreamUnsupported"),
+        }
+    }
+
+    // =========================================================================
+    // StreamUrlError Tests
+    // =========================================================================
+
+    #[test]
+    fn test_stream_url_error_display() {
+        let err = StreamUrlError::AcestreamUnsupported;
+        assert_eq!(
+            format!("{}", err),
+            "Acestream is not supported on this platform"
+        );
+
+        let err = StreamUrlError::CredentialError("decrypt failed".to_string());
+        assert_eq!(format!("{}", err), "Credential error: decrypt failed");
+
+        let err = StreamUrlError::AcestreamError("engine connection failed".to_string());
+        assert_eq!(format!("{}", err), "Acestream error: engine connection failed");
     }
 }

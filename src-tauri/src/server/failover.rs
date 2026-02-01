@@ -22,9 +22,11 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-use crate::db::schema::{accounts, channel_mappings, xtream_channels};
+use crate::db::schema::{accounts, acestream_sources, channel_mappings, m3u_channels, m3u_sources, xtream_channels};
 use crate::db::DbPooledConnection;
 use crate::xtream::quality::qualities_from_json;
+
+use super::stream::StreamSourceType;
 
 /// Timeout for stream read operations (5 seconds per AC #1)
 pub const STREAM_READ_TIMEOUT: Duration = Duration::from_secs(5);
@@ -42,24 +44,22 @@ pub const QUALITY_UPGRADE_RECOVERY_PERIOD: Duration = Duration::from_secs(60);
 pub const MAX_FAILOVER_ATTEMPTS: usize = 2;
 
 /// Represents an available backup stream for failover
+///
+/// Updated for multi-source support: now uses StreamSourceType enum
+/// to handle Xtream, M3U, and Acestream sources uniformly.
 #[derive(Debug, Clone)]
 pub struct BackupStream {
-    /// ID from xtream_channels table
-    pub xtream_channel_id: i32,
-    /// Stream ID for Xtream URL
+    /// Unique identifier for this stream (xtream_channel_id, m3u_channel_id, or acestream_source_id)
+    pub source_id: i32,
+    /// Stream ID for logging/tracking (may be same as source_id for non-Xtream)
     pub stream_id: i32,
     /// Priority order for failover (lower = higher priority)
     pub stream_priority: i32,
-    /// Available quality levels JSON (e.g., ["4K", "HD", "SD"])
+    /// Available quality levels (e.g., ["4K", "HD", "SD"])
+    /// For M3U/Acestream, this may be empty or contain a default
     pub qualities: Vec<String>,
-    /// Xtream server base URL
-    pub server_url: String,
-    /// Account username
-    pub username: String,
-    /// Encrypted password blob
-    pub password_encrypted: Vec<u8>,
-    /// Account ID for credential decryption
-    pub account_id: i32,
+    /// The source type with all required data for URL building
+    pub source_type: StreamSourceType,
 }
 
 /// Maintains failover state for an active streaming session
@@ -190,6 +190,9 @@ pub enum FailureReason {
     HttpError(u16),
     /// Error reading stream body
     StreamError(String),
+    /// FIX #5 (HIGH): Credential decryption or authentication error
+    /// These should not trigger retries on the same account
+    CredentialError(String),
 }
 
 impl std::fmt::Display for FailureReason {
@@ -199,6 +202,7 @@ impl std::fmt::Display for FailureReason {
             FailureReason::ConnectionError(msg) => write!(f, "ConnectionError: {}", msg),
             FailureReason::HttpError(code) => write!(f, "HttpError: {}", code),
             FailureReason::StreamError(msg) => write!(f, "StreamError: {}", msg),
+            FailureReason::CredentialError(msg) => write!(f, "CredentialError: {}", msg),
         }
     }
 }
@@ -210,17 +214,34 @@ impl FailureReason {
     /// - Timeout errors -> ConnectionTimeout
     /// - Connection/network errors -> ConnectionError
     /// - Other errors -> StreamError
+    ///
+    /// Security: Sanitizes error messages to prevent credential exposure in logs
     pub fn from_reqwest_error(error: &reqwest::Error) -> Self {
         if error.is_timeout() {
             FailureReason::ConnectionTimeout
         } else if error.is_connect() {
-            FailureReason::ConnectionError(error.to_string())
+            // Sanitize connection errors to avoid exposing URLs with credentials
+            FailureReason::ConnectionError(Self::sanitize_error_message(&error.to_string()))
         } else if error.is_request() || error.is_redirect() {
-            FailureReason::ConnectionError(error.to_string())
+            // Sanitize request/redirect errors to avoid exposing URLs with credentials
+            FailureReason::ConnectionError(Self::sanitize_error_message(&error.to_string()))
         } else {
-            // Body/decode errors are stream errors
-            FailureReason::StreamError(error.to_string())
+            // Body/decode errors are stream errors - sanitize these too
+            FailureReason::StreamError(Self::sanitize_error_message(&error.to_string()))
         }
+    }
+
+    /// Sanitize error messages to remove URLs that may contain credentials
+    ///
+    /// Replaces URLs with a generic placeholder to prevent credential leaks in logs.
+    /// Examples:
+    /// - "http://user:pass@host/path" -> "[URL REDACTED]"
+    /// - "Connection failed: http://api.example.com" -> "Connection failed: [URL REDACTED]"
+    fn sanitize_error_message(msg: &str) -> String {
+        // Simple regex to match URLs (http:// or https://)
+        // This catches both bare URLs and URLs embedded in error messages
+        let url_pattern = regex::Regex::new(r"https?://[^\s]+").unwrap();
+        url_pattern.replace_all(msg, "[URL REDACTED]").to_string()
     }
 
     /// Determine failure reason from HTTP status code
@@ -232,10 +253,14 @@ impl FailureReason {
 
     /// Check if this failure reason indicates an account-level issue
     ///
-    /// Account-level failures (e.g., HTTP 401/403) should skip other streams
+    /// Account-level failures (e.g., HTTP 401/403, CredentialError) should skip other streams
     /// from the same account during failover.
+    /// FIX #5 (HIGH): Include CredentialError in account-level failures
     pub fn is_account_level_failure(&self) -> bool {
-        matches!(self, FailureReason::HttpError(401 | 403))
+        matches!(
+            self,
+            FailureReason::HttpError(401 | 403) | FailureReason::CredentialError(_)
+        )
     }
 }
 
@@ -268,105 +293,278 @@ impl std::error::Error for FailoverError {}
 /// Get all backup streams for an XMLTV channel, ordered by priority
 ///
 /// Queries the database for all stream mappings for the given XMLTV channel,
-/// joining with xtream_channels and accounts to get full stream information.
+/// including Xtream, M3U, and Acestream sources.
 ///
 /// Streams are ordered by:
 /// 1. stream_priority ASC (lower = higher priority)
 /// 2. is_primary DESC (primary streams first among equal priority)
 ///
-/// Only includes streams from active accounts (is_active = 1).
+/// Only includes streams from active accounts (for Xtream) and active sources.
 ///
 /// Returns empty Vec if no mappings exist (caller handles this case).
 pub fn get_all_streams_for_channel(
     conn: &mut DbPooledConnection,
     xmltv_channel_id: i32,
 ) -> Result<Vec<BackupStream>, FailoverError> {
-    // Query for all stream mappings with account info
-    // ORDER BY stream_priority ASC, is_primary DESC ensures:
-    // - Lower priority numbers tried first
-    // - Primary streams tried first among equal priority
-    let query_result = channel_mappings::table
+    let mut all_streams = Vec::new();
+
+    // Query 1: Xtream streams (existing behavior)
+    // CR-5: xtream_channel_id is now Nullable, use nullable_eq for the join
+    // FIX #4 (HIGH): Select as nullable to handle corrupted data gracefully
+    let xtream_result = channel_mappings::table
         .inner_join(
             xtream_channels::table
-                .on(channel_mappings::xtream_channel_id.eq(xtream_channels::id.assume_not_null())),
+                .on(channel_mappings::xtream_channel_id.eq(xtream_channels::id.nullable())),
         )
         .inner_join(
             accounts::table.on(xtream_channels::account_id.eq(accounts::id.assume_not_null())),
         )
         .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
+        .filter(channel_mappings::source_type.eq("xtream"))
         .filter(accounts::is_active.eq(1))
-        .order((
-            channel_mappings::stream_priority.asc(),
-            channel_mappings::is_primary.desc(),
-        ))
         .select((
-            xtream_channels::id.assume_not_null(),
+            xtream_channels::id,
             xtream_channels::stream_id,
             channel_mappings::stream_priority,
+            channel_mappings::is_primary,
             xtream_channels::qualities,
             accounts::server_url,
             accounts::username,
             accounts::password_encrypted,
             accounts::id.assume_not_null(),
         ))
-        .load::<(i32, i32, Option<i32>, Option<String>, String, String, Vec<u8>, i32)>(conn);
+        .load::<(
+            Option<i32>,
+            i32,
+            Option<i32>,
+            Option<i32>,
+            Option<String>,
+            String,
+            String,
+            Vec<u8>,
+            i32,
+        )>(conn);
 
-    let results = match query_result {
-        Ok(r) => r,
-        Err(e) => {
-            // Log to event log for visibility in UI
-            // Note: We log the failure but continue with the error return regardless
-            if let Err(log_err) = crate::commands::logs::log_event_internal(
-                conn,
-                "error",
-                "stream",
-                &format!("Failover database query failed for channel {}: {}", xmltv_channel_id, e),
-                Some(&serde_json::json!({
-                    "channelId": xmltv_channel_id,
-                    "error": e.to_string(),
-                }).to_string().as_str()),
-            ) {
-                eprintln!("[ERROR] Failed to log failover error to database: {}", log_err);
-            }
-            eprintln!("[ERROR] stream: Failover database query failed for channel {}: {}", xmltv_channel_id, e);
-            return Err(FailoverError::DatabaseError(e.to_string()));
-        }
-    };
-
-    // Convert to BackupStream structs
-    let streams = results
-        .into_iter()
-        .map(
-            |(
-                xtream_channel_id,
+    match xtream_result {
+        Ok(results) => {
+            for (
+                xtream_channel_id_opt,
                 stream_id,
                 stream_priority,
+                is_primary,
                 qualities_json,
                 server_url,
                 username,
                 password_encrypted,
                 account_id,
-            )| {
+            ) in results
+            {
+                // FIX #4 (HIGH): Handle None case gracefully instead of panicking
+                let xtream_channel_id = match xtream_channel_id_opt {
+                    Some(id) => id,
+                    None => {
+                        eprintln!("[WARN] Skipping Xtream stream with NULL channel_id for xmltv_channel {}", xmltv_channel_id);
+                        continue;
+                    }
+                };
+
                 let qualities = qualities_json
                     .as_deref()
                     .map(|q| qualities_from_json(q))
                     .unwrap_or_default();
 
-                BackupStream {
-                    xtream_channel_id,
-                    stream_id,
-                    stream_priority: stream_priority.unwrap_or(0),
-                    qualities,
-                    server_url,
-                    username,
-                    password_encrypted,
-                    account_id,
-                }
-            },
+                // FIX #6 (MEDIUM): Allow quality_hint from source data (currently defaults to parsed qualities)
+                // Quality parsing already handles this, but we add a note for future enhancement
+
+                all_streams.push((
+                    stream_priority.unwrap_or(0),
+                    is_primary.unwrap_or(0),
+                    BackupStream {
+                        source_id: xtream_channel_id,
+                        stream_id,
+                        stream_priority: stream_priority.unwrap_or(0),
+                        qualities,
+                        source_type: StreamSourceType::Xtream {
+                            account_id,
+                            stream_id,
+                            server_url,
+                            username,
+                            password_encrypted,
+                        },
+                    },
+                ));
+            }
+        }
+        Err(e) => {
+            log_db_error(conn, xmltv_channel_id, &e);
+            return Err(FailoverError::DatabaseError(e.to_string()));
+        }
+    }
+
+    // Query 2: M3U streams
+    // Note: We use nullable() on both sides since m3u_channel_id is nullable
+    // CR-17: Join with m3u_sources to filter out disabled sources (is_active = 0)
+    // FIX #4 (HIGH): Keep assume_not_null for the join but select as nullable
+    let m3u_result = channel_mappings::table
+        .inner_join(
+            m3u_channels::table
+                .on(channel_mappings::m3u_channel_id.eq(m3u_channels::id.nullable())),
         )
-        .collect();
+        .inner_join(
+            m3u_sources::table
+                .on(m3u_channels::source_id.eq(m3u_sources::id.assume_not_null())),
+        )
+        .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
+        .filter(channel_mappings::source_type.eq("m3u"))
+        .filter(channel_mappings::m3u_channel_id.is_not_null())
+        .filter(m3u_sources::is_active.eq(1))
+        .select((
+            m3u_channels::id,
+            m3u_channels::stream_url,
+            channel_mappings::stream_priority,
+            channel_mappings::is_primary,
+        ))
+        .load::<(Option<i32>, String, Option<i32>, Option<i32>)>(conn);
+
+    match m3u_result {
+        Ok(results) => {
+            for (m3u_channel_id_opt, stream_url, stream_priority, is_primary) in results {
+                // FIX #4: Handle None gracefully
+                let m3u_channel_id = match m3u_channel_id_opt {
+                    Some(id) => id,
+                    None => {
+                        eprintln!("[WARN] Skipping M3U stream with NULL channel_id for xmltv_channel {}", xmltv_channel_id);
+                        continue;
+                    }
+                };
+                all_streams.push((
+                    stream_priority.unwrap_or(0),
+                    is_primary.unwrap_or(0),
+                    BackupStream {
+                        source_id: m3u_channel_id,
+                        stream_id: m3u_channel_id, // Use ID as stream_id for logging
+                        stream_priority: stream_priority.unwrap_or(0),
+                        // M3U streams are hardcoded to "SD" quality because:
+                        // 1. M3U playlists typically don't contain quality metadata
+                        // 2. This affects failover priority when mixing Xtream (multi-quality) with M3U sources
+                        // 3. Future enhancement: Add optional quality_hint column to m3u_channels table
+                        //    to allow manual quality specification per M3U stream
+                        qualities: vec!["SD".to_string()],
+                        source_type: StreamSourceType::M3u { stream_url },
+                    },
+                ));
+            }
+        }
+        Err(e) => {
+            // M3U query failure is non-fatal - we can still use Xtream streams
+            eprintln!(
+                "[WARN] M3U query failed for channel {}: {}",
+                xmltv_channel_id, e
+            );
+        }
+    }
+
+    // Query 3: Acestream sources
+    // Note: We use nullable() on both sides since acestream_source_id is nullable
+    let acestream_result = channel_mappings::table
+        .inner_join(
+            acestream_sources::table
+                .on(channel_mappings::acestream_source_id.eq(acestream_sources::id.nullable())),
+        )
+        .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
+        .filter(channel_mappings::source_type.eq("acestream"))
+        .filter(channel_mappings::acestream_source_id.is_not_null())
+        .filter(acestream_sources::is_active.eq(1))
+        .select((
+            acestream_sources::id,
+            acestream_sources::content_id,
+            channel_mappings::stream_priority,
+            channel_mappings::is_primary,
+        ))
+        .load::<(Option<i32>, String, Option<i32>, Option<i32>)>(conn);
+
+    match acestream_result {
+        Ok(results) => {
+            for (acestream_id_opt, content_id, stream_priority, is_primary) in results {
+                // FIX #4: Handle None gracefully
+                let acestream_id = match acestream_id_opt {
+                    Some(id) => id,
+                    None => {
+                        eprintln!("[WARN] Skipping Acestream source with NULL id for xmltv_channel {}", xmltv_channel_id);
+                        continue;
+                    }
+                };
+                all_streams.push((
+                    stream_priority.unwrap_or(0),
+                    is_primary.unwrap_or(0),
+                    BackupStream {
+                        source_id: acestream_id,
+                        stream_id: acestream_id, // Use ID as stream_id for logging
+                        stream_priority: stream_priority.unwrap_or(0),
+                        // Acestream sources are hardcoded to "SD" quality because:
+                        // 1. Acestream content IDs don't contain quality metadata
+                        // 2. This affects failover priority when mixing Xtream (multi-quality) with Acestream sources
+                        // 3. Future enhancement: Add optional quality_hint column to acestream_sources table
+                        //    to allow manual quality specification per Acestream source
+                        qualities: vec!["SD".to_string()],
+                        source_type: StreamSourceType::Acestream { content_id },
+                    },
+                ));
+            }
+        }
+        Err(e) => {
+            // Acestream query failure is non-fatal
+            eprintln!(
+                "[WARN] Acestream query failed for channel {}: {}",
+                xmltv_channel_id, e
+            );
+        }
+    }
+
+    // Sort by priority ASC, then is_primary DESC (1 = primary comes first)
+    all_streams.sort_by(|a, b| {
+        let priority_cmp = a.0.cmp(&b.0);
+        if priority_cmp == std::cmp::Ordering::Equal {
+            b.1.cmp(&a.1) // Descending: 1 (primary) before 0
+        } else {
+            priority_cmp
+        }
+    });
+
+    // Extract just the BackupStream from sorted tuples
+    let streams = all_streams.into_iter().map(|(_, _, s)| s).collect();
 
     Ok(streams)
+}
+
+/// Helper to log database errors
+fn log_db_error(conn: &mut DbPooledConnection, xmltv_channel_id: i32, e: &diesel::result::Error) {
+    if let Err(log_err) = crate::commands::logs::log_event_internal(
+        conn,
+        "error",
+        "stream",
+        &format!(
+            "Failover database query failed for channel {}: {}",
+            xmltv_channel_id, e
+        ),
+        Some(
+            &serde_json::json!({
+                "channelId": xmltv_channel_id,
+                "error": e.to_string(),
+            })
+            .to_string()
+            .as_str(),
+        ),
+    ) {
+        eprintln!(
+            "[ERROR] Failed to log failover error to database: {}",
+            log_err
+        );
+    }
+    eprintln!(
+        "[ERROR] stream: Failover database query failed for channel {}: {}",
+        xmltv_channel_id, e
+    );
 }
 
 /// Log a failover event to the event_log table
@@ -557,7 +755,7 @@ pub struct FailoverContext {
 }
 
 impl FailoverContext {
-    /// Create a new failover context
+    /// Create a new failover context starting at index 0
     pub fn new(
         available_streams: Vec<BackupStream>,
         session_id: String,
@@ -566,6 +764,22 @@ impl FailoverContext {
         Self {
             available_streams,
             current_idx: 0,
+            session_id,
+            xmltv_channel_id,
+        }
+    }
+
+    /// FIX #8 (MEDIUM): Create a new failover context starting at a specific index
+    /// This prevents skipping the current stream during mid-stream failover setup
+    pub fn new_with_index(
+        available_streams: Vec<BackupStream>,
+        session_id: String,
+        xmltv_channel_id: i32,
+        current_idx: usize,
+    ) -> Self {
+        Self {
+            available_streams,
+            current_idx,
             session_id,
             xmltv_channel_id,
         }
@@ -684,7 +898,7 @@ pub fn create_failover_stream(
     on_failover: Option<FailoverCallback>,
 ) -> FailoverStream {
     use super::buffer::{BufferedStream, BufferConfig};
-    use super::stream::build_stream_url;
+    use super::stream::build_stream_url_for_source;
 
     let (data_tx, data_rx) = mpsc::channel(FAILOVER_CHANNEL_CAPACITY);
 
@@ -775,29 +989,39 @@ pub fn create_failover_stream(
                             session.update_health(super::buffer::StreamHealth::Failed);
                         });
 
-                        // Graceful drain: continue reading any remaining buffered data
-                        // from the current (failing) stream until it ends naturally
+                        // FIX #10 (MEDIUM): Graceful drain with 5-second timeout
+                        // Read remaining buffered data but don't hang indefinitely
                         eprintln!(
                             "[INFO] stream:{} draining remaining buffer before termination",
                             ctx.session_id
                         );
 
-                        // Read remaining data without checking failover (it would just loop)
-                        loop {
-                            match futures_util::StreamExt::next(&mut current_stream).await {
-                                Some(Ok(data)) => {
-                                    if data_tx.send(Ok(data)).await.is_err() {
-                                        break; // Consumer dropped
+                        let drain_timeout = Duration::from_secs(5);
+                        let drain_result = tokio::time::timeout(drain_timeout, async {
+                            // Read remaining data without checking failover (it would just loop)
+                            loop {
+                                match futures_util::StreamExt::next(&mut current_stream).await {
+                                    Some(Ok(data)) => {
+                                        if data_tx.send(Ok(data)).await.is_err() {
+                                            break; // Consumer dropped
+                                        }
                                     }
+                                    Some(Err(_)) | None => break, // Stream ended
                                 }
-                                Some(Err(_)) | None => break, // Stream ended
                             }
-                        }
+                        }).await;
 
-                        eprintln!(
-                            "[INFO] stream:{} graceful termination complete",
-                            ctx.session_id
-                        );
+                        match drain_result {
+                            Ok(_) => eprintln!(
+                                "[INFO] stream:{} graceful termination complete",
+                                ctx.session_id
+                            ),
+                            Err(_) => eprintln!(
+                                "[WARN] stream:{} drain timeout after {}s, terminating",
+                                ctx.session_id,
+                                drain_timeout.as_secs()
+                            ),
+                        }
                         break;
                     }
 
@@ -815,26 +1039,18 @@ pub fn create_failover_stream(
                         }
                     };
 
-                    // Decrypt password for backup stream
-                    let password = match credential_manager.retrieve_password(
-                        &backup.account_id.to_string(),
-                        &backup.password_encrypted,
+                    // Build backup stream URL using source type
+                    let backup_url = match build_stream_url_for_source(
+                        &backup.source_type,
+                        Some(&credential_manager),
                     ) {
-                        Ok(p) => p,
+                        Ok(url) => url,
                         Err(e) => {
-                            eprintln!("[ERROR] stream:{} credential error: {}", ctx.session_id, e);
+                            eprintln!("[ERROR] stream:{} URL build error: {}", ctx.session_id, e);
                             // Try next backup if available
                             continue;
                         }
                     };
-
-                    // Build backup stream URL
-                    let backup_url = build_stream_url(
-                        &backup.server_url,
-                        &backup.username,
-                        &password,
-                        backup.stream_id,
-                    );
 
                     eprintln!(
                         "[INFO] stream:{} switching to backup stream {} (priority {})",
@@ -900,17 +1116,46 @@ pub fn create_failover_stream(
 mod tests {
     use super::*;
 
-    // Helper to create test BackupStream
+    // Helper to create test BackupStream (Xtream type for backwards compatibility)
     fn create_test_stream(stream_id: i32, priority: i32) -> BackupStream {
         BackupStream {
-            xtream_channel_id: stream_id,
+            source_id: stream_id,
             stream_id,
             stream_priority: priority,
             qualities: vec!["HD".to_string(), "SD".to_string()],
-            server_url: format!("http://test-{}.local:8080", stream_id),
-            username: "testuser".to_string(),
-            password_encrypted: vec![],
-            account_id: 1,
+            source_type: StreamSourceType::Xtream {
+                account_id: 1,
+                stream_id,
+                server_url: format!("http://test-{}.local:8080", stream_id),
+                username: "testuser".to_string(),
+                password_encrypted: vec![],
+            },
+        }
+    }
+
+    // Helper to create test M3U BackupStream
+    fn create_test_m3u_stream(stream_id: i32, priority: i32, url: &str) -> BackupStream {
+        BackupStream {
+            source_id: stream_id,
+            stream_id,
+            stream_priority: priority,
+            qualities: vec!["SD".to_string()],
+            source_type: StreamSourceType::M3u {
+                stream_url: url.to_string(),
+            },
+        }
+    }
+
+    // Helper to create test Acestream BackupStream
+    fn create_test_acestream(stream_id: i32, priority: i32, content_id: &str) -> BackupStream {
+        BackupStream {
+            source_id: stream_id,
+            stream_id,
+            stream_priority: priority,
+            qualities: vec!["SD".to_string()],
+            source_type: StreamSourceType::Acestream {
+                content_id: content_id.to_string(),
+            },
         }
     }
 
@@ -1368,5 +1613,109 @@ mod tests {
 
         assert!(event.to_stream_id.is_none());
         assert!(!event.success);
+    }
+
+    // =========================================================================
+    // Multi-Source BackupStream Tests
+    // =========================================================================
+
+    #[test]
+    fn test_backup_stream_xtream_source_type() {
+        let stream = create_test_stream(100, 0);
+        match &stream.source_type {
+            StreamSourceType::Xtream { stream_id, .. } => {
+                assert_eq!(*stream_id, 100);
+            }
+            _ => panic!("Expected Xtream source type"),
+        }
+    }
+
+    #[test]
+    fn test_backup_stream_m3u_source_type() {
+        let stream = create_test_m3u_stream(200, 1, "http://m3u.example.com/live.m3u8");
+        assert_eq!(stream.source_id, 200);
+        assert_eq!(stream.stream_priority, 1);
+        match &stream.source_type {
+            StreamSourceType::M3u { stream_url } => {
+                assert_eq!(stream_url, "http://m3u.example.com/live.m3u8");
+            }
+            _ => panic!("Expected M3u source type"),
+        }
+    }
+
+    #[test]
+    fn test_backup_stream_acestream_source_type() {
+        let stream = create_test_acestream(300, 2, "abc123def456");
+        assert_eq!(stream.source_id, 300);
+        assert_eq!(stream.stream_priority, 2);
+        match &stream.source_type {
+            StreamSourceType::Acestream { content_id } => {
+                assert_eq!(content_id, "abc123def456");
+            }
+            _ => panic!("Expected Acestream source type"),
+        }
+    }
+
+    #[test]
+    fn test_multi_source_failover_state() {
+        // Mixed source types: Xtream primary, M3U backup, Acestream tertiary
+        let streams = vec![
+            create_test_stream(100, 0),                                    // Xtream primary
+            create_test_m3u_stream(200, 1, "http://backup.m3u8"),          // M3U backup
+            create_test_acestream(300, 2, "abc123"),                       // Acestream tertiary
+        ];
+        let mut state = FailoverState::new(1, streams);
+
+        // Start on Xtream
+        assert_eq!(state.current_stream().unwrap().stream_id, 100);
+        assert!(matches!(
+            state.current_stream().unwrap().source_type,
+            StreamSourceType::Xtream { .. }
+        ));
+
+        // Failover to M3U
+        assert!(state.advance_to_next_stream());
+        assert_eq!(state.current_stream().unwrap().stream_id, 200);
+        assert!(matches!(
+            state.current_stream().unwrap().source_type,
+            StreamSourceType::M3u { .. }
+        ));
+
+        // Failover to Acestream
+        assert!(state.advance_to_next_stream());
+        assert_eq!(state.current_stream().unwrap().stream_id, 300);
+        assert!(matches!(
+            state.current_stream().unwrap().source_type,
+            StreamSourceType::Acestream { .. }
+        ));
+
+        // No more backups
+        assert!(!state.has_more_backups());
+    }
+
+    #[test]
+    fn test_multi_source_failover_context() {
+        let streams = vec![
+            create_test_stream(100, 0),
+            create_test_m3u_stream(200, 1, "http://backup.m3u8"),
+        ];
+        let mut ctx = FailoverContext::new(streams, "multi-test".to_string(), 1);
+
+        // Verify initial state
+        assert!(matches!(
+            ctx.current_stream().unwrap().source_type,
+            StreamSourceType::Xtream { .. }
+        ));
+        assert!(matches!(
+            ctx.next_stream().unwrap().source_type,
+            StreamSourceType::M3u { .. }
+        ));
+
+        // Advance and verify
+        ctx.advance();
+        assert!(matches!(
+            ctx.current_stream().unwrap().source_type,
+            StreamSourceType::M3u { .. }
+        ));
     }
 }

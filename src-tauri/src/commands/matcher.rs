@@ -29,7 +29,7 @@ pub struct MatchResponse {
     pub matched_count: usize,
     pub unmatched_count: usize,
     pub total_xmltv: usize,
-    pub total_xtream: usize,
+    pub total_source_channels: usize,
     pub duration_ms: u64,
     pub message: String,
 }
@@ -118,7 +118,7 @@ pub async fn run_channel_matching(
         "matchedCount": stats.matched,
         "unmatchedCount": stats.unmatched,
         "totalXmltv": stats.total_xmltv,
-        "totalXtream": stats.total_xtream,
+        "totalSourceChannels": stats.total_source_channels,
         "threshold": threshold,
         "durationMs": stats.duration_ms,
         "mappingsSaved": saved_count,
@@ -139,7 +139,7 @@ pub async fn run_channel_matching(
         matched_count: stats.matched,
         unmatched_count: stats.unmatched,
         total_xmltv: stats.total_xmltv,
-        total_xtream: stats.total_xtream,
+        total_source_channels: stats.total_source_channels,
         duration_ms: stats.duration_ms,
         message: format!(
             "Matched {} of {} XMLTV channels ({} with multiple matches). {} mappings saved.",
@@ -271,11 +271,14 @@ fn get_match_threshold_internal(db: &State<DbConnection>) -> Result<f64, String>
 // Story 3-4: Auto-Rematch Commands
 // ============================================================================
 
+use crate::db::schema::m3u_channels;
+use crate::db::models::M3uChannel;
 use crate::matcher::{
     detect_provider_changes as core_detect_provider_changes,
     auto_rematch_new_streams as core_auto_rematch_new_streams,
     handle_removed_streams as core_handle_removed_streams,
     handle_changed_streams as core_handle_changed_streams,
+    match_m3u_channels, M3uMatchResult,
     ProviderChanges, ChangedStream,
 };
 
@@ -383,4 +386,353 @@ pub fn handle_changed_streams(
 
     core_handle_changed_streams(&mut conn, account_id, &changed_streams, &config)
         .map_err(|e| format!("Failed to handle changed streams: {}", e))
+}
+
+// ============================================================================
+// Multi-Source Stream Support: M3U Auto-Match
+// ============================================================================
+
+/// Response type for M3U auto-match operations
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct M3uAutoMatchResponse {
+    pub success: bool,
+    pub matched_count: usize,
+    pub unmatched_count: usize,
+    pub total_m3u_channels: usize,
+    pub total_xmltv_channels: usize,
+    pub duration_ms: u64,
+    pub mappings_created: i32,
+    pub message: String,
+}
+
+/// Auto-match M3U channels to XMLTV channels using fuzzy matching.
+///
+/// This command matches M3U channels from a specific source (or all sources)
+/// to XMLTV channels using:
+/// - `tvg_id` attribute matching XMLTV `channel_id` (EPG ID match)
+/// - `tvg_name` or channel `name` for fuzzy name matching
+///
+/// # Arguments
+///
+/// * `source_id` - Optional M3U source ID to match. If None, matches all M3U sources.
+/// * `threshold` - Optional confidence threshold (0.0 to 1.0). Defaults to 0.85.
+///
+/// # Returns
+///
+/// M3uAutoMatchResponse with statistics about the matching operation.
+#[tauri::command]
+pub async fn auto_match_m3u_channels(
+    app: AppHandle,
+    db: State<'_, DbConnection>,
+    source_id: Option<i32>,
+    threshold: Option<f64>,
+) -> Result<M3uAutoMatchResponse, String> {
+    use crate::db::models::NewM3uAutoMatchMapping;
+    use crate::db::schema::{channel_mappings, xmltv_channel_settings};
+    use diesel::Connection;
+    use std::collections::HashSet;
+
+    // Get threshold from parameter or settings or default
+    let threshold = match threshold {
+        Some(t) => t,
+        None => get_match_threshold_internal(&db)?,
+    };
+
+    // Validate threshold
+    if !(0.0..=1.0).contains(&threshold) {
+        return Err("Threshold must be between 0.0 and 1.0".to_string());
+    }
+
+    let config = MatchConfig::default().with_threshold(threshold);
+
+    // Get database connection
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    // Load all XMLTV channels
+    let xmltv_channels_data: Vec<XmltvChannel> = xmltv_channels::table
+        .load::<XmltvChannel>(&mut conn)
+        .map_err(|e| format!("Failed to load XMLTV channels: {}", e))?;
+
+    // Load M3U channels (optionally filtered by source)
+    let m3u_channels_data: Vec<M3uChannel> = match source_id {
+        Some(sid) => m3u_channels::table
+            .filter(m3u_channels::source_id.eq(sid))
+            .load::<M3uChannel>(&mut conn)
+            .map_err(|e| format!("Failed to load M3U channels: {}", e))?,
+        None => m3u_channels::table
+            .load::<M3uChannel>(&mut conn)
+            .map_err(|e| format!("Failed to load M3U channels: {}", e))?,
+    };
+
+    // Emit progress event: starting
+    let _ = app.emit(
+        "m3u_match_progress",
+        serde_json::json!({
+            "status": "starting",
+            "message": format!("Starting M3U match: {} XMLTV channels, {} M3U channels",
+                xmltv_channels_data.len(), m3u_channels_data.len())
+        }),
+    );
+
+    // Run matching algorithm
+    let (matches, stats) = match_m3u_channels(&xmltv_channels_data, &m3u_channels_data, &config);
+
+    // Emit progress event: saving
+    let _ = app.emit(
+        "m3u_match_progress",
+        serde_json::json!({
+            "status": "saving",
+            "message": format!("Saving {} M3U matches to database", matches.len())
+        }),
+    );
+
+    // CR-7: Wrap all DB operations in a transaction for atomicity
+    let mappings_created = conn
+        .transaction::<i32, diesel::result::Error, _>(|conn| {
+            // CR-16: Query existing mappings to prevent duplicates
+            let existing_mappings: Vec<(i32, Option<i32>)> = channel_mappings::table
+                .filter(channel_mappings::source_type.eq("m3u"))
+                .filter(channel_mappings::m3u_channel_id.is_not_null())
+                .select((
+                    channel_mappings::xmltv_channel_id,
+                    channel_mappings::m3u_channel_id,
+                ))
+                .load(conn)?;
+
+            let existing_pairs: HashSet<(i32, i32)> = existing_mappings
+                .into_iter()
+                .filter_map(|(xmltv_id, m3u_id)| m3u_id.map(|mid| (xmltv_id, mid)))
+                .collect();
+
+            // CR-6: Collect all mappings into a Vec for batch insert
+            let mut new_mappings: Vec<NewM3uAutoMatchMapping> = Vec::new();
+            let mut xmltv_ids_to_enable: Vec<i32> = Vec::new();
+            let mut skipped_duplicates = 0;
+
+            for m in &matches {
+                // Only save primary matches (highest confidence per XMLTV channel)
+                if !m.is_primary {
+                    continue;
+                }
+
+                // CR-16: Skip if mapping already exists
+                if existing_pairs.contains(&(m.xmltv_channel_id, m.m3u_channel_id)) {
+                    skipped_duplicates += 1;
+                    tracing::debug!(
+                        xmltv_channel_id = m.xmltv_channel_id,
+                        m3u_channel_id = m.m3u_channel_id,
+                        "Skipping duplicate M3U mapping"
+                    );
+                    continue;
+                }
+
+                // Find the M3U channel to verify it exists
+                let m3u_channel = m3u_channels_data
+                    .iter()
+                    .find(|c| c.id == Some(m.m3u_channel_id));
+
+                if m3u_channel.is_some() {
+                    new_mappings.push(NewM3uAutoMatchMapping::new(
+                        m.xmltv_channel_id,
+                        m.m3u_channel_id,
+                        m.confidence as f32,
+                        m.is_primary,
+                        m.stream_priority,
+                    ));
+                    xmltv_ids_to_enable.push(m.xmltv_channel_id);
+                }
+            }
+
+            if skipped_duplicates > 0 {
+                tracing::info!(
+                    skipped = skipped_duplicates,
+                    "Skipped duplicate M3U mappings"
+                );
+            }
+
+            // CR-6: Batch insert all mappings at once
+            let created_count = if !new_mappings.is_empty() {
+                let result = diesel::insert_into(channel_mappings::table)
+                    .values(&new_mappings)
+                    .execute(conn);
+
+                match result {
+                    Ok(count) => count as i32,
+                    Err(e) => {
+                        // CR-34: Log failed batch insert
+                        tracing::error!(
+                            error = %e,
+                            mapping_count = new_mappings.len(),
+                            "Failed to batch insert M3U channel mappings"
+                        );
+                        return Err(e);
+                    }
+                }
+            } else {
+                0
+            };
+
+            // Batch insert XMLTV channel settings (ensure they exist)
+            for xmltv_id in &xmltv_ids_to_enable {
+                let settings_result = diesel::insert_or_ignore_into(xmltv_channel_settings::table)
+                    .values((
+                        xmltv_channel_settings::xmltv_channel_id.eq(*xmltv_id),
+                        xmltv_channel_settings::is_enabled.eq(1),
+                    ))
+                    .execute(conn);
+
+                if let Err(e) = settings_result {
+                    // CR-34: Log settings insert failures (non-fatal)
+                    tracing::warn!(
+                        xmltv_channel_id = xmltv_id,
+                        error = %e,
+                        "Failed to create XMLTV channel settings"
+                    );
+                }
+            }
+
+            Ok(created_count)
+        })
+        .map_err(|e| format!("Transaction failed: {}", e))?;
+
+    // Emit progress event: complete
+    let _ = app.emit(
+        "m3u_match_progress",
+        serde_json::json!({
+            "status": "complete",
+            "matched": stats.matched,
+            "unmatched": stats.unmatched
+        }),
+    );
+
+    // Log the operation
+    let details = serde_json::json!({
+        "matchedCount": stats.matched,
+        "unmatchedCount": stats.unmatched,
+        "totalM3uChannels": m3u_channels_data.len(),
+        "totalXmltvChannels": xmltv_channels_data.len(),
+        "threshold": threshold,
+        "durationMs": stats.duration_ms,
+        "mappingsCreated": mappings_created,
+        "sourceId": source_id,
+    });
+    let _ = log_event_internal(
+        &mut conn,
+        "info",
+        "m3u_match",
+        &format!(
+            "M3U auto-match completed: {} of {} channels matched (threshold: {:.0}%)",
+            stats.matched,
+            xmltv_channels_data.len(),
+            threshold * 100.0
+        ),
+        Some(&details.to_string()),
+    );
+
+    Ok(M3uAutoMatchResponse {
+        success: true,
+        matched_count: stats.matched,
+        unmatched_count: stats.unmatched,
+        total_m3u_channels: m3u_channels_data.len(),
+        total_xmltv_channels: xmltv_channels_data.len(),
+        duration_ms: stats.duration_ms,
+        mappings_created,
+        message: format!(
+            "Matched {} M3U channels to {} XMLTV channels. {} mappings created.",
+            stats.matched,
+            xmltv_channels_data.len(),
+            mappings_created
+        ),
+    })
+}
+
+/// Get M3U auto-match results for display.
+///
+/// Returns all M3U match results with channel details.
+/// CR-33: Infers match type from confidence score:
+/// - confidence >= 0.95 (with EPG ID boost) -> ExactEpgId
+/// - confidence >= 0.90 (with exact name boost) -> ExactName
+/// - otherwise -> Fuzzy
+#[tauri::command]
+pub fn get_m3u_auto_match_results(
+    db: State<DbConnection>,
+    source_id: Option<i32>,
+) -> Result<Vec<M3uMatchResult>, String> {
+    use crate::db::schema::channel_mappings;
+    use crate::matcher::MatchType;
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    // Query channel_mappings where source_type = "m3u" and m3u_channel_id is not null
+    let base_query = channel_mappings::table
+        .filter(channel_mappings::source_type.eq("m3u"))
+        .filter(channel_mappings::m3u_channel_id.is_not_null())
+        .into_boxed();
+
+    // Optionally filter by M3U source via join with m3u_channels
+    // Note: Float in SQLite/Diesel maps to f32
+    let matches: Vec<(i32, Option<i32>, Option<f32>, Option<i32>, Option<i32>)> = if let Some(sid) =
+        source_id
+    {
+        // Join with m3u_channels to filter by source_id
+        use crate::db::schema::m3u_channels;
+        channel_mappings::table
+            .inner_join(m3u_channels::table.on(
+                m3u_channels::id.nullable().eq(channel_mappings::m3u_channel_id),
+            ))
+            .filter(channel_mappings::source_type.eq("m3u"))
+            .filter(m3u_channels::source_id.eq(sid))
+            .select((
+                channel_mappings::xmltv_channel_id,
+                channel_mappings::m3u_channel_id,
+                channel_mappings::match_confidence,
+                channel_mappings::is_primary,
+                channel_mappings::stream_priority,
+            ))
+            .load(&mut conn)
+            .map_err(|e| format!("Failed to load M3U matches: {}", e))?
+    } else {
+        base_query
+            .select((
+                channel_mappings::xmltv_channel_id,
+                channel_mappings::m3u_channel_id,
+                channel_mappings::match_confidence,
+                channel_mappings::is_primary,
+                channel_mappings::stream_priority,
+            ))
+            .load(&mut conn)
+            .map_err(|e| format!("Failed to load M3U matches: {}", e))?
+    };
+
+    Ok(matches
+        .into_iter()
+        .filter_map(|(xmltv_id, m3u_id, confidence, is_primary, priority)| {
+            // Only include entries with valid m3u_channel_id
+            m3u_id.map(|m3u_channel_id| {
+                let conf = confidence.unwrap_or(0.0) as f64;
+                // CR-33: Infer match type from confidence score
+                // EPG ID matches get 0.15 boost, exact name matches get 0.10 boost
+                let match_type = if conf >= 0.95 {
+                    MatchType::ExactEpgId
+                } else if conf >= 0.90 {
+                    MatchType::ExactName
+                } else {
+                    MatchType::Fuzzy
+                };
+                M3uMatchResult {
+                    xmltv_channel_id: xmltv_id,
+                    m3u_channel_id,
+                    confidence: conf,
+                    is_primary: is_primary.unwrap_or(0) == 1,
+                    stream_priority: priority.unwrap_or(0),
+                    match_type,
+                }
+            })
+        })
+        .collect())
 }

@@ -20,15 +20,29 @@ diesel::table! {
 }
 
 diesel::table! {
+    acestream_sources (id) {
+        id -> Nullable<Integer>,
+        name -> Text,
+        content_id -> Text,
+        is_active -> Integer,
+        created_at -> Text,
+        updated_at -> Text,
+    }
+}
+
+diesel::table! {
     channel_mappings (id) {
         id -> Nullable<Integer>,
         xmltv_channel_id -> Integer,
-        xtream_channel_id -> Integer,
+        xtream_channel_id -> Nullable<Integer>, // CR-5: Now nullable for non-Xtream mappings
         match_confidence -> Nullable<Float>,
         is_manual -> Nullable<Integer>,
         is_primary -> Nullable<Integer>,
         stream_priority -> Nullable<Integer>,
         created_at -> Text,
+        source_type -> Text,
+        m3u_channel_id -> Nullable<Integer>,
+        acestream_source_id -> Nullable<Integer>,
     }
 }
 
@@ -41,6 +55,35 @@ diesel::table! {
         message -> Text,
         details -> Nullable<Text>,
         is_read -> Integer,
+    }
+}
+
+diesel::table! {
+    m3u_channels (id) {
+        id -> Nullable<Integer>,
+        source_id -> Integer,
+        stream_url -> Text,
+        name -> Text,
+        tvg_id -> Nullable<Text>,
+        tvg_name -> Nullable<Text>,
+        tvg_logo -> Nullable<Text>,
+        group_title -> Nullable<Text>,
+        created_at -> Text,
+        updated_at -> Text,
+    }
+}
+
+diesel::table! {
+    m3u_sources (id) {
+        id -> Nullable<Integer>,
+        name -> Text,
+        url -> Text,
+        refresh_interval_hours -> Integer,
+        last_refresh -> Nullable<Text>,
+        is_active -> Integer,
+        created_at -> Text,
+        updated_at -> Text,
+        is_local_file -> Integer,
     }
 }
 
@@ -121,8 +164,11 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(channel_mappings -> acestream_sources (acestream_source_id));
+diesel::joinable!(channel_mappings -> m3u_channels (m3u_channel_id));
 diesel::joinable!(channel_mappings -> xmltv_channels (xmltv_channel_id));
 diesel::joinable!(channel_mappings -> xtream_channels (xtream_channel_id));
+diesel::joinable!(m3u_channels -> m3u_sources (source_id));
 diesel::joinable!(programs -> xmltv_channels (xmltv_channel_id));
 diesel::joinable!(xmltv_channel_settings -> xmltv_channels (xmltv_channel_id));
 diesel::joinable!(xmltv_channels -> xmltv_sources (source_id));
@@ -130,8 +176,11 @@ diesel::joinable!(xtream_channels -> accounts (account_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     accounts,
+    acestream_sources,
     channel_mappings,
     event_log,
+    m3u_channels,
+    m3u_sources,
     programs,
     settings,
     xmltv_channel_settings,
