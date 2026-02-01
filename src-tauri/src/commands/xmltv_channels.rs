@@ -104,7 +104,9 @@ pub fn get_xmltv_channels_with_mappings(
         std::collections::HashMap::new();
 
     for mapping in all_mappings {
-        let stream = xtream_map.get(&mapping.xtream_channel_id).cloned();
+        // CR-5: xtream_channel_id is now Option<i32>
+        let stream = mapping.xtream_channel_id
+            .and_then(|id| xtream_map.get(&id).cloned());
         mappings_map
             .entry(mapping.xmltv_channel_id)
             .or_default()
@@ -157,8 +159,9 @@ pub fn get_xmltv_channels_with_mappings(
                                 None if is_manual => {
                                     // Orphaned manual match: stream no longer exists
                                     // Include it so user can see and remove it
+                                    // CR-5: xtream_channel_id is now Option<i32>
                                     Some(XtreamStreamMatch {
-                                        id: mapping.xtream_channel_id, // Use the old ID for reference
+                                        id: mapping.xtream_channel_id.unwrap_or(0), // Use the old ID for reference
                                         mapping_id,
                                         name: "[Stream no longer available]".to_string(),
                                         stream_icon: None,
@@ -277,10 +280,10 @@ pub fn set_primary_stream(
             .order_by(channel_mappings::stream_priority.asc())
             .load::<ChannelMapping>(conn)?;
 
-        // Find the mapping that should become primary
+        // Find the mapping that should become primary (CR-5: handle Option<i32>)
         let new_primary_idx = all_mappings
             .iter()
-            .position(|m| m.xtream_channel_id == xtream_channel_id)
+            .position(|m| m.xtream_channel_id == Some(xtream_channel_id))
             .ok_or_else(|| diesel::result::Error::NotFound)?;
 
         // Update priorities: new primary gets 0, others shift by 1
@@ -384,10 +387,13 @@ pub fn get_all_xtream_streams(
         std::collections::HashMap::new();
 
     for mapping in mappings {
-        mappings_map
-            .entry(mapping.xtream_channel_id)
-            .or_default()
-            .push(mapping.xmltv_channel_id);
+        // CR-5: xtream_channel_id is now Option<i32>
+        if let Some(xtream_id) = mapping.xtream_channel_id {
+            mappings_map
+                .entry(xtream_id)
+                .or_default()
+                .push(mapping.xmltv_channel_id);
+        }
     }
 
     // Build result list
@@ -466,10 +472,13 @@ pub fn search_xtream_streams(
         std::collections::HashMap::new();
 
     for mapping in mappings {
-        mappings_map
-            .entry(mapping.xtream_channel_id)
-            .or_default()
-            .push(mapping.xmltv_channel_id);
+        // CR-5: xtream_channel_id is now Option<i32>
+        if let Some(xtream_id) = mapping.xtream_channel_id {
+            mappings_map
+                .entry(xtream_id)
+                .or_default()
+                .push(mapping.xmltv_channel_id);
+        }
     }
 
     // Normalize the query once
@@ -591,15 +600,10 @@ pub fn add_manual_stream_mapping(
             max_priority.unwrap_or(-1) + 1  // Backups get next available priority
         };
 
-        // Insert the new mapping
-        let new_mapping = crate::db::models::NewChannelMapping {
-            xmltv_channel_id,
-            xtream_channel_id,
-            match_confidence: Some(1.0), // Manual match = 100% confidence
-            is_manual: 1,
-            is_primary: if set_as_primary { 1 } else { 0 },
-            stream_priority: new_priority,  // Use calculated priority (already accounts for primary/backup)
-        };
+        // Insert the new mapping (CR-5: use factory method)
+        let new_mapping = crate::db::models::NewChannelMapping::manual(xmltv_channel_id, xtream_channel_id)
+            .with_primary(set_as_primary)
+            .with_priority(new_priority);
 
         diesel::insert_into(channel_mappings::table)
             .values(&new_mapping)
@@ -1109,12 +1113,16 @@ pub fn get_orphan_xtream_streams(
         .get_connection()
         .map_err(|e| format!("Database connection error: {}", e))?;
 
-    // Get all Xtream channel IDs that ARE mapped
+    // Get all Xtream channel IDs that ARE mapped (CR-5: filter out None values)
     let mapped_ids: Vec<i32> = channel_mappings::table
+        .filter(channel_mappings::xtream_channel_id.is_not_null())
         .select(channel_mappings::xtream_channel_id)
         .distinct()
-        .load::<i32>(&mut conn)
-        .map_err(|e| format!("Failed to load mapped channel IDs: {}", e))?;
+        .load::<Option<i32>>(&mut conn)
+        .map_err(|e| format!("Failed to load mapped channel IDs: {}", e))?
+        .into_iter()
+        .flatten()
+        .collect();
 
     // Load all Xtream channels NOT in the mapped set
     let orphans: Vec<XtreamChannel> = xtream_channels::table
@@ -1227,15 +1235,8 @@ pub fn promote_orphan_to_plex(
 
         let created_channel_id = created_channel.id.ok_or(diesel::result::Error::NotFound)?;
 
-        // Create channel mapping
-        let new_mapping = NewChannelMapping {
-            xmltv_channel_id: created_channel_id,
-            xtream_channel_id,
-            match_confidence: Some(1.0), // Manual promotion = 100% confidence
-            is_manual: 1,
-            is_primary: 1,
-            stream_priority: 0,
-        };
+        // Create channel mapping (CR-5: use factory method)
+        let new_mapping = NewChannelMapping::manual(created_channel_id, xtream_channel_id);
 
         diesel::insert_into(channel_mappings::table)
             .values(&new_mapping)
@@ -1643,6 +1644,330 @@ pub fn get_xmltv_channels_for_source(
         .collect();
 
     Ok(result)
+}
+
+// ============================================================================
+// Multi-Source Channel Mapping Commands
+// ============================================================================
+
+/// Response type for M3U stream mappings
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct M3uStreamMatch {
+    pub id: i32,
+    pub mapping_id: i32,
+    pub name: String,
+    pub stream_url: String,
+    pub tvg_logo: Option<String>,
+    pub group_title: Option<String>,
+    pub is_primary: bool,
+    pub stream_priority: i32,
+}
+
+/// Response type for Acestream mappings
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AcestreamMatch {
+    pub id: i32,
+    pub mapping_id: i32,
+    pub name: String,
+    pub content_id: String,
+    pub is_primary: bool,
+    pub stream_priority: i32,
+}
+
+/// Response type for all channel mappings across source types
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AllChannelMappings {
+    pub xmltv_channel_id: i32,
+    pub xtream_matches: Vec<XtreamStreamMatch>,
+    pub m3u_matches: Vec<M3uStreamMatch>,
+    pub acestream_matches: Vec<AcestreamMatch>,
+}
+
+/// Add a manual M3U channel mapping to an XMLTV channel.
+///
+/// # Arguments
+///
+/// * `xmltv_channel_id` - The XMLTV channel to map to
+/// * `m3u_channel_id` - The M3U channel ID to map
+/// * `set_as_primary` - Whether to set this as the primary stream
+///
+/// # Returns
+///
+/// The updated list of all mappings for the XMLTV channel
+#[tauri::command]
+pub fn add_m3u_channel_mapping(
+    db: State<DbConnection>,
+    xmltv_channel_id: i32,
+    m3u_channel_id: i32,
+    set_as_primary: bool,
+) -> Result<AllChannelMappings, String> {
+    use crate::db::models::NewChannelMapping;
+    use crate::db::schema::m3u_channels;
+
+    if xmltv_channel_id <= 0 || m3u_channel_id <= 0 {
+        return Err("Invalid channel ID".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    conn.transaction(|conn| {
+        // Verify the M3U channel exists
+        let _m3u_channel: crate::db::models::M3uChannel = m3u_channels::table
+            .filter(m3u_channels::id.eq(m3u_channel_id))
+            .first(conn)
+            .map_err(|_| diesel::result::Error::NotFound)?;
+
+        // If setting as primary, demote existing primaries
+        if set_as_primary {
+            diesel::update(
+                channel_mappings::table
+                    .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id)),
+            )
+            .set((
+                channel_mappings::is_primary.eq(0),
+                channel_mappings::stream_priority.eq(channel_mappings::stream_priority + 1),
+            ))
+            .execute(conn)?;
+        }
+
+        // Get current max priority
+        let max_priority: Option<i32> = channel_mappings::table
+            .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
+            .select(diesel::dsl::max(channel_mappings::stream_priority))
+            .first::<Option<i32>>(conn)?;
+
+        let new_priority = if set_as_primary {
+            0
+        } else {
+            max_priority.unwrap_or(-1) + 1
+        };
+
+        // Insert the new mapping using CR-5 compliant factory method
+        let new_mapping = NewChannelMapping::m3u(xmltv_channel_id, m3u_channel_id, new_priority)
+            .with_primary(set_as_primary);
+
+        diesel::insert_into(channel_mappings::table)
+            .values(&new_mapping)
+            .execute(conn)?;
+
+        // Load and return all mappings
+        load_all_channel_mappings(conn, xmltv_channel_id)
+    })
+    .map_err(|e: diesel::result::Error| {
+        if let diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::UniqueViolation,
+            _,
+        ) = e
+        {
+            "This M3U channel is already mapped".to_string()
+        } else if matches!(e, diesel::result::Error::NotFound) {
+            "M3U channel not found".to_string()
+        } else {
+            format!("Failed to add M3U mapping: {}", e)
+        }
+    })
+}
+
+/// Add a manual Acestream source mapping to an XMLTV channel.
+///
+/// # Arguments
+///
+/// * `xmltv_channel_id` - The XMLTV channel to map to
+/// * `acestream_source_id` - The Acestream source ID to map
+/// * `set_as_primary` - Whether to set this as the primary stream
+///
+/// # Returns
+///
+/// The updated list of all mappings for the XMLTV channel
+#[tauri::command]
+pub fn add_acestream_channel_mapping(
+    db: State<DbConnection>,
+    xmltv_channel_id: i32,
+    acestream_source_id: i32,
+    set_as_primary: bool,
+) -> Result<AllChannelMappings, String> {
+    use crate::db::models::NewChannelMapping;
+    use crate::db::schema::acestream_sources;
+
+    if xmltv_channel_id <= 0 || acestream_source_id <= 0 {
+        return Err("Invalid ID".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    conn.transaction(|conn| {
+        // Verify the Acestream source exists
+        let _acestream: crate::db::models::AcestreamSource = acestream_sources::table
+            .filter(acestream_sources::id.eq(acestream_source_id))
+            .first(conn)
+            .map_err(|_| diesel::result::Error::NotFound)?;
+
+        // If setting as primary, demote existing primaries
+        if set_as_primary {
+            diesel::update(
+                channel_mappings::table
+                    .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id)),
+            )
+            .set((
+                channel_mappings::is_primary.eq(0),
+                channel_mappings::stream_priority.eq(channel_mappings::stream_priority + 1),
+            ))
+            .execute(conn)?;
+        }
+
+        // Get current max priority
+        let max_priority: Option<i32> = channel_mappings::table
+            .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
+            .select(diesel::dsl::max(channel_mappings::stream_priority))
+            .first::<Option<i32>>(conn)?;
+
+        let new_priority = if set_as_primary {
+            0
+        } else {
+            max_priority.unwrap_or(-1) + 1
+        };
+
+        // Insert the new mapping using CR-5 compliant factory method
+        let new_mapping = NewChannelMapping::acestream(xmltv_channel_id, acestream_source_id, new_priority)
+            .with_primary(set_as_primary);
+
+        diesel::insert_into(channel_mappings::table)
+            .values(&new_mapping)
+            .execute(conn)?;
+
+        // Load and return all mappings
+        load_all_channel_mappings(conn, xmltv_channel_id)
+    })
+    .map_err(|e: diesel::result::Error| {
+        if let diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::UniqueViolation,
+            _,
+        ) = e
+        {
+            "This Acestream source is already mapped".to_string()
+        } else if matches!(e, diesel::result::Error::NotFound) {
+            "Acestream source not found".to_string()
+        } else {
+            format!("Failed to add Acestream mapping: {}", e)
+        }
+    })
+}
+
+/// Get all channel mappings for an XMLTV channel (all source types).
+///
+/// Returns Xtream, M3U, and Acestream mappings grouped by source type.
+///
+/// # Arguments
+///
+/// * `xmltv_channel_id` - The XMLTV channel ID
+///
+/// # Returns
+///
+/// All mappings grouped by source type
+#[tauri::command]
+pub fn get_all_channel_mappings(
+    db: State<DbConnection>,
+    xmltv_channel_id: i32,
+) -> Result<AllChannelMappings, String> {
+    if xmltv_channel_id <= 0 {
+        return Err("Invalid channel ID".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    load_all_channel_mappings(&mut conn, xmltv_channel_id)
+        .map_err(|e| format!("Failed to load mappings: {}", e))
+}
+
+/// Internal function to load all mappings for a channel
+fn load_all_channel_mappings(
+    conn: &mut crate::db::DbPooledConnection,
+    xmltv_channel_id: i32,
+) -> Result<AllChannelMappings, diesel::result::Error> {
+    use crate::db::schema::{acestream_sources, m3u_channels};
+
+    // Load Xtream mappings
+    let xtream_mappings: Vec<(ChannelMapping, XtreamChannel)> = channel_mappings::table
+        .inner_join(xtream_channels::table)
+        .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
+        .filter(channel_mappings::source_type.eq("xtream"))
+        .order_by(channel_mappings::stream_priority.asc())
+        .load::<(ChannelMapping, XtreamChannel)>(conn)?;
+
+    let xtream_matches: Vec<XtreamStreamMatch> = xtream_mappings
+        .iter()
+        .filter_map(|(mapping, stream)| build_stream_match(mapping, stream))
+        .collect();
+
+    // Load M3U mappings
+    let m3u_mappings: Vec<(ChannelMapping, crate::db::models::M3uChannel)> = channel_mappings::table
+        .inner_join(
+            m3u_channels::table.on(channel_mappings::m3u_channel_id.eq(m3u_channels::id.nullable())),
+        )
+        .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
+        .filter(channel_mappings::source_type.eq("m3u"))
+        .filter(channel_mappings::m3u_channel_id.is_not_null())
+        .order_by(channel_mappings::stream_priority.asc())
+        .load::<(ChannelMapping, crate::db::models::M3uChannel)>(conn)?;
+
+    let m3u_matches: Vec<M3uStreamMatch> = m3u_mappings
+        .iter()
+        .filter_map(|(mapping, channel)| {
+            Some(M3uStreamMatch {
+                id: channel.id?,
+                mapping_id: mapping.id?,
+                name: channel.name.clone(),
+                stream_url: channel.stream_url.clone(),
+                tvg_logo: channel.tvg_logo.clone(),
+                group_title: channel.group_title.clone(),
+                is_primary: mapping.is_primary.unwrap_or(0) != 0,
+                stream_priority: mapping.stream_priority.unwrap_or(0),
+            })
+        })
+        .collect();
+
+    // Load Acestream mappings
+    let acestream_mappings: Vec<(ChannelMapping, crate::db::models::AcestreamSource)> =
+        channel_mappings::table
+            .inner_join(
+                acestream_sources::table
+                    .on(channel_mappings::acestream_source_id.eq(acestream_sources::id.nullable())),
+            )
+            .filter(channel_mappings::xmltv_channel_id.eq(xmltv_channel_id))
+            .filter(channel_mappings::source_type.eq("acestream"))
+            .filter(channel_mappings::acestream_source_id.is_not_null())
+            .order_by(channel_mappings::stream_priority.asc())
+            .load::<(ChannelMapping, crate::db::models::AcestreamSource)>(conn)?;
+
+    let acestream_matches: Vec<AcestreamMatch> = acestream_mappings
+        .iter()
+        .filter_map(|(mapping, source)| {
+            Some(AcestreamMatch {
+                id: source.id?,
+                mapping_id: mapping.id?,
+                name: source.name.clone(),
+                content_id: source.content_id.clone(),
+                is_primary: mapping.is_primary.unwrap_or(0) != 0,
+                stream_priority: mapping.stream_priority.unwrap_or(0),
+            })
+        })
+        .collect();
+
+    Ok(AllChannelMappings {
+        xmltv_channel_id,
+        xtream_matches,
+        m3u_matches,
+        acestream_matches,
+    })
 }
 
 #[cfg(test)]

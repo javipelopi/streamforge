@@ -8,7 +8,43 @@ use regex::Regex;
 use std::sync::LazyLock;
 
 use super::{scorer::calculate_match_score, MatchConfig, MatchResult, MatchStats, MatchType};
-use crate::db::models::{XmltvChannel, XtreamChannel};
+use crate::db::models::{M3uChannel, XmltvChannel, XtreamChannel};
+
+/// Result of matching M3U channels to XMLTV channels
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct M3uMatchResult {
+    /// XMLTV channel database ID
+    pub xmltv_channel_id: i32,
+    /// M3U channel database ID
+    pub m3u_channel_id: i32,
+    /// Confidence score (0.0 - 1.0)
+    pub confidence: f64,
+    /// Whether this is the primary stream for the channel
+    pub is_primary: bool,
+    /// Priority order for this stream (lower = higher priority)
+    pub stream_priority: i32,
+    /// Type of match that was found
+    pub match_type: MatchType,
+}
+
+impl M3uMatchResult {
+    pub fn new(
+        xmltv_channel_id: i32,
+        m3u_channel_id: i32,
+        confidence: f64,
+        match_type: MatchType,
+    ) -> Self {
+        Self {
+            xmltv_channel_id,
+            m3u_channel_id,
+            confidence,
+            is_primary: false,
+            stream_priority: 0,
+            match_type,
+        }
+    }
+}
 
 /// Regex pattern for removing quality suffixes (HD, SD, FHD, 4K, UHD, etc.)
 /// Matches quality indicators both at end and before parentheses/punctuation
@@ -91,7 +127,7 @@ pub fn match_channels(
     let mut all_matches: Vec<MatchResult> = Vec::new();
     let mut stats = MatchStats {
         total_xmltv: xmltv_channels.len(),
-        total_xtream: xtream_channels.len(),
+        total_source_channels: xtream_channels.len(),
         ..Default::default()
     };
 
@@ -184,6 +220,119 @@ pub fn epg_ids_match(xtream_epg_id: Option<&str>, xmltv_channel_id: &str) -> boo
     xtream_epg_id
         .map(|epg_id| epg_id.trim().eq_ignore_ascii_case(xmltv_channel_id.trim()))
         .unwrap_or(false)
+}
+
+/// Match M3U channels to XMLTV channels using fuzzy matching.
+///
+/// For each XMLTV channel, this function finds all M3U channels that match
+/// above the confidence threshold. Matching uses:
+/// - `tvg_id` attribute matching XMLTV `channel_id` (high confidence boost)
+/// - `tvg_name` or `name` for fuzzy name matching
+///
+/// # Arguments
+///
+/// * `xmltv_channels` - List of XMLTV channels to match
+/// * `m3u_channels` - List of M3U channels to match against
+/// * `config` - Matching configuration (threshold, boosts)
+///
+/// # Returns
+///
+/// A tuple of (Vec<M3uMatchResult>, MatchStats) containing all matches and statistics
+pub fn match_m3u_channels(
+    xmltv_channels: &[XmltvChannel],
+    m3u_channels: &[M3uChannel],
+    config: &MatchConfig,
+) -> (Vec<M3uMatchResult>, MatchStats) {
+    let start = std::time::Instant::now();
+    let mut all_matches: Vec<M3uMatchResult> = Vec::new();
+    let mut stats = MatchStats {
+        total_xmltv: xmltv_channels.len(),
+        total_source_channels: m3u_channels.len(), // CR-32: Now properly named for M3U count
+        ..Default::default()
+    };
+
+    // Pre-process M3U channels: normalize names and extract tvg_id
+    let m3u_normalized: Vec<(i32, String, Option<&str>)> = m3u_channels
+        .iter()
+        .filter_map(|c| {
+            c.id.map(|id| {
+                // Use tvg_name if available, otherwise use name
+                let name_to_match = c.tvg_name.as_deref().unwrap_or(&c.name);
+                (
+                    id,
+                    normalize_channel_name(name_to_match),
+                    c.tvg_id.as_deref(),
+                )
+            })
+        })
+        .collect();
+
+    for xmltv in xmltv_channels {
+        let xmltv_id = match xmltv.id {
+            Some(id) => id,
+            None => continue,
+        };
+
+        let xmltv_normalized = normalize_channel_name(&xmltv.display_name);
+        let xmltv_channel_id = &xmltv.channel_id;
+
+        let mut channel_matches: Vec<M3uMatchResult> = Vec::new();
+
+        for (m3u_id, m3u_normalized, m3u_tvg_id) in &m3u_normalized {
+            // Check for tvg_id match (M3U's tvg_id matches XMLTV's channel_id)
+            let tvg_id_match = epg_ids_match(*m3u_tvg_id, xmltv_channel_id);
+
+            // Check for exact normalized name match
+            let exact_name_match = xmltv_normalized == *m3u_normalized;
+
+            // Calculate match score
+            let score = calculate_match_score(
+                &xmltv_normalized,
+                m3u_normalized,
+                tvg_id_match,
+                exact_name_match,
+                config,
+            );
+
+            // Only include matches above threshold
+            if score >= config.threshold {
+                let match_type = if tvg_id_match {
+                    MatchType::ExactEpgId
+                } else if exact_name_match {
+                    MatchType::ExactName
+                } else {
+                    MatchType::Fuzzy
+                };
+
+                channel_matches.push(M3uMatchResult::new(xmltv_id, *m3u_id, score, match_type));
+            }
+        }
+
+        // Sort matches by confidence (descending)
+        channel_matches.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+
+        // Assign priority and primary status
+        let match_count = channel_matches.len();
+        for (i, m) in channel_matches.iter_mut().enumerate() {
+            m.is_primary = i == 0;
+            m.stream_priority = i as i32;
+        }
+
+        // Update stats
+        if match_count > 0 {
+            stats.matched += 1;
+            if match_count > 1 {
+                stats.multiple_matches += 1;
+            }
+        } else {
+            stats.unmatched += 1;
+        }
+
+        all_matches.extend(channel_matches);
+    }
+
+    stats.duration_ms = start.elapsed().as_millis() as u64;
+    (all_matches, stats)
 }
 
 #[cfg(test)]

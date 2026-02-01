@@ -1,6 +1,8 @@
+pub mod acestream;
 pub mod commands;
 pub mod credentials;
 pub mod db;
+pub mod m3u;
 pub mod matcher;
 pub mod scheduler;
 pub mod server;
@@ -349,6 +351,9 @@ pub fn run() {
             commands::matcher::auto_rematch_new_streams,
             commands::matcher::handle_removed_streams,
             commands::matcher::handle_changed_streams,
+            // Multi-source M3U auto-match commands
+            commands::matcher::auto_match_m3u_channels,
+            commands::matcher::get_m3u_auto_match_results,
             commands::xmltv_channels::get_xmltv_channels_with_mappings,
             commands::xmltv_channels::set_primary_stream,
             commands::xmltv_channels::toggle_xmltv_channel,
@@ -357,6 +362,10 @@ pub fn run() {
             commands::xmltv_channels::search_xtream_streams,
             commands::xmltv_channels::add_manual_stream_mapping,
             commands::xmltv_channels::remove_stream_mapping,
+            // Multi-source channel mapping commands
+            commands::xmltv_channels::add_m3u_channel_mapping,
+            commands::xmltv_channels::add_acestream_channel_mapping,
+            commands::xmltv_channels::get_all_channel_mappings,
             commands::xmltv_channels::bulk_toggle_channels,
             commands::xmltv_channels::get_orphan_xtream_streams,
             commands::xmltv_channels::promote_orphan_to_plex,
@@ -392,7 +401,20 @@ pub fn run() {
             commands::test_data::create_test_program,
             commands::test_data::delete_test_channel_data,
             commands::test_data::create_test_channel_mapping,
-            commands::test_data::delete_test_stream_mapping
+            commands::test_data::delete_test_stream_mapping,
+            // M3U source commands (Multi-Source Stream Support)
+            commands::m3u_sources::add_m3u_source,
+            commands::m3u_sources::get_m3u_sources,
+            commands::m3u_sources::refresh_m3u_source,
+            commands::m3u_sources::delete_m3u_source,
+            commands::m3u_sources::get_m3u_channels,
+            commands::m3u_sources::toggle_m3u_source,
+            // Acestream source commands (Multi-Source Stream Support)
+            commands::acestream_sources::check_acestream_status,
+            commands::acestream_sources::add_acestream_source,
+            commands::acestream_sources::get_acestream_sources,
+            commands::acestream_sources::delete_acestream_source,
+            commands::acestream_sources::toggle_acestream_source
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

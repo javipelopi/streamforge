@@ -630,6 +630,57 @@ export function getMatchTypeDisplay(matchType: MatchType): string {
 }
 
 // ============================================================================
+// M3U Auto-Match (Multi-Source Stream Support)
+// ============================================================================
+
+/** M3U auto-match response type */
+export interface M3uAutoMatchResponse {
+  success: boolean;
+  matchedCount: number;
+  unmatchedCount: number;
+  totalM3uChannels: number;
+  totalXmltvChannels: number;
+  durationMs: number;
+  mappingsCreated: number;
+  message: string;
+}
+
+/** M3U match result type */
+export interface M3uMatchResult {
+  xmltvChannelId: number;
+  m3uChannelId: number;
+  confidence: number;
+  isPrimary: boolean;
+  streamPriority: number;
+  matchType: MatchType;
+}
+
+/**
+ * Auto-match M3U channels to XMLTV channels using fuzzy matching
+ * @param sourceId - Optional M3U source ID to match. If not provided, matches all sources.
+ * @param threshold - Optional confidence threshold (0.0 to 1.0). Defaults to 0.85.
+ * @returns Match response with statistics
+ */
+export async function autoMatchM3uChannels(
+  sourceId?: number,
+  threshold?: number
+): Promise<M3uAutoMatchResponse> {
+  return invoke<M3uAutoMatchResponse>('auto_match_m3u_channels', {
+    sourceId,
+    threshold,
+  });
+}
+
+/**
+ * Get M3U auto-match results
+ * @param sourceId - Optional M3U source ID to filter by
+ * @returns List of M3U match results
+ */
+export async function getM3uAutoMatchResults(sourceId?: number): Promise<M3uMatchResult[]> {
+  return invoke<M3uMatchResult[]>('get_m3u_auto_match_results', { sourceId });
+}
+
+// ============================================================================
 // XMLTV Channel Display types and functions (Story 3-2)
 // ============================================================================
 
@@ -1854,5 +1905,273 @@ export function formatLastCheckTime(dateStr: string | null): string {
 
   // Format as date for older checks
   return date.toLocaleDateString();
+}
+
+// ============================================================================
+// M3U Source Management (Multi-Source Support)
+// ============================================================================
+
+/** M3U source response type */
+export interface M3uSource {
+  id: number;
+  name: string;
+  url: string;
+  refreshIntervalHours: number;
+  lastRefresh: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** M3U channel response type */
+export interface M3uChannel {
+  id: number;
+  sourceId: number;
+  streamUrl: string;
+  name: string;
+  tvgId: string | null;
+  tvgName: string | null;
+  tvgLogo: string | null;
+  groupTitle: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Request type for adding a new M3U source */
+export interface NewM3uSource {
+  name: string;
+  url: string;
+  refreshIntervalHours?: number;
+}
+
+/**
+ * Add a new M3U playlist source
+ *
+ * @param name - Display name for the source
+ * @param url - URL to the M3U playlist, local file path, or single stream URL
+ * @param refreshIntervalHours - How often to refresh (default 24, ignored for local files/streams)
+ * @param isLocalFile - Whether the source is a local file path instead of URL
+ * @param isSingleStream - Whether this is a single stream URL (not a playlist)
+ * @returns The created M3U source with fetched channels
+ */
+export async function addM3uSource(
+  name: string,
+  url: string,
+  refreshIntervalHours?: number,
+  isLocalFile?: boolean,
+  isSingleStream?: boolean
+): Promise<M3uSource> {
+  return invoke<M3uSource>('add_m3u_source', {
+    input: { name, url, refreshIntervalHours, isLocalFile, isSingleStream }
+  });
+}
+
+/**
+ * Get all M3U sources
+ *
+ * @returns List of all M3U sources
+ */
+export async function getM3uSources(): Promise<M3uSource[]> {
+  return invoke<M3uSource[]>('get_m3u_sources');
+}
+
+/**
+ * Refresh an M3U source (re-fetch and parse the playlist)
+ *
+ * @param sourceId - Source ID to refresh
+ * @returns The updated M3U source
+ */
+export async function refreshM3uSource(sourceId: number): Promise<M3uSource> {
+  return invoke<M3uSource>('refresh_m3u_source', { sourceId });
+}
+
+/**
+ * Delete an M3U source and all its channels
+ *
+ * @param sourceId - Source ID to delete
+ */
+export async function deleteM3uSource(sourceId: number): Promise<void> {
+  return invoke<void>('delete_m3u_source', { sourceId });
+}
+
+/**
+ * Get all channels for an M3U source
+ *
+ * @param sourceId - Source ID to get channels for
+ * @returns List of M3U channels
+ */
+export async function getM3uChannels(sourceId: number): Promise<M3uChannel[]> {
+  return invoke<M3uChannel[]>('get_m3u_channels', { sourceId });
+}
+
+/**
+ * Toggle M3U source active state
+ *
+ * @param sourceId - Source ID to toggle
+ * @param active - New active state
+ * @returns The updated source
+ */
+export async function toggleM3uSource(sourceId: number, active: boolean): Promise<M3uSource> {
+  return invoke<M3uSource>('toggle_m3u_source', { sourceId, isActive: active });
+}
+
+// ============================================================================
+// Acestream Source Management (Multi-Source Support)
+// ============================================================================
+
+/** Acestream source response type */
+export interface AcestreamSource {
+  id: number;
+  name: string;
+  contentId: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Acestream engine status */
+export interface AcestreamStatus {
+  isSupported: boolean;
+  platform: string;
+  engineAvailable: boolean;
+  engineUrl: string;
+}
+
+/**
+ * Check the status of the Acestream engine
+ *
+ * @returns Acestream engine status
+ */
+export async function checkAcestreamStatus(): Promise<AcestreamStatus> {
+  return invoke<AcestreamStatus>('check_acestream_status');
+}
+
+/**
+ * Add a new Acestream source
+ *
+ * @param name - Display name for the source
+ * @param contentIdOrUrl - Acestream content ID (40-char hex) or acestream:// URL
+ * @returns The created Acestream source
+ */
+export async function addAcestreamSource(name: string, contentIdOrUrl: string): Promise<AcestreamSource> {
+  return invoke<AcestreamSource>('add_acestream_source', {
+    input: { name, contentIdOrUrl }
+  });
+}
+
+/**
+ * Get all Acestream sources
+ *
+ * @returns List of all Acestream sources
+ */
+export async function getAcestreamSources(): Promise<AcestreamSource[]> {
+  return invoke<AcestreamSource[]>('get_acestream_sources');
+}
+
+/**
+ * Delete an Acestream source
+ *
+ * @param sourceId - Source ID to delete
+ */
+export async function deleteAcestreamSource(sourceId: number): Promise<void> {
+  return invoke<void>('delete_acestream_source', { sourceId });
+}
+
+/**
+ * Toggle Acestream source active state
+ *
+ * @param sourceId - Source ID to toggle
+ * @param active - New active state
+ * @returns The updated source
+ */
+export async function toggleAcestreamSource(
+  sourceId: number,
+  active: boolean
+): Promise<AcestreamSource> {
+  return invoke<AcestreamSource>('toggle_acestream_source', { sourceId, isActive: active });
+}
+
+// ============================================================================
+// Multi-Source Channel Mappings
+// ============================================================================
+
+/** M3U stream match response type */
+export interface M3uStreamMatch {
+  id: number;
+  mappingId: number;
+  name: string;
+  streamUrl: string;
+  tvgLogo: string | null;
+  groupTitle: string | null;
+  isPrimary: boolean;
+  streamPriority: number;
+}
+
+/** Acestream match response type */
+export interface AcestreamMatch {
+  id: number;
+  mappingId: number;
+  name: string;
+  contentId: string;
+  isPrimary: boolean;
+  streamPriority: number;
+}
+
+/** All channel mappings across source types */
+export interface AllChannelMappings {
+  xmltvChannelId: number;
+  xtreamMatches: XtreamStreamMatch[];
+  m3uMatches: M3uStreamMatch[];
+  acestreamMatches: AcestreamMatch[];
+}
+
+/**
+ * Add an M3U channel mapping to an XMLTV channel
+ *
+ * @param xmltvChannelId - XMLTV channel to map to
+ * @param m3uChannelId - M3U channel ID to map
+ * @param setAsPrimary - Whether to set as primary stream
+ * @returns All mappings for the XMLTV channel
+ */
+export async function addM3uChannelMapping(
+  xmltvChannelId: number,
+  m3uChannelId: number,
+  setAsPrimary: boolean
+): Promise<AllChannelMappings> {
+  return invoke<AllChannelMappings>('add_m3u_channel_mapping', {
+    xmltvChannelId,
+    m3uChannelId,
+    setAsPrimary,
+  });
+}
+
+/**
+ * Add an Acestream source mapping to an XMLTV channel
+ *
+ * @param xmltvChannelId - XMLTV channel to map to
+ * @param acestreamSourceId - Acestream source ID to map
+ * @param setAsPrimary - Whether to set as primary stream
+ * @returns All mappings for the XMLTV channel
+ */
+export async function addAcestreamChannelMapping(
+  xmltvChannelId: number,
+  acestreamSourceId: number,
+  setAsPrimary: boolean
+): Promise<AllChannelMappings> {
+  return invoke<AllChannelMappings>('add_acestream_channel_mapping', {
+    xmltvChannelId,
+    acestreamSourceId,
+    setAsPrimary,
+  });
+}
+
+/**
+ * Get all channel mappings for an XMLTV channel (all source types)
+ *
+ * @param xmltvChannelId - XMLTV channel ID
+ * @returns All mappings grouped by source type
+ */
+export async function getAllChannelMappings(xmltvChannelId: number): Promise<AllChannelMappings> {
+  return invoke<AllChannelMappings>('get_all_channel_mappings', { xmltvChannelId });
 }
 

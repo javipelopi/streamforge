@@ -1,8 +1,10 @@
 pub mod accounts;
+pub mod acestream_sources;
 pub mod channels;
 pub mod config;
 pub mod epg;
 pub mod logs;
+pub mod m3u_sources;
 pub mod matcher;
 pub mod test_data;
 pub mod update;
@@ -27,6 +29,9 @@ pub use epg::{add_xmltv_source, delete_xmltv_source, get_xmltv_sources, toggle_x
 
 // Re-export test data commands (only available in test mode)
 pub use test_data::{seed_stream_proxy_test_data, clear_stream_proxy_test_data};
+
+// Re-export M3U auto-match commands (Multi-Source Stream Support)
+pub use matcher::{auto_match_m3u_channels, get_m3u_auto_match_results};
 
 /// Response type for autostart status queries
 #[derive(Serialize)]

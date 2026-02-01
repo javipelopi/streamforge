@@ -156,12 +156,16 @@ pub fn get_xtream_streams_for_account(
         std::collections::HashMap::new();
 
     for mapping in mappings {
-        let xmltv_id = mapping.xmltv_channel_id;
-        let is_synthetic = synthetic_map.get(&xmltv_id).copied().unwrap_or(false);
-        mappings_map
-            .entry(mapping.xtream_channel_id)
-            .or_default()
-            .push((xmltv_id, is_synthetic));
+        // CR-5: xtream_channel_id is now Option<i32>
+        // We only process Xtream mappings here, so xtream_channel_id should be Some
+        if let Some(xtream_id) = mapping.xtream_channel_id {
+            let xmltv_id = mapping.xmltv_channel_id;
+            let is_synthetic = synthetic_map.get(&xmltv_id).copied().unwrap_or(false);
+            mappings_map
+                .entry(xtream_id)
+                .or_default()
+                .push((xmltv_id, is_synthetic));
+        }
     }
 
     // Build result list
@@ -276,10 +280,10 @@ pub fn get_account_stream_stats(
         .load::<ChannelMapping>(&mut conn)
         .map_err(|e| format!("Failed to load channel mappings: {}", e))?;
 
-    // Get unique mapped stream IDs
+    // Get unique mapped stream IDs (CR-5: filter_map for Option<i32>)
     let mapped_stream_ids: std::collections::HashSet<i32> = mappings
         .iter()
-        .map(|m| m.xtream_channel_id)
+        .filter_map(|m| m.xtream_channel_id)
         .collect();
 
     // Get all XMLTV channel IDs that are referenced by mappings
@@ -300,11 +304,11 @@ pub fn get_account_stream_stats(
         std::collections::HashSet::new()
     };
 
-    // Count promoted streams (streams mapped to synthetic channels)
+    // Count promoted streams (streams mapped to synthetic channels) (CR-5: filter_map for Option<i32>)
     let promoted_stream_ids: std::collections::HashSet<i32> = mappings
         .iter()
         .filter(|m| synthetic_channel_ids.contains(&m.xmltv_channel_id))
-        .map(|m| m.xtream_channel_id)
+        .filter_map(|m| m.xtream_channel_id)
         .collect();
 
     let promoted_count = promoted_stream_ids.len() as i32;

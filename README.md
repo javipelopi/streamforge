@@ -32,6 +32,8 @@ StreamForge acts as a bridge between your Xtream Codes IPTV provider and Plex Me
 - **Automatic Channel Matching** - Intelligently matches IPTV streams to EPG channels
 - **Quality-Based Stream Selection** - Automatically select HD, FHD, or 4K streams based on availability
 - **Multiple Provider Support** - Manage multiple Xtream Codes accounts
+- **Multi-Source Streams** - Use M3U playlists and Acestream as additional or backup sources
+- **Automatic Failover** - Seamlessly switch between sources when primary stream fails
 - **Secure Credential Storage** - Uses OS Keychain for password protection
 - **System Tray Integration** - Runs quietly in the background
 
@@ -93,6 +95,46 @@ sudo dnf install ffmpeg
 
 Verify installation with `ffmpeg -version`.
 
+#### M3U Playlists
+
+M3U/M3U8 playlists require only FFmpeg (listed above). Simply add your M3U playlist URL in **Sources** → **M3U** tab and StreamForge will fetch, parse, and proxy the streams through FFmpeg automatically.
+
+#### Installing Acestream Engine (Optional)
+
+> **Note**: Acestream Engine is only required if you want to use Acestream sources. It is **not available on macOS**.
+
+Acestream is a P2P-based streaming technology. To use Acestream sources in StreamForge, you need to install and run Acestream Engine separately.
+
+**Windows:**
+1. Download from [Acestream.org](https://acestream.org/)
+2. Install and run Acestream Engine
+3. The engine runs as a background service on port 6878
+
+**Linux (Ubuntu/Debian):**
+```bash
+# Add Acestream repository
+sudo add-apt-repository ppa:ppa-niclas/acestream
+sudo apt update
+sudo apt install acestream-engine
+
+# Start the engine
+acestreamengine --client-console
+```
+
+**Linux (Snap):**
+```bash
+sudo snap install acestreamplayer
+```
+
+**Linux (Docker):**
+```bash
+docker run -d -p 6878:6878 --name acestream magnetikonline/acestream-server
+```
+
+Verify Acestream Engine is running by visiting `http://localhost:6878/webui/api/service?method=get_version` in your browser.
+
+**macOS**: Acestream Engine is **not supported** on macOS. StreamForge will display a warning and disable Acestream functionality on this platform.
+
 ### Development
 
 ```bash
@@ -150,6 +192,8 @@ StreamForge stores its data in the platform-specific application data directory:
 - **FFmpeg not found**: Ensure `ffmpeg` is in your system PATH. StreamForge relies on it for stream processing.
 - **Plex not finding device**: Check that StreamForge is running and your firewall allows traffic on the configured port (usually 3000 or randomly assigned).
 - **Channels not playing**: Verify your Xtream provider is active and supports the number of concurrent connections you are attempting.
+- **Acestream sources not working**: Ensure Acestream Engine is installed and running (check `http://localhost:6878/webui/api/service?method=get_version`). Note: Acestream is not supported on macOS.
+- **Acestream "Engine Not Found"**: Start the Acestream Engine service before attempting to play Acestream sources.
 
 ## License
 

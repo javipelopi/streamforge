@@ -23,7 +23,9 @@ mod persistence;
 mod scorer;
 
 pub use auto_rematch::*;
-pub use fuzzy::*;
+pub use fuzzy::{
+    epg_ids_match, match_channels, match_m3u_channels, normalize_channel_name, M3uMatchResult,
+};
 pub use persistence::*;
 pub use scorer::*;
 
@@ -114,8 +116,9 @@ impl MatchResult {
 pub struct MatchStats {
     /// Total number of XMLTV channels processed
     pub total_xmltv: usize,
-    /// Total number of Xtream channels available
-    pub total_xtream: usize,
+    /// Total number of source channels available (Xtream, M3U, or Acestream)
+    /// CR-32: Renamed from total_xtream for clarity with multi-source support
+    pub total_source_channels: usize,
     /// Number of XMLTV channels with at least one match
     pub matched: usize,
     /// Number of XMLTV channels with no matches

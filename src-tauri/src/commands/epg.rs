@@ -128,13 +128,16 @@ pub(crate) fn preserve_channel_data(
         .filter(channel_mappings::is_manual.eq(1))
         .load(conn)?;
 
+    // CR-5: Only preserve Xtream manual mappings (xtream_channel_id is Some)
     let manual_mappings: Vec<(String, i32, i32, i32)> = mappings
         .into_iter()
         .filter_map(|m| {
+            // Only preserve if xtream_channel_id is Some (Xtream mapping)
+            let xtream_id = m.xtream_channel_id?;
             old_id_to_channel_id.get(&m.xmltv_channel_id).map(|channel_id| {
                 (
                     channel_id.clone(),
-                    m.xtream_channel_id,
+                    xtream_id,
                     m.is_primary.unwrap_or(0),
                     m.stream_priority.unwrap_or(0),
                 )

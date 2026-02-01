@@ -2,16 +2,21 @@
  * Sources View
  * Story 3-10: Implement Sources View with XMLTV Tab
  * Story 3-11: Implement Sources View with Xtream Tab
+ * Multi-Source Stream Support: M3U and Acestream Tabs
  *
  * A tabbed interface for browsing channel sources:
  * - XMLTV tab: Browse EPG sources with lazy-loaded channels
  * - Xtream tab: Browse Xtream stream sources with lazy-loaded streams
+ * - M3U tab: Browse M3U playlist sources
+ * - Acestream tab: Manage Acestream P2P sources
  */
 import { useState } from 'react';
 import { XmltvSourcesTab } from '../components/sources/XmltvSourcesTab';
 import { XtreamSourcesTab } from '../components/sources/XtreamSourcesTab';
+import { M3uSourcesTab } from '../components/sources/M3uSourcesTab';
+import { AcestreamSourcesTab } from '../components/sources/AcestreamSourcesTab';
 
-type TabType = 'xmltv' | 'xtream';
+type TabType = 'xmltv' | 'xtream' | 'm3u' | 'acestream';
 
 export function Sources() {
   const [activeTab, setActiveTab] = useState<TabType>('xmltv');
@@ -22,7 +27,7 @@ export function Sources() {
       <div className="mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Sources</h1>
         <p className="text-gray-500 mt-1">
-          Browse your XMLTV and Xtream channel sources
+          Browse your XMLTV, Xtream, M3U, and Acestream channel sources
         </p>
       </div>
 
@@ -56,6 +61,34 @@ export function Sources() {
         >
           Xtream
         </button>
+        <button
+          data-testid="m3u-tab"
+          role="tab"
+          aria-selected={activeTab === 'm3u'}
+          aria-controls="m3u-tab-panel"
+          className={`px-4 py-2 font-medium text-sm ${
+            activeTab === 'm3u'
+              ? 'border-b-2 border-blue-500 text-blue-600'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+          onClick={() => setActiveTab('m3u')}
+        >
+          M3U
+        </button>
+        <button
+          data-testid="acestream-tab"
+          role="tab"
+          aria-selected={activeTab === 'acestream'}
+          aria-controls="acestream-tab-panel"
+          className={`px-4 py-2 font-medium text-sm ${
+            activeTab === 'acestream'
+              ? 'border-b-2 border-blue-500 text-blue-600'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+          onClick={() => setActiveTab('acestream')}
+        >
+          Acestream
+        </button>
       </div>
 
       {/* Tab Panels */}
@@ -78,6 +111,28 @@ export function Sources() {
           className="flex-1 overflow-hidden"
         >
           <XtreamSourcesTab />
+        </div>
+      )}
+
+      {activeTab === 'm3u' && (
+        <div
+          id="m3u-tab-panel"
+          role="tabpanel"
+          aria-labelledby="m3u-tab"
+          className="flex-1 overflow-hidden"
+        >
+          <M3uSourcesTab />
+        </div>
+      )}
+
+      {activeTab === 'acestream' && (
+        <div
+          id="acestream-tab-panel"
+          role="tabpanel"
+          aria-labelledby="acestream-tab"
+          className="flex-1 overflow-hidden"
+        >
+          <AcestreamSourcesTab />
         </div>
       )}
     </div>

@@ -164,8 +164,13 @@ pub fn calculate_match_stats(
     // Count total XMLTV channels
     let total_xmltv: i64 = xmltv_channels::table.count().get_result(&mut conn)?;
 
-    // Count total Xtream channels
+    // Count total source channels (Xtream + M3U + Acestream)
+    // CR-32: Renamed from total_xtream for multi-source support
     let total_xtream: i64 = xtream_channels::table.count().get_result(&mut conn)?;
+    use crate::db::schema::{acestream_sources, m3u_channels};
+    let total_m3u: i64 = m3u_channels::table.count().get_result(&mut conn)?;
+    let total_acestream: i64 = acestream_sources::table.count().get_result(&mut conn)?;
+    let total_source_channels = total_xtream + total_m3u + total_acestream;
 
     // Count distinct XMLTV channels with at least one mapping
     // Use subquery approach to count unique xmltv_channel_ids
@@ -188,7 +193,7 @@ pub fn calculate_match_stats(
 
     Ok(MatchStats {
         total_xmltv: total_xmltv as usize,
-        total_xtream: total_xtream as usize,
+        total_source_channels: total_source_channels as usize,
         matched: matched as usize,
         unmatched: (total_xmltv - matched) as usize,
         multiple_matches,

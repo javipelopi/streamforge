@@ -167,10 +167,10 @@ pub fn auto_rematch_new_streams(
     let existing_mappings: Vec<ChannelMapping> = channel_mappings::table
         .load::<ChannelMapping>(conn)?;
 
-    // Build set of existing (xmltv_id, xtream_id) pairs
+    // Build set of existing (xmltv_id, xtream_id) pairs (CR-5: filter_map for Option<i32>)
     let existing_pairs: HashSet<(i32, i32)> = existing_mappings
         .iter()
-        .map(|m| (m.xmltv_channel_id, m.xtream_channel_id))
+        .filter_map(|m| m.xtream_channel_id.map(|xtream_id| (m.xmltv_channel_id, xtream_id)))
         .collect();
 
     // Build map of xmltv_channel_id -> list of mappings
@@ -210,14 +210,14 @@ pub fn auto_rematch_new_streams(
         let is_primary = !has_existing_primary;
         let stream_priority = if is_primary { 0 } else { max_priority + 1 };
 
-        let new_mapping = NewChannelMapping {
-            xmltv_channel_id: m.xmltv_channel_id,
-            xtream_channel_id: m.xtream_channel_id,
-            match_confidence: Some(m.confidence as f32),
-            is_manual: 0, // Auto-generated
-            is_primary: if is_primary { 1 } else { 0 },
+        // CR-5: Use the factory method which sets xtream_channel_id as Some(id)
+        let new_mapping = NewChannelMapping::new(
+            m.xmltv_channel_id,
+            m.xtream_channel_id,
+            Some(m.confidence as f32),
+            is_primary,
             stream_priority,
-        };
+        );
 
         new_mappings_to_insert.push(new_mapping);
 
@@ -300,9 +300,10 @@ pub fn handle_removed_streams(
             if is_manual {
                 // NEVER delete manual matches - just count them as preserved
                 manual_matches_preserved += 1;
+                // CR-5: xtream_channel_id is now Option<i32>
                 eprintln!(
                     "[auto_rematch] WARNING: Manual match preserved for unavailable stream - \
-                     xmltv_channel_id: {}, xtream_channel_id: {}",
+                     xmltv_channel_id: {}, xtream_channel_id: {:?}",
                     mapping.xmltv_channel_id, mapping.xtream_channel_id
                 );
             } else {
@@ -585,6 +586,479 @@ pub fn perform_auto_rematch(
         if let Some(id) = changed.new_stream.id {
             let mappings: Vec<ChannelMapping> = channel_mappings::table
                 .filter(channel_mappings::xtream_channel_id.eq(id))
+                .load::<ChannelMapping>(conn)
+                .unwrap_or_default();
+            for m in mappings {
+                affected_xmltv_ids.insert(m.xmltv_channel_id);
+            }
+        }
+    }
+
+    result.affected_xmltv_channels = affected_xmltv_ids.len() as i32;
+
+    Ok((changes, result))
+}
+
+// ============================================================================
+// CR-15: M3U Auto-Rematch Support
+// ============================================================================
+
+use super::fuzzy::match_m3u_channels;
+use crate::db::models::{M3uChannel, NewM3uAutoMatchMapping};
+use crate::db::schema::m3u_channels;
+
+/// Summary of changes detected in an M3U source's channel list
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct M3uSourceChanges {
+    /// Channels that are new (not previously in database)
+    pub new_channels: Vec<M3uChannel>,
+    /// Channel IDs that have been removed from the source
+    pub removed_channel_ids: Vec<i32>,
+    /// Channels that have changed (same stream_url, different metadata)
+    pub changed_channels: Vec<M3uChangedChannel>,
+}
+
+/// Represents an M3U channel that has changed metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct M3uChangedChannel {
+    pub old_channel: M3uChannel,
+    pub new_channel: M3uChannel,
+}
+
+/// Result of the M3U auto-rematch operation
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct M3uRematchResult {
+    /// Number of new mappings created
+    pub new_matches_created: i32,
+    /// Number of mappings removed (auto-generated only)
+    pub mappings_removed: i32,
+    /// Number of mappings updated (confidence recalculated)
+    pub mappings_updated: i32,
+    /// Number of manual matches preserved (not removed)
+    pub manual_matches_preserved: i32,
+    /// Number of XMLTV channels affected
+    pub affected_xmltv_channels: i32,
+}
+
+/// Detect changes in an M3U source's channel list by comparing with database.
+///
+/// # Arguments
+///
+/// * `conn` - Database connection
+/// * `source_id` - The M3U source ID
+/// * `current_channels` - List of channels from the current parse
+///
+/// # Returns
+///
+/// `M3uSourceChanges` containing new, removed, and changed channels
+pub fn detect_m3u_changes(
+    conn: &mut SqliteConnection,
+    source_id: i32,
+    current_channels: &[M3uChannel],
+) -> Result<M3uSourceChanges, diesel::result::Error> {
+    // Load existing channels from database
+    let existing_channels: Vec<M3uChannel> = m3u_channels::table
+        .filter(m3u_channels::source_id.eq(source_id))
+        .load::<M3uChannel>(conn)?;
+
+    // Build lookup map by stream_url (unique identifier for M3U channels)
+    let existing_by_url: HashMap<&str, &M3uChannel> = existing_channels
+        .iter()
+        .map(|c| (c.stream_url.as_str(), c))
+        .collect();
+
+    let current_urls: HashSet<&str> = current_channels
+        .iter()
+        .map(|c| c.stream_url.as_str())
+        .collect();
+
+    let mut changes = M3uSourceChanges::default();
+
+    // Detect new channels (in current but not in existing)
+    for channel in current_channels {
+        if !existing_by_url.contains_key(channel.stream_url.as_str()) {
+            changes.new_channels.push(channel.clone());
+        }
+    }
+
+    // Detect removed channels (in existing but not in current)
+    for channel in &existing_channels {
+        if !current_urls.contains(channel.stream_url.as_str()) {
+            if let Some(id) = channel.id {
+                changes.removed_channel_ids.push(id);
+            }
+        }
+    }
+
+    // Detect changed channels (same stream_url but different metadata)
+    for channel in current_channels {
+        if let Some(existing) = existing_by_url.get(channel.stream_url.as_str()) {
+            if has_m3u_channel_changed(existing, channel) {
+                changes.changed_channels.push(M3uChangedChannel {
+                    old_channel: (*existing).clone(),
+                    new_channel: channel.clone(),
+                });
+            }
+        }
+    }
+
+    Ok(changes)
+}
+
+/// Check if an M3U channel's metadata has changed
+fn has_m3u_channel_changed(old: &M3uChannel, new: &M3uChannel) -> bool {
+    old.name != new.name
+        || old.tvg_id != new.tvg_id
+        || old.tvg_name != new.tvg_name
+        || old.tvg_logo != new.tvg_logo
+        || old.group_title != new.group_title
+}
+
+/// Auto-match new M3U channels to XMLTV channels using fuzzy algorithm.
+///
+/// New channels are matched as backup streams (not primary) unless the
+/// XMLTV channel has no existing matches.
+///
+/// # Arguments
+///
+/// * `conn` - Database connection
+/// * `new_channels` - List of new M3U channels to match
+/// * `config` - Matching configuration
+///
+/// # Returns
+///
+/// Number of new mappings created
+pub fn auto_rematch_m3u_channels(
+    conn: &mut SqliteConnection,
+    new_channels: &[M3uChannel],
+    config: &MatchConfig,
+) -> Result<i32, diesel::result::Error> {
+    if new_channels.is_empty() {
+        return Ok(0);
+    }
+
+    // Load all XMLTV channels
+    let xmltv_all: Vec<XmltvChannel> = xmltv_channels::table.load::<XmltvChannel>(conn)?;
+
+    if xmltv_all.is_empty() {
+        return Ok(0);
+    }
+
+    // Run fuzzy matching for new channels against all XMLTV channels
+    let (matches, _stats) = match_m3u_channels(&xmltv_all, new_channels, config);
+
+    // Load existing M3U mappings to check what already exists
+    let existing_mappings: Vec<ChannelMapping> = channel_mappings::table
+        .filter(channel_mappings::source_type.eq("m3u"))
+        .load::<ChannelMapping>(conn)?;
+
+    // Build set of existing (xmltv_id, m3u_id) pairs
+    let existing_pairs: HashSet<(i32, i32)> = existing_mappings
+        .iter()
+        .filter_map(|m| m.m3u_channel_id.map(|mid| (m.xmltv_channel_id, mid)))
+        .collect();
+
+    // Build map of xmltv_channel_id -> list of mappings (all source types)
+    let all_mappings: Vec<ChannelMapping> = channel_mappings::table.load::<ChannelMapping>(conn)?;
+    let mut mappings_by_xmltv: HashMap<i32, Vec<&ChannelMapping>> = HashMap::new();
+    for mapping in &all_mappings {
+        mappings_by_xmltv
+            .entry(mapping.xmltv_channel_id)
+            .or_default()
+            .push(mapping);
+    }
+
+    let mut new_mappings_to_insert: Vec<NewM3uAutoMatchMapping> = Vec::new();
+
+    for m in &matches {
+        // Skip if mapping already exists
+        if existing_pairs.contains(&(m.xmltv_channel_id, m.m3u_channel_id)) {
+            continue;
+        }
+
+        // Determine if this should be primary
+        let existing_for_channel = mappings_by_xmltv.get(&m.xmltv_channel_id);
+        let has_existing_primary = existing_for_channel
+            .map(|mappings| mappings.iter().any(|em| em.is_primary.unwrap_or(0) != 0))
+            .unwrap_or(false);
+
+        // Calculate priority
+        let max_priority = existing_for_channel
+            .map(|mappings| {
+                mappings
+                    .iter()
+                    .filter_map(|em| em.stream_priority)
+                    .max()
+                    .unwrap_or(-1)
+            })
+            .unwrap_or(-1);
+
+        let is_primary = !has_existing_primary;
+        let stream_priority = if is_primary { 0 } else { max_priority + 1 };
+
+        new_mappings_to_insert.push(NewM3uAutoMatchMapping::new(
+            m.xmltv_channel_id,
+            m.m3u_channel_id,
+            m.confidence as f32,
+            is_primary,
+            stream_priority,
+        ));
+    }
+
+    // Insert new mappings in bulk
+    let count = new_mappings_to_insert.len() as i32;
+    if !new_mappings_to_insert.is_empty() {
+        diesel::insert_into(channel_mappings::table)
+            .values(&new_mappings_to_insert)
+            .execute(conn)?;
+    }
+
+    Ok(count)
+}
+
+/// Handle removed M3U channels by deleting auto-generated mappings and promoting backups.
+///
+/// Manual matches (is_manual = 1) are NEVER deleted - only a warning is logged.
+///
+/// # Arguments
+///
+/// * `conn` - Database connection
+/// * `removed_channel_ids` - List of M3U channel IDs that are no longer available
+///
+/// # Returns
+///
+/// Tuple of (mappings_removed, manual_matches_preserved)
+pub fn handle_removed_m3u_channels(
+    conn: &mut SqliteConnection,
+    removed_channel_ids: &[i32],
+) -> Result<(i32, i32), diesel::result::Error> {
+    if removed_channel_ids.is_empty() {
+        return Ok((0, 0));
+    }
+
+    // Find mappings for the removed M3U channels
+    let affected_mappings: Vec<ChannelMapping> = channel_mappings::table
+        .filter(channel_mappings::source_type.eq("m3u"))
+        .filter(
+            channel_mappings::m3u_channel_id
+                .eq_any(removed_channel_ids.iter().map(|id| Some(*id)).collect::<Vec<_>>()),
+        )
+        .load::<ChannelMapping>(conn)?;
+
+    let mut mappings_removed = 0;
+    let mut manual_matches_preserved = 0;
+
+    // Group affected mappings by xmltv_channel_id
+    let mut affected_by_xmltv: HashMap<i32, Vec<ChannelMapping>> = HashMap::new();
+    for mapping in affected_mappings {
+        affected_by_xmltv
+            .entry(mapping.xmltv_channel_id)
+            .or_default()
+            .push(mapping);
+    }
+
+    // Process each affected XMLTV channel
+    for (xmltv_id, mappings) in affected_by_xmltv {
+        let mut primary_removed = false;
+
+        for mapping in &mappings {
+            let is_manual = mapping.is_manual.unwrap_or(0) != 0;
+            let is_primary = mapping.is_primary.unwrap_or(0) != 0;
+
+            if is_manual {
+                // NEVER delete manual matches - just count them as preserved
+                manual_matches_preserved += 1;
+                tracing::warn!(
+                    xmltv_channel_id = mapping.xmltv_channel_id,
+                    m3u_channel_id = ?mapping.m3u_channel_id,
+                    "Manual M3U match preserved for unavailable channel"
+                );
+            } else {
+                // Delete auto-generated mapping
+                if let Some(mapping_id) = mapping.id {
+                    diesel::delete(
+                        channel_mappings::table.filter(channel_mappings::id.eq(Some(mapping_id))),
+                    )
+                    .execute(conn)?;
+
+                    mappings_removed += 1;
+                    if is_primary {
+                        primary_removed = true;
+                    }
+                }
+            }
+        }
+
+        // If primary was removed, promote the next highest confidence backup
+        if primary_removed {
+            promote_next_primary(conn, xmltv_id)?;
+        }
+    }
+
+    Ok((mappings_removed, manual_matches_preserved))
+}
+
+/// Handle changed M3U channels by updating metadata and recalculating match confidence.
+///
+/// # Arguments
+///
+/// * `conn` - Database connection
+/// * `changed_channels` - List of changed M3U channels
+/// * `config` - Matching configuration
+///
+/// # Returns
+///
+/// Number of mappings updated
+pub fn handle_changed_m3u_channels(
+    conn: &mut SqliteConnection,
+    changed_channels: &[M3uChangedChannel],
+    config: &MatchConfig,
+) -> Result<i32, diesel::result::Error> {
+    if changed_channels.is_empty() {
+        return Ok(0);
+    }
+
+    let mut mappings_updated = 0;
+
+    // Load all XMLTV channels for re-matching
+    let xmltv_all: Vec<XmltvChannel> = xmltv_channels::table.load::<XmltvChannel>(conn)?;
+
+    // Build lookup for XMLTV channels by ID
+    let xmltv_by_id: HashMap<i32, &XmltvChannel> = xmltv_all
+        .iter()
+        .filter_map(|c| c.id.map(|id| (id, c)))
+        .collect();
+
+    for changed in changed_channels {
+        let m3u_db_id = match changed.old_channel.id {
+            Some(id) => id,
+            None => continue,
+        };
+
+        // Find all mappings for this M3U channel and recalculate confidence
+        let affected_mappings: Vec<ChannelMapping> = channel_mappings::table
+            .filter(channel_mappings::source_type.eq("m3u"))
+            .filter(channel_mappings::m3u_channel_id.eq(Some(m3u_db_id)))
+            .load::<ChannelMapping>(conn)?;
+
+        for mapping in affected_mappings {
+            // Skip manual matches - don't recalculate their confidence
+            if mapping.is_manual.unwrap_or(0) != 0 {
+                continue;
+            }
+
+            // Get the XMLTV channel for this mapping
+            if let Some(xmltv) = xmltv_by_id.get(&mapping.xmltv_channel_id) {
+                // Re-run matching to get new confidence
+                let xmltv_vec = vec![(*xmltv).clone()];
+                let m3u_vec = vec![changed.new_channel.clone()];
+                let (matches, _) = match_m3u_channels(&xmltv_vec, &m3u_vec, config);
+
+                if let Some(new_match) = matches.first() {
+                    // Update the confidence score
+                    if let Some(mapping_id) = mapping.id {
+                        diesel::update(
+                            channel_mappings::table
+                                .filter(channel_mappings::id.eq(Some(mapping_id))),
+                        )
+                        .set(channel_mappings::match_confidence.eq(Some(new_match.confidence as f32)))
+                        .execute(conn)?;
+
+                        mappings_updated += 1;
+
+                        // Log warning if confidence dropped below threshold
+                        if new_match.confidence < config.threshold {
+                            tracing::warn!(
+                                mapping_id = mapping_id,
+                                old_confidence = ?mapping.match_confidence,
+                                new_confidence = new_match.confidence,
+                                threshold = config.threshold,
+                                "M3U match confidence dropped below threshold - keeping mapping but may need review"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(mappings_updated)
+}
+
+/// Perform a complete auto-rematch operation for an M3U source.
+///
+/// This function:
+/// 1. Detects source changes
+/// 2. Auto-matches new channels
+/// 3. Handles removed channels
+/// 4. Handles changed channels
+///
+/// # Arguments
+///
+/// * `conn` - Database connection
+/// * `source_id` - The M3U source ID
+/// * `current_channels` - List of channels from the current parse
+/// * `config` - Matching configuration
+///
+/// # Returns
+///
+/// `M3uRematchResult` with statistics about the operation
+pub fn perform_m3u_auto_rematch(
+    conn: &mut SqliteConnection,
+    source_id: i32,
+    current_channels: &[M3uChannel],
+    config: &MatchConfig,
+) -> Result<(M3uSourceChanges, M3uRematchResult), diesel::result::Error> {
+    // Step 1: Detect changes
+    let changes = detect_m3u_changes(conn, source_id, current_channels)?;
+
+    let mut result = M3uRematchResult::default();
+
+    // Track affected XMLTV channels
+    let mut affected_xmltv_ids: HashSet<i32> = HashSet::new();
+
+    // Step 2: Auto-match new channels
+    if !changes.new_channels.is_empty() {
+        result.new_matches_created = auto_rematch_m3u_channels(conn, &changes.new_channels, config)?;
+    }
+
+    // Step 3: Handle removed channels
+    if !changes.removed_channel_ids.is_empty() {
+        let (removed, preserved) = handle_removed_m3u_channels(conn, &changes.removed_channel_ids)?;
+        result.mappings_removed = removed;
+        result.manual_matches_preserved = preserved;
+    }
+
+    // Step 4: Handle changed channels
+    if !changes.changed_channels.is_empty() {
+        result.mappings_updated =
+            handle_changed_m3u_channels(conn, &changes.changed_channels, config)?;
+    }
+
+    // Calculate affected XMLTV channels
+    // Get affected from new channels
+    for channel in &changes.new_channels {
+        if let Some(id) = channel.id {
+            let mappings: Vec<ChannelMapping> = channel_mappings::table
+                .filter(channel_mappings::source_type.eq("m3u"))
+                .filter(channel_mappings::m3u_channel_id.eq(Some(id)))
+                .load::<ChannelMapping>(conn)
+                .unwrap_or_default();
+            for m in mappings {
+                affected_xmltv_ids.insert(m.xmltv_channel_id);
+            }
+        }
+    }
+
+    // Get affected from changed channels
+    for changed in &changes.changed_channels {
+        if let Some(id) = changed.new_channel.id {
+            let mappings: Vec<ChannelMapping> = channel_mappings::table
+                .filter(channel_mappings::source_type.eq("m3u"))
+                .filter(channel_mappings::m3u_channel_id.eq(Some(id)))
                 .load::<ChannelMapping>(conn)
                 .unwrap_or_default();
             for m in mappings {
