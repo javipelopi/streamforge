@@ -15,6 +15,9 @@ use crate::db::DbConnection;
 use crate::matcher::normalize_channel_name;
 use strsim::jaro_winkler;
 
+/// Source ID marker for synthetic XMLTV channels (promoted orphans)
+const SYNTHETIC_SOURCE_ID: i32 = -1;
+
 /// Xtream stream match info for display
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -1211,7 +1214,7 @@ pub fn promote_orphan_to_plex(
         // Get or create synthetic source (source_id for synthetic channels)
         // We use source_id = -1 as a special marker for synthetic channels
         // (Alternative: create a dedicated "Synthetic" source in xmltv_sources)
-        let synthetic_source_id = -1;
+        let synthetic_source_id = SYNTHETIC_SOURCE_ID;
 
         // Generate unique channel ID for synthetic channel
         let synthetic_channel_id = format!("synthetic-{}", xtream_channel_id);
@@ -1967,6 +1970,457 @@ fn load_all_channel_mappings(
         xtream_matches,
         m3u_matches,
         acestream_matches,
+    })
+}
+
+// ============================================================================
+// Orphan M3U Channel Management
+// ============================================================================
+
+/// Orphan M3U channel info (channels not matched to any XMLTV channel)
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct OrphanM3uChannel {
+    pub id: i32,
+    pub source_id: i32,
+    pub source_name: String,
+    pub name: String,
+    pub stream_url: String,
+    pub tvg_id: Option<String>,
+    pub tvg_name: Option<String>,
+    pub tvg_logo: Option<String>,
+    pub group_title: Option<String>,
+}
+
+/// Get all M3U channels not mapped to any XMLTV channel.
+///
+/// Returns M3U channels that have no entry in channel_mappings,
+/// grouped by their source for easier management.
+///
+/// # Returns
+///
+/// List of M3U channels not mapped to any XMLTV channel
+#[tauri::command]
+pub fn get_orphan_m3u_channels(
+    db: State<DbConnection>,
+) -> Result<Vec<OrphanM3uChannel>, String> {
+    use crate::db::models::M3uChannel;
+    use crate::db::schema::{m3u_channels, m3u_sources};
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    // Get all M3U channel IDs that ARE mapped
+    let mapped_ids: Vec<i32> = channel_mappings::table
+        .filter(channel_mappings::m3u_channel_id.is_not_null())
+        .select(channel_mappings::m3u_channel_id)
+        .distinct()
+        .load::<Option<i32>>(&mut conn)
+        .map_err(|e| format!("Failed to load mapped M3U channel IDs: {}", e))?
+        .into_iter()
+        .flatten()
+        .collect();
+
+    // Load all M3U channels NOT in the mapped set, with their source names
+    let orphans: Vec<(M3uChannel, String)> = m3u_channels::table
+        .inner_join(m3u_sources::table)
+        .filter(m3u_channels::id.ne_all(&mapped_ids))
+        .select((m3u_channels::all_columns, m3u_sources::name))
+        .order_by((m3u_sources::name.asc(), m3u_channels::name.asc()))
+        .load::<(M3uChannel, String)>(&mut conn)
+        .map_err(|e| format!("Failed to load orphan M3U channels: {}", e))?;
+
+    let result: Vec<OrphanM3uChannel> = orphans
+        .into_iter()
+        .filter_map(|(channel, source_name)| {
+            Some(OrphanM3uChannel {
+                id: channel.id?,
+                source_id: channel.source_id,
+                source_name,
+                name: channel.name,
+                stream_url: channel.stream_url,
+                tvg_id: channel.tvg_id,
+                tvg_name: channel.tvg_name,
+                tvg_logo: channel.tvg_logo,
+                group_title: channel.group_title,
+            })
+        })
+        .collect();
+
+    Ok(result)
+}
+
+/// Promote an orphan M3U channel to a synthetic XMLTV channel for Plex.
+///
+/// Creates:
+/// 1. A synthetic `xmltv_channels` entry with `is_synthetic = true`
+/// 2. A `channel_mappings` entry linking it to the M3U channel
+/// 3. A `xmltv_channel_settings` entry with `is_enabled = 0`
+/// 4. Placeholder EPG data for the next 7 days
+///
+/// # Arguments
+///
+/// * `m3u_channel_id` - The M3U channel ID to promote
+/// * `display_name` - Display name for the synthetic channel
+/// * `icon_url` - Optional icon URL for the channel
+///
+/// # Returns
+///
+/// The newly created XmltvChannelWithMappings
+#[tauri::command]
+pub fn promote_m3u_orphan_to_plex(
+    db: State<DbConnection>,
+    m3u_channel_id: i32,
+    display_name: String,
+    icon_url: Option<String>,
+) -> Result<XmltvChannelWithMappings, String> {
+    use crate::db::models::{M3uChannel, NewChannelMapping, NewXmltvChannel, NewXmltvChannelSettings};
+    use crate::db::schema::{m3u_channels, programs};
+
+    // Validate inputs
+    if m3u_channel_id <= 0 {
+        return Err("Invalid M3U channel ID".to_string());
+    }
+    if display_name.trim().is_empty() {
+        return Err("Display name cannot be empty".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    conn.transaction::<XmltvChannelWithMappings, diesel::result::Error, _>(|conn| {
+        // Verify the M3U channel exists
+        let _m3u_channel: M3uChannel = m3u_channels::table
+            .filter(m3u_channels::id.eq(m3u_channel_id))
+            .first::<M3uChannel>(conn)?;
+
+        // Check if this channel is already mapped (prevent duplicate promotions)
+        let existing_mapping: Option<ChannelMapping> = channel_mappings::table
+            .filter(channel_mappings::m3u_channel_id.eq(m3u_channel_id))
+            .first::<ChannelMapping>(conn)
+            .optional()?;
+
+        if existing_mapping.is_some() {
+            return Err(diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::UniqueViolation,
+                Box::new("M3U channel is already mapped".to_string()),
+            ));
+        }
+
+        // Synthetic source marker
+        let synthetic_source_id = SYNTHETIC_SOURCE_ID;
+
+        // Generate unique channel ID for synthetic channel
+        let synthetic_channel_id = format!("synthetic-m3u-{}", m3u_channel_id);
+
+        // Create synthetic XMLTV channel
+        let new_channel = NewXmltvChannel::synthetic(
+            synthetic_source_id,
+            &synthetic_channel_id,
+            display_name.trim(),
+            icon_url.clone(),
+        );
+
+        diesel::insert_into(xmltv_channels::table)
+            .values(&new_channel)
+            .execute(conn)?;
+
+        // Get the newly created channel
+        let created_channel: XmltvChannel = xmltv_channels::table
+            .filter(xmltv_channels::channel_id.eq(&synthetic_channel_id))
+            .first::<XmltvChannel>(conn)?;
+
+        let created_channel_id = created_channel.id.ok_or(diesel::result::Error::NotFound)?;
+
+        // Create channel mapping for M3U
+        let new_mapping = NewChannelMapping::m3u_manual(created_channel_id, m3u_channel_id);
+
+        diesel::insert_into(channel_mappings::table)
+            .values(&new_mapping)
+            .execute(conn)?;
+
+        // Create channel settings (disabled by default)
+        let new_settings = NewXmltvChannelSettings::disabled(created_channel_id);
+        diesel::insert_into(xmltv_channel_settings::table)
+            .values(&new_settings)
+            .execute(conn)?;
+
+        // Generate placeholder EPG (7 days of 2-hour blocks)
+        let channel_name = display_name.trim();
+        let now = chrono::Utc::now();
+        let start_of_hour = now
+            .with_minute(0)
+            .and_then(|t| t.with_second(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .unwrap_or(now);
+
+        let hours_in_7_days = 7 * 24;
+        let block_duration_hours = 2;
+
+        for i in (0..hours_in_7_days).step_by(block_duration_hours) {
+            let start = start_of_hour + chrono::Duration::hours(i as i64);
+            let end = start + chrono::Duration::hours(block_duration_hours as i64);
+
+            diesel::insert_into(programs::table)
+                .values((
+                    programs::xmltv_channel_id.eq(created_channel_id),
+                    programs::title.eq(format!("{} - Live Programming", channel_name)),
+                    programs::description.eq(format!(
+                        "Live programming from {}. This is a synthetic channel created from an M3U source.",
+                        channel_name
+                    )),
+                    programs::start_time.eq(start.to_rfc3339()),
+                    programs::end_time.eq(end.to_rfc3339()),
+                    programs::category.eq("Live"),
+                    programs::created_at.eq(now.to_rfc3339()),
+                ))
+                .execute(conn)?;
+        }
+
+        // Build the response (empty matches - will be populated on next fetch)
+        Ok(XmltvChannelWithMappings {
+            id: created_channel_id,
+            source_id: synthetic_source_id,
+            channel_id: synthetic_channel_id,
+            display_name: created_channel.display_name,
+            icon: created_channel.icon,
+            is_synthetic: true,
+            is_enabled: false,
+            plex_display_order: None,
+            match_count: 1,
+            matches: vec![], // M3U matches fetched separately via get_all_channel_mappings
+        })
+    })
+    .map_err(|e| {
+        match e {
+            diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::UniqueViolation,
+                _,
+            ) => "This M3U channel has already been promoted".to_string(),
+            diesel::result::Error::NotFound => "M3U channel not found".to_string(),
+            _ => format!("Failed to promote M3U orphan to Plex: {}", e),
+        }
+    })
+}
+
+// ============================================================================
+// Orphan Acestream Source Management
+// ============================================================================
+
+/// Orphan Acestream source info (sources not matched to any XMLTV channel)
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct OrphanAcestreamSource {
+    pub id: i32,
+    pub name: String,
+    pub content_id: String,
+    pub is_active: bool,
+}
+
+/// Get all Acestream sources not mapped to any XMLTV channel.
+///
+/// Returns Acestream sources that have no entry in channel_mappings.
+///
+/// # Returns
+///
+/// List of Acestream sources not mapped to any XMLTV channel
+#[tauri::command]
+pub fn get_orphan_acestream_sources(
+    db: State<DbConnection>,
+) -> Result<Vec<OrphanAcestreamSource>, String> {
+    use crate::db::models::AcestreamSource;
+    use crate::db::schema::acestream_sources;
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    // Get all Acestream source IDs that ARE mapped
+    let mapped_ids: Vec<i32> = channel_mappings::table
+        .filter(channel_mappings::acestream_source_id.is_not_null())
+        .select(channel_mappings::acestream_source_id)
+        .distinct()
+        .load::<Option<i32>>(&mut conn)
+        .map_err(|e| format!("Failed to load mapped Acestream source IDs: {}", e))?
+        .into_iter()
+        .flatten()
+        .collect();
+
+    // Load all Acestream sources NOT in the mapped set
+    let orphans: Vec<AcestreamSource> = acestream_sources::table
+        .filter(acestream_sources::id.ne_all(&mapped_ids))
+        .order_by(acestream_sources::name.asc())
+        .load::<AcestreamSource>(&mut conn)
+        .map_err(|e| format!("Failed to load orphan Acestream sources: {}", e))?;
+
+    let result: Vec<OrphanAcestreamSource> = orphans
+        .into_iter()
+        .filter_map(|source| {
+            Some(OrphanAcestreamSource {
+                id: source.id?,
+                name: source.name,
+                content_id: source.content_id,
+                is_active: source.is_active != 0,
+            })
+        })
+        .collect();
+
+    Ok(result)
+}
+
+/// Promote an orphan Acestream source to a synthetic XMLTV channel for Plex.
+///
+/// Creates:
+/// 1. A synthetic `xmltv_channels` entry with `is_synthetic = true`
+/// 2. A `channel_mappings` entry linking it to the Acestream source
+/// 3. A `xmltv_channel_settings` entry with `is_enabled = 0`
+/// 4. Placeholder EPG data for the next 7 days
+///
+/// # Arguments
+///
+/// * `acestream_source_id` - The Acestream source ID to promote
+/// * `display_name` - Display name for the synthetic channel
+/// * `icon_url` - Optional icon URL for the channel
+///
+/// # Returns
+///
+/// The newly created XmltvChannelWithMappings
+#[tauri::command]
+pub fn promote_acestream_orphan_to_plex(
+    db: State<DbConnection>,
+    acestream_source_id: i32,
+    display_name: String,
+    icon_url: Option<String>,
+) -> Result<XmltvChannelWithMappings, String> {
+    use crate::db::models::{AcestreamSource, NewChannelMapping, NewXmltvChannel, NewXmltvChannelSettings};
+    use crate::db::schema::{acestream_sources, programs};
+
+    // Validate inputs
+    if acestream_source_id <= 0 {
+        return Err("Invalid Acestream source ID".to_string());
+    }
+    if display_name.trim().is_empty() {
+        return Err("Display name cannot be empty".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    conn.transaction::<XmltvChannelWithMappings, diesel::result::Error, _>(|conn| {
+        // Verify the Acestream source exists
+        let _acestream_source: AcestreamSource = acestream_sources::table
+            .filter(acestream_sources::id.eq(acestream_source_id))
+            .first::<AcestreamSource>(conn)?;
+
+        // Check if this source is already mapped (prevent duplicate promotions)
+        let existing_mapping: Option<ChannelMapping> = channel_mappings::table
+            .filter(channel_mappings::acestream_source_id.eq(acestream_source_id))
+            .first::<ChannelMapping>(conn)
+            .optional()?;
+
+        if existing_mapping.is_some() {
+            return Err(diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::UniqueViolation,
+                Box::new("Acestream source is already mapped".to_string()),
+            ));
+        }
+
+        // Synthetic source marker
+        let synthetic_source_id = SYNTHETIC_SOURCE_ID;
+
+        // Generate unique channel ID for synthetic channel
+        let synthetic_channel_id = format!("synthetic-acestream-{}", acestream_source_id);
+
+        // Create synthetic XMLTV channel
+        let new_channel = NewXmltvChannel::synthetic(
+            synthetic_source_id,
+            &synthetic_channel_id,
+            display_name.trim(),
+            icon_url.clone(),
+        );
+
+        diesel::insert_into(xmltv_channels::table)
+            .values(&new_channel)
+            .execute(conn)?;
+
+        // Get the newly created channel
+        let created_channel: XmltvChannel = xmltv_channels::table
+            .filter(xmltv_channels::channel_id.eq(&synthetic_channel_id))
+            .first::<XmltvChannel>(conn)?;
+
+        let created_channel_id = created_channel.id.ok_or(diesel::result::Error::NotFound)?;
+
+        // Create channel mapping for Acestream
+        let new_mapping = NewChannelMapping::acestream_manual(created_channel_id, acestream_source_id);
+
+        diesel::insert_into(channel_mappings::table)
+            .values(&new_mapping)
+            .execute(conn)?;
+
+        // Create channel settings (disabled by default)
+        let new_settings = NewXmltvChannelSettings::disabled(created_channel_id);
+        diesel::insert_into(xmltv_channel_settings::table)
+            .values(&new_settings)
+            .execute(conn)?;
+
+        // Generate placeholder EPG (7 days of 2-hour blocks)
+        let channel_name = display_name.trim();
+        let now = chrono::Utc::now();
+        let start_of_hour = now
+            .with_minute(0)
+            .and_then(|t| t.with_second(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .unwrap_or(now);
+
+        let hours_in_7_days = 7 * 24;
+        let block_duration_hours = 2;
+
+        for i in (0..hours_in_7_days).step_by(block_duration_hours) {
+            let start = start_of_hour + chrono::Duration::hours(i as i64);
+            let end = start + chrono::Duration::hours(block_duration_hours as i64);
+
+            diesel::insert_into(programs::table)
+                .values((
+                    programs::xmltv_channel_id.eq(created_channel_id),
+                    programs::title.eq(format!("{} - Live Programming", channel_name)),
+                    programs::description.eq(format!(
+                        "Live programming from {}. This is a synthetic channel created from an Acestream source.",
+                        channel_name
+                    )),
+                    programs::start_time.eq(start.to_rfc3339()),
+                    programs::end_time.eq(end.to_rfc3339()),
+                    programs::category.eq("Live"),
+                    programs::created_at.eq(now.to_rfc3339()),
+                ))
+                .execute(conn)?;
+        }
+
+        // Build the response (empty matches - will be populated on next fetch)
+        Ok(XmltvChannelWithMappings {
+            id: created_channel_id,
+            source_id: synthetic_source_id,
+            channel_id: synthetic_channel_id,
+            display_name: created_channel.display_name,
+            icon: created_channel.icon,
+            is_synthetic: true,
+            is_enabled: false,
+            plex_display_order: None,
+            match_count: 1,
+            matches: vec![], // Acestream matches fetched separately via get_all_channel_mappings
+        })
+    })
+    .map_err(|e| {
+        match e {
+            diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::UniqueViolation,
+                _,
+            ) => "This Acestream source has already been promoted".to_string(),
+            diesel::result::Error::NotFound => "Acestream source not found".to_string(),
+            _ => format!("Failed to promote Acestream orphan to Plex: {}", e),
+        }
     })
 }
 

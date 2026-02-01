@@ -56,13 +56,6 @@ export const NAV_ITEMS: NavItem[] = [
     ariaLabel: 'EPG - Electronic program guide',
   },
   {
-    label: 'Accounts',
-    path: ROUTES.ACCOUNTS,
-    icon: 'person',
-    testId: 'accounts-nav-link',
-    ariaLabel: 'Accounts - Manage Xtream accounts',
-  },
-  {
     label: 'Settings',
     path: ROUTES.SETTINGS,
     icon: 'gear',

@@ -7,6 +7,9 @@ export { AddStreamButton } from './AddStreamButton';
 export { BulkActionToolbar } from './BulkActionToolbar';
 // Story 3-8: Orphan channel management
 export { OrphanXtreamSection } from './OrphanXtreamSection';
+export { OrphanM3uSection } from './OrphanM3uSection';
+export { OrphanAcestreamSection } from './OrphanAcestreamSection';
 export { PromoteToPlexDialog } from './PromoteToPlexDialog';
+export { PromoteOrphanDialog } from './PromoteOrphanDialog';
 export { EditSyntheticChannelDialog } from './EditSyntheticChannelDialog';
 export { TargetLineupChannelRow } from './TargetLineupChannelRow';

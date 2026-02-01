@@ -1000,8 +1000,8 @@ fn seed_stream_proxy_data(conn: &mut crate::db::DbPooledConnection) -> Result<us
 
     // Seed XMLTV source (format must be 'xml', 'xml_gz', or 'auto')
     diesel::sql_query(
-        "INSERT OR REPLACE INTO xmltv_sources (id, name, url, format, is_active, last_refresh, refresh_hour, created_at, updated_at)
-         VALUES (1, 'Test EPG Source', 'http://test-epg.local/epg.xml', 'xml', 1, datetime('now'), 3, datetime('now'), datetime('now'))"
+        "INSERT OR REPLACE INTO xmltv_sources (id, name, url, format, is_active, last_refresh, refresh_interval_hours, created_at, updated_at)
+         VALUES (1, 'Test EPG Source', 'http://test-epg.local/epg.xml', 'xml', 1, datetime('now'), 24, datetime('now'), datetime('now'))"
     )
     .execute(conn)
     .map_err(|e| format!("Failed to seed xmltv_source: {}", e))?;

@@ -95,6 +95,16 @@ export async function updateAccount(id: number, request: UpdateAccountRequest): 
   return invoke<Account>('update_account', { id, request });
 }
 
+/**
+ * Toggle account active status
+ * @param accountId - Account ID to toggle
+ * @param active - Whether to enable or disable the account
+ * @returns The updated account
+ */
+export async function toggleAccount(accountId: number, active: boolean): Promise<Account> {
+  return invoke<Account>('toggle_account', { accountId, isActive: active });
+}
+
 /** Response type for test_connection command */
 export interface TestConnectionResponse {
   success: boolean;
@@ -182,7 +192,7 @@ export interface XmltvSource {
   name: string;
   url: string;
   format: XmltvFormat;
-  refreshHour: number;
+  refreshIntervalHours: number;
   lastRefresh?: string;
   isActive: boolean;
   createdAt: string;
@@ -194,6 +204,7 @@ export interface NewXmltvSource {
   name: string;
   url: string;
   format: XmltvFormat;
+  refreshIntervalHours?: number;
 }
 
 /** Request type for updating an XMLTV source */
@@ -201,7 +212,7 @@ export interface XmltvSourceUpdate {
   name?: string;
   url?: string;
   format?: XmltvFormat;
-  refreshHour?: number;
+  refreshIntervalHours?: number;
   isActive?: boolean;
 }
 
@@ -215,6 +226,7 @@ export async function addXmltvSource(source: NewXmltvSource): Promise<XmltvSourc
     name: source.name,
     url: source.url,
     format: source.format,
+    refreshIntervalHours: source.refreshIntervalHours,
   });
 }
 
@@ -2124,6 +2136,27 @@ export async function toggleM3uSource(sourceId: number, active: boolean): Promis
   return invoke<M3uSource>('toggle_m3u_source', { sourceId, isActive: active });
 }
 
+/** Request type for updating an M3U source */
+export interface UpdateM3uSourceRequest {
+  name?: string;
+  url?: string;
+  refreshIntervalHours?: number;
+}
+
+/**
+ * Update an existing M3U source
+ *
+ * @param sourceId - Source ID to update
+ * @param data - Updated source data (name, url, refreshIntervalHours)
+ * @returns The updated M3U source
+ */
+export async function updateM3uSource(
+  sourceId: number,
+  data: UpdateM3uSourceRequest
+): Promise<M3uSource> {
+  return invoke<M3uSource>('update_m3u_source', { sourceId, input: data });
+}
+
 // ============================================================================
 // Acestream Source Management (Multi-Source Support)
 // ============================================================================
@@ -2203,6 +2236,25 @@ export async function toggleAcestreamSource(
   active: boolean
 ): Promise<AcestreamSource> {
   return invoke<AcestreamSource>('toggle_acestream_source', { sourceId, isActive: active });
+}
+
+/** Request type for updating an Acestream source */
+export interface UpdateAcestreamSourceRequest {
+  name?: string;
+}
+
+/**
+ * Update an existing Acestream source
+ *
+ * @param sourceId - Source ID to update
+ * @param data - Updated source data (name only, contentId cannot be changed)
+ * @returns The updated Acestream source
+ */
+export async function updateAcestreamSource(
+  sourceId: number,
+  data: UpdateAcestreamSourceRequest
+): Promise<AcestreamSource> {
+  return invoke<AcestreamSource>('update_acestream_source', { sourceId, input: data });
 }
 
 // ============================================================================

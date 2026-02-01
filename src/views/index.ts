@@ -10,6 +10,5 @@ export { Dashboard } from './Dashboard';
 export { TargetLineup } from './TargetLineup';
 export { Sources } from './Sources';
 export { EpgTv } from './EpgTv';
-export { Accounts } from './Accounts';
 export { Settings } from './Settings';
 export { Logs } from './Logs';

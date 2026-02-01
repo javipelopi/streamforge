@@ -7,7 +7,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Popover from '@radix-ui/react-popover';
-import { MoreVertical, Radio, Link2, LinkIcon, AlertTriangle, CheckCircle2, Loader2, Trash2 } from 'lucide-react';
+import { MoreVertical, Radio, Link2, LinkIcon, AlertTriangle, CheckCircle2, Loader2, Trash2, Pencil } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   promoteAcestreamOrphanToPlex,
@@ -24,9 +24,11 @@ import { LinkToXmltvChannelDialog } from './LinkToXmltvChannelDialog';
 interface AcestreamSourceRowProps {
   source: AcestreamSource;
   onUpdate: () => void;
+  /** Callback when edit button is clicked */
+  onEdit?: () => void;
 }
 
-export function AcestreamSourceRow({ source, onUpdate }: AcestreamSourceRowProps) {
+export function AcestreamSourceRow({ source, onUpdate, onEdit }: AcestreamSourceRowProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showPromoteDialog, setShowPromoteDialog] = useState(false);
   const [showLinkDialog, setShowLinkDialog] = useState(false);
@@ -234,6 +236,18 @@ export function AcestreamSourceRow({ source, onUpdate }: AcestreamSourceRowProps
               'Enable'
             )}
           </button>
+
+          {/* Edit button */}
+          {onEdit && (
+            <button
+              onClick={onEdit}
+              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-gray-100 rounded transition-colors"
+              title="Edit source"
+              aria-label="Edit source"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+          )}
 
           {/* Delete button */}
           <button

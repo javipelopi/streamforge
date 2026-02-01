@@ -97,7 +97,7 @@ pub struct ExportedXmltvSource {
     pub name: String,
     pub url: String,
     pub format: String,
-    pub refresh_hour: i32,
+    pub refresh_interval_hours: i32,
     pub is_active: bool,
 }
 
@@ -262,7 +262,7 @@ pub fn export_configuration(db: State<DbConnection>) -> Result<String, String> {
             name: s.name,
             url: s.url,
             format: s.format,
-            refresh_hour: s.refresh_hour,
+            refresh_interval_hours: s.refresh_interval_hours,
             is_active: s.is_active != 0,
         })
         .collect();
@@ -543,7 +543,7 @@ pub fn import_configuration(
                 name: source.name.clone(),
                 url: source.url.clone(),
                 format: source.format.clone(),
-                refresh_hour: source.refresh_hour,
+                refresh_interval_hours: source.refresh_interval_hours,
                 is_active: if source.is_active { 1 } else { 0 },
             };
             diesel::insert_into(xmltv_sources::table)
@@ -730,7 +730,7 @@ mod tests {
                     name: "EPG Source".to_string(),
                     url: "http://epg.example.com/guide.xml".to_string(),
                     format: "xml".to_string(),
-                    refresh_hour: 4,
+                    refresh_interval_hours: 24,
                     is_active: true,
                 }],
                 channel_mappings: vec![ExportedChannelMapping {

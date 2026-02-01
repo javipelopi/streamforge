@@ -6,11 +6,13 @@
  * Lazy-loads channels only when expanded.
  */
 import { useState, useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Loader2, Search, X } from 'lucide-react';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { ChevronDown, ChevronRight, Loader2, Search, X, Pencil, Trash2, RefreshCw } from 'lucide-react';
 import {
   getXmltvChannelsForSource,
   getEpgStats,
+  refreshEpgSource,
+  toggleXmltvSource,
   type XmltvSource,
 } from '../../lib/tauri';
 import { XmltvSourceChannelRow } from './XmltvSourceChannelRow';
@@ -22,9 +24,13 @@ import {
 
 interface XmltvSourceAccordionProps {
   source: XmltvSource;
+  /** Callback when edit button is clicked */
+  onEdit?: () => void;
+  /** Callback when delete button is clicked */
+  onDelete?: () => void;
 }
 
-export function XmltvSourceAccordion({ source }: XmltvSourceAccordionProps) {
+export function XmltvSourceAccordion({ source, onEdit, onDelete }: XmltvSourceAccordionProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(PAGE_SIZE_OPTIONS[1]); // Default: 50
@@ -49,6 +55,24 @@ export function XmltvSourceAccordion({ source }: XmltvSourceAccordionProps) {
     queryFn: () => getXmltvChannelsForSource(source.id),
     enabled: isExpanded,
     staleTime: 30000, // 30 seconds
+  });
+
+  // Refresh mutation
+  const refreshMutation = useMutation({
+    mutationFn: () => refreshEpgSource(source.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['xmltv-sources'] });
+      queryClient.invalidateQueries({ queryKey: ['xmltv-source-channels', source.id] });
+      queryClient.invalidateQueries({ queryKey: ['epg-stats', source.id] });
+    },
+  });
+
+  // Toggle mutation
+  const toggleMutation = useMutation({
+    mutationFn: (active: boolean) => toggleXmltvSource(source.id, active),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['xmltv-sources'] });
+    },
   });
 
   const channelCount = epgStats?.channelCount ?? channels.length;
@@ -86,33 +110,107 @@ export function XmltvSourceAccordion({ source }: XmltvSourceAccordionProps) {
       className="border border-gray-200 rounded-lg overflow-hidden"
     >
       {/* Accordion Header */}
-      <button
-        data-testid={`xmltv-source-header-${source.id}`}
-        type="button"
-        onClick={toggleExpanded}
-        aria-expanded={isExpanded}
-        aria-controls={contentId}
-        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
-      >
-        <div className="flex items-center gap-3">
-          {isExpanded ? (
-            <ChevronDown className="w-5 h-5 text-gray-500" />
-          ) : (
-            <ChevronRight className="w-5 h-5 text-gray-500" />
-          )}
-          <div>
-            <span className="font-medium text-gray-900">{source.name}</span>
-            <span className="ml-3 text-sm text-gray-500">
-              {channelCount} channel{channelCount !== 1 ? 's' : ''}
-            </span>
+      <div className="flex items-center bg-gray-50">
+        <button
+          data-testid={`xmltv-source-header-${source.id}`}
+          type="button"
+          onClick={toggleExpanded}
+          aria-expanded={isExpanded}
+          aria-controls={contentId}
+          className="flex-1 flex items-center justify-between px-4 py-3 hover:bg-gray-100 transition-colors text-left"
+        >
+          <div className="flex items-center gap-3">
+            {isExpanded ? (
+              <ChevronDown className="w-5 h-5 text-gray-500" />
+            ) : (
+              <ChevronRight className="w-5 h-5 text-gray-500" />
+            )}
+            <div className="flex items-center gap-3">
+              <span className="font-medium text-gray-900">{source.name}</span>
+              <span className="text-sm text-gray-500">
+                {channelCount} channel{channelCount !== 1 ? 's' : ''}
+              </span>
+              {/* Active status badge */}
+              <span
+                className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                  source.isActive
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                {source.isActive ? 'Active' : 'Inactive'}
+              </span>
+            </div>
           </div>
+          {source.lastRefresh && (
+            <span className="text-xs text-gray-400">
+              Last refresh: {new Date(source.lastRefresh).toLocaleString()}
+            </span>
+          )}
+        </button>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-1 px-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleMutation.mutate(!source.isActive);
+            }}
+            disabled={toggleMutation.isPending}
+            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors"
+            title={source.isActive ? 'Disable source' : 'Enable source'}
+            aria-label={source.isActive ? 'Disable source' : 'Enable source'}
+          >
+            {toggleMutation.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <span className="text-xs">{source.isActive ? 'Disable' : 'Enable'}</span>
+            )}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              refreshMutation.mutate();
+            }}
+            disabled={refreshMutation.isPending}
+            className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-200 rounded transition-colors"
+            title="Refresh EPG data"
+            aria-label="Refresh EPG data"
+          >
+            {refreshMutation.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+          </button>
+          {onEdit && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-200 rounded transition-colors"
+              title="Edit source"
+              aria-label="Edit source"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              className="p-2 text-gray-500 hover:text-red-600 hover:bg-gray-200 rounded transition-colors"
+              title="Delete source"
+              aria-label="Delete source"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
-        {source.lastRefresh && (
-          <span className="text-xs text-gray-400">
-            Last refresh: {new Date(source.lastRefresh).toLocaleDateString()}
-          </span>
-        )}
-      </button>
+      </div>
 
       {/* Accordion Content */}
       {isExpanded && (

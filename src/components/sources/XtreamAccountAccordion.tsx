@@ -7,11 +7,13 @@
  * Shows stream counts and orphan counts in header.
  */
 import { useState, useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Loader2, Search, X } from 'lucide-react';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { ChevronDown, ChevronRight, Loader2, Search, X, Pencil, Trash2, RefreshCw } from 'lucide-react';
 import {
   getXtreamStreamsForAccount,
   getAccountStreamStats,
+  scanChannels,
+  toggleAccount,
   type Account,
 } from '../../lib/tauri';
 import { XtreamStreamRow } from './XtreamStreamRow';
@@ -23,9 +25,13 @@ import {
 
 interface XtreamAccountAccordionProps {
   account: Account;
+  /** Callback when edit button is clicked */
+  onEdit?: () => void;
+  /** Callback when delete button is clicked */
+  onDelete?: () => void;
 }
 
-export function XtreamAccountAccordion({ account }: XtreamAccountAccordionProps) {
+export function XtreamAccountAccordion({ account, onEdit, onDelete }: XtreamAccountAccordionProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(PAGE_SIZE_OPTIONS[1]); // Default: 50
@@ -56,6 +62,24 @@ export function XtreamAccountAccordion({ account }: XtreamAccountAccordionProps)
     queryFn: () => getXtreamStreamsForAccount(account.id),
     enabled: isExpanded,
     staleTime: 30000, // 30 seconds
+  });
+
+  // Refresh mutation (re-scan channels from server)
+  const refreshMutation = useMutation({
+    mutationFn: () => scanChannels(account.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['xtream-streams', account.id] });
+      queryClient.invalidateQueries({ queryKey: ['account-stream-stats', account.id] });
+    },
+  });
+
+  // Toggle mutation
+  const toggleMutation = useMutation({
+    mutationFn: (active: boolean) => toggleAccount(account.id, active),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    },
   });
 
   // Filter streams based on search query
@@ -101,68 +125,134 @@ export function XtreamAccountAccordion({ account }: XtreamAccountAccordionProps)
       className="border border-gray-200 rounded-lg overflow-hidden"
     >
       {/* Accordion Header */}
-      <button
-        data-testid={`xtream-account-header-${account.id}`}
-        type="button"
-        onClick={toggleExpanded}
-        aria-expanded={isExpanded}
-        aria-controls={contentId}
-        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
-      >
-        <div className="flex items-center gap-3">
-          {isExpanded ? (
-            <ChevronDown className="w-5 h-5 text-gray-500" />
-          ) : (
-            <ChevronRight className="w-5 h-5 text-gray-500" />
-          )}
+      <div className="flex items-center bg-gray-50">
+        <button
+          data-testid={`xtream-account-header-${account.id}`}
+          type="button"
+          onClick={toggleExpanded}
+          aria-expanded={isExpanded}
+          aria-controls={contentId}
+          className="flex-1 flex items-center justify-between px-4 py-3 hover:bg-gray-100 transition-colors text-left"
+        >
           <div className="flex items-center gap-3">
-            <span className="font-medium text-gray-900">{account.name}</span>
-            {/* Code Review Fix #2: Show error state for stats with retry button */}
-            {statsError ? (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  refetchStats();
-                }}
-                className="text-xs text-red-600 hover:text-red-700 underline"
-                title="Failed to load stats. Click to retry."
-              >
-                Stats error - retry
-              </button>
+            {isExpanded ? (
+              <ChevronDown className="w-5 h-5 text-gray-500" />
             ) : (
-              <>
-                <span
-                  data-testid={`stream-count-${account.id}`}
-                  className="text-sm text-gray-500"
-                >
-                  {stats?.streamCount ?? '...'} stream{(stats?.streamCount ?? 0) !== 1 ? 's' : ''}
-                </span>
-                {/* Orphan count badge - only show if > 0 */}
-                {stats && stats.orphanCount > 0 && (
-                  <span
-                    data-testid={`orphan-count-badge-${account.id}`}
-                    className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800"
-                  >
-                    {stats.orphanCount} orphan{stats.orphanCount !== 1 ? 's' : ''}
-                  </span>
-                )}
-              </>
+              <ChevronRight className="w-5 h-5 text-gray-500" />
             )}
+            <div className="flex items-center gap-3">
+              <span className="font-medium text-gray-900">{account.name}</span>
+              {/* Code Review Fix #2: Show error state for stats with retry button */}
+              {statsError ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    refetchStats();
+                  }}
+                  className="text-xs text-red-600 hover:text-red-700 underline"
+                  title="Failed to load stats. Click to retry."
+                >
+                  Stats error - retry
+                </button>
+              ) : (
+                <>
+                  <span
+                    data-testid={`stream-count-${account.id}`}
+                    className="text-sm text-gray-500"
+                  >
+                    {stats?.streamCount ?? '...'} stream{(stats?.streamCount ?? 0) !== 1 ? 's' : ''}
+                  </span>
+                  {/* Status badge: Active, Inactive, or Expired */}
+                  {(() => {
+                    const isExpired = account.expiryDate && new Date(account.expiryDate) < new Date();
+                    if (!account.isActive) {
+                      return (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                          Inactive
+                        </span>
+                      );
+                    }
+                    if (isExpired) {
+                      return (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                          Expired
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                        Active
+                      </span>
+                    );
+                  })()}
+                </>
+              )}
+            </div>
           </div>
-        </div>
-        {/* Connection status indicator */}
-        {account.connectionStatus && (
-          <span
-            className={`text-xs px-2 py-0.5 rounded ${
-              account.connectionStatus === 'connected'
-                ? 'bg-green-100 text-green-700'
-                : 'bg-gray-100 text-gray-500'
-            }`}
+        </button>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-1 px-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleMutation.mutate(!account.isActive);
+            }}
+            disabled={toggleMutation.isPending}
+            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors"
+            title={account.isActive ? 'Disable account' : 'Enable account'}
+            aria-label={account.isActive ? 'Disable account' : 'Enable account'}
           >
-            {account.connectionStatus}
-          </span>
-        )}
-      </button>
+            {toggleMutation.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <span className="text-xs">{account.isActive ? 'Disable' : 'Enable'}</span>
+            )}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              refreshMutation.mutate();
+            }}
+            disabled={refreshMutation.isPending}
+            className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-200 rounded transition-colors"
+            title="Refresh streams from server"
+            aria-label="Refresh streams from server"
+          >
+            {refreshMutation.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+          </button>
+          {onEdit && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-200 rounded transition-colors"
+              title="Edit account"
+              aria-label="Edit account"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              className="p-2 text-gray-500 hover:text-red-600 hover:bg-gray-200 rounded transition-colors"
+              title="Delete account"
+              aria-label="Delete account"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Accordion Content */}
       {isExpanded && (

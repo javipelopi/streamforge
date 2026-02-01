@@ -1,12 +1,13 @@
 /**
  * M3U Source Accordion Component
  * Multi-Source Stream Support: M3U Playlist Management
+ * Sources-Centric UX Unification: Phase 4.3
  *
  * Expandable accordion section for an M3U playlist source.
  * Lazy-loads channels only when expanded.
  * Shows channel count and last refresh time in header.
  */
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import {
   ChevronDown,
@@ -15,12 +16,12 @@ import {
   Search,
   X,
   RefreshCw,
+  Pencil,
   Trash2,
 } from 'lucide-react';
 import {
   getM3uChannels,
   refreshM3uSource,
-  deleteM3uSource,
   toggleM3uSource,
   type M3uSource,
 } from '../../lib/tauri';
@@ -33,6 +34,10 @@ import { M3uChannelRow } from './M3uChannelRow';
 
 interface M3uSourceAccordionProps {
   source: M3uSource;
+  /** Callback when edit button is clicked */
+  onEdit?: () => void;
+  /** Callback when delete button is clicked */
+  onDelete?: () => void;
 }
 
 /**
@@ -57,15 +62,13 @@ function useDebouncedValue<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
-export function M3uSourceAccordion({ source }: M3uSourceAccordionProps) {
+export function M3uSourceAccordion({ source, onEdit, onDelete }: M3uSourceAccordionProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(PAGE_SIZE_OPTIONS[1]); // Default: 50
   const [searchQuery, setSearchQuery] = useState('');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const contentId = `m3u-source-channels-${source.id}`;
   const queryClient = useQueryClient();
-  const cancelButtonRef = useRef<HTMLButtonElement>(null);
 
   // Debounce search query with 300ms delay
   const debouncedSearchQuery = useDebouncedValue(searchQuery, 300);
@@ -92,20 +95,11 @@ export function M3uSourceAccordion({ source }: M3uSourceAccordionProps) {
     },
   });
 
-  // Delete mutation
-  const deleteMutation = useMutation({
-    mutationFn: () => deleteM3uSource(source.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['m3u-sources'] });
-    },
-  });
-
   // Toggle mutation
   const toggleMutation = useMutation({
     mutationFn: (active: boolean) => toggleM3uSource(source.id, active),
-    onSuccess: (_, active) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['m3u-sources'] });
-      console.log(`Source ${source.name} ${active ? 'enabled' : 'disabled'} successfully`);
     },
   });
 
@@ -141,11 +135,6 @@ export function M3uSourceAccordion({ source }: M3uSourceAccordionProps) {
     refetchChannels();
   };
 
-  const handleDelete = () => {
-    deleteMutation.mutate();
-    setShowDeleteConfirm(false);
-  };
-
   // Handler for channel row updates (e.g., promote to lineup)
   const handleChannelUpdate = () => {
     queryClient.invalidateQueries({ queryKey: ['m3u-channels', source.id] });
@@ -157,13 +146,6 @@ export function M3uSourceAccordion({ source }: M3uSourceAccordionProps) {
     const date = new Date(dateStr);
     return date.toLocaleString();
   };
-
-  // Auto-focus Cancel button when delete dialog opens
-  useEffect(() => {
-    if (showDeleteConfirm && cancelButtonRef.current) {
-      cancelButtonRef.current.focus();
-    }
-  }, [showDeleteConfirm]);
 
   return (
     <div
@@ -249,17 +231,32 @@ export function M3uSourceAccordion({ source }: M3uSourceAccordionProps) {
               <RefreshCw className="w-4 h-4" />
             )}
           </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowDeleteConfirm(true);
-            }}
-            className="p-2 text-gray-500 hover:text-red-600 hover:bg-gray-200 rounded transition-colors"
-            title="Delete source"
-            aria-label="Delete source"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {onEdit && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-200 rounded transition-colors"
+              title="Edit source"
+              aria-label="Edit source"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              className="p-2 text-gray-500 hover:text-red-600 hover:bg-gray-200 rounded transition-colors"
+              title="Delete source"
+              aria-label="Delete source"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -364,110 +361,6 @@ export function M3uSourceAccordion({ source }: M3uSourceAccordionProps) {
           )}
         </div>
       )}
-
-      {/* Delete confirmation dialog */}
-      {showDeleteConfirm && (
-        <DeleteConfirmDialog
-          source={source}
-          onConfirm={handleDelete}
-          onCancel={() => setShowDeleteConfirm(false)}
-          isDeleting={deleteMutation.isPending}
-          cancelButtonRef={cancelButtonRef}
-        />
-      )}
-    </div>
-  );
-}
-
-/**
- * Delete confirmation dialog with keyboard trap and focus management
- */
-interface DeleteConfirmDialogProps {
-  source: M3uSource;
-  onConfirm: () => void;
-  onCancel: () => void;
-  isDeleting: boolean;
-  cancelButtonRef: React.RefObject<HTMLButtonElement>;
-}
-
-function DeleteConfirmDialog({
-  source,
-  onConfirm,
-  onCancel,
-  isDeleting,
-  cancelButtonRef,
-}: DeleteConfirmDialogProps) {
-  const deleteButtonRef = useRef<HTMLButtonElement>(null);
-
-  // Handle keyboard navigation and trap focus within dialog
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onCancel();
-      return;
-    }
-
-    // Trap Tab key within dialog
-    if (e.key === 'Tab') {
-      const focusableElements = [cancelButtonRef.current, deleteButtonRef.current].filter(Boolean) as HTMLElement[];
-
-      if (focusableElements.length === 0) return;
-
-      const firstElement = focusableElements[0];
-      const lastElement = focusableElements[focusableElements.length - 1];
-
-      if (e.shiftKey) {
-        // Shift+Tab: move backwards
-        if (document.activeElement === firstElement) {
-          e.preventDefault();
-          lastElement.focus();
-        }
-      } else {
-        // Tab: move forwards
-        if (document.activeElement === lastElement) {
-          e.preventDefault();
-          firstElement.focus();
-        }
-      }
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={`delete-m3u-dialog-title-${source.id}`}
-      onKeyDown={handleKeyDown}
-    >
-      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-        <h3
-          id={`delete-m3u-dialog-title-${source.id}`}
-          className="text-lg font-semibold text-gray-900 mb-2"
-        >
-          Delete M3U Source?
-        </h3>
-        <p className="text-gray-600 mb-4">
-          This will delete "{source.name}" and all its channels. This action cannot be undone.
-        </p>
-        <div className="flex justify-end gap-3">
-          <button
-            ref={cancelButtonRef}
-            onClick={onCancel}
-            disabled={isDeleting}
-            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            ref={deleteButtonRef}
-            onClick={onConfirm}
-            disabled={isDeleting}
-            className="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
-          >
-            {isDeleting ? 'Deleting...' : 'Delete'}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

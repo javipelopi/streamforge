@@ -1,8 +1,9 @@
 /**
  * Acestream Sources Tab Component
  * Multi-Source Stream Support: Acestream Management
+ * Sources-Centric UX Unification: Phase 4.4
  *
- * Displays Acestream sources and shows platform-specific warnings.
+ * Displays Acestream sources with a flat list pattern and shows platform-specific warnings.
  * On macOS, shows a banner explaining Acestream is unsupported.
  */
 import { useState, useEffect } from 'react';
@@ -11,16 +12,21 @@ import { Radio, Plus, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import {
   getAcestreamSources,
   addAcestreamSource,
+  updateAcestreamSource,
   checkAcestreamStatus,
   type AcestreamStatus,
+  type AcestreamSource,
 } from '../../lib/tauri';
 import { SourcesErrorBoundary } from './SourcesErrorBoundary';
-import { AddAcestreamDialog } from './AddAcestreamDialog';
+import { AcestreamSourceDialog, type AcestreamSourceFormData } from './AcestreamSourceDialog';
 import { AcestreamSourceRow } from './AcestreamSourceRow';
 
 export function AcestreamSourcesTab() {
-  const [showAddDialog, setShowAddDialog] = useState(false);
   const queryClient = useQueryClient();
+
+  // Dialog state
+  const [showSourceDialog, setShowSourceDialog] = useState(false);
+  const [editingSource, setEditingSource] = useState<AcestreamSource | undefined>(undefined);
 
   // Check Acestream status (platform + engine)
   const {
@@ -52,12 +58,25 @@ export function AcestreamSourcesTab() {
 
   // Add source mutation
   const addMutation = useMutation({
-    mutationFn: async ({ name, contentIdOrUrl }: { name: string; contentIdOrUrl: string }) => {
-      return addAcestreamSource(name, contentIdOrUrl);
+    mutationFn: async (data: AcestreamSourceFormData) => {
+      return addAcestreamSource(data.name, data.contentIdOrUrl);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['acestream-sources'] });
-      setShowAddDialog(false);
+      setShowSourceDialog(false);
+      setEditingSource(undefined);
+    },
+  });
+
+  // Update source mutation
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: AcestreamSourceFormData }) => {
+      return updateAcestreamSource(id, { name: data.name });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['acestream-sources'] });
+      setShowSourceDialog(false);
+      setEditingSource(undefined);
     },
   });
 
@@ -65,6 +84,39 @@ export function AcestreamSourcesTab() {
   const handleSourceUpdate = () => {
     queryClient.invalidateQueries({ queryKey: ['acestream-sources'] });
   };
+
+  // Submit handler for dialog
+  const handleSubmit = async (data: AcestreamSourceFormData): Promise<void> => {
+    if (editingSource) {
+      await updateMutation.mutateAsync({ id: editingSource.id, data });
+    } else {
+      await addMutation.mutateAsync(data);
+    }
+  };
+
+  // Edit handler from row
+  const handleEdit = (source: AcestreamSource) => {
+    setEditingSource(source);
+    setShowSourceDialog(true);
+  };
+
+  // Add button handler
+  const handleAdd = () => {
+    setEditingSource(undefined);
+    setShowSourceDialog(true);
+  };
+
+  // Close dialog handler
+  const handleCloseDialog = (open: boolean) => {
+    if (!open) {
+      setShowSourceDialog(false);
+      setEditingSource(undefined);
+      addMutation.reset();
+      updateMutation.reset();
+    }
+  };
+
+  const isSubmitting = addMutation.isPending || updateMutation.isPending;
 
   // Platform warning for macOS
   const showPlatformWarning = status && !status.isSupported;
@@ -180,7 +232,7 @@ export function AcestreamSourcesTab() {
       <div className="flex justify-end">
         <button
           data-testid="add-acestream-source-button"
-          onClick={() => setShowAddDialog(true)}
+          onClick={handleAdd}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors inline-flex items-center gap-2 text-sm"
         >
           <Plus className="w-4 h-4" />
@@ -214,19 +266,20 @@ export function AcestreamSourcesTab() {
               <AcestreamSourceRow
                 source={source}
                 onUpdate={handleSourceUpdate}
+                onEdit={() => handleEdit(source)}
               />
             </SourcesErrorBoundary>
           ))}
         </div>
       )}
 
-      <AddAcestreamDialog
-        isOpen={showAddDialog}
-        onClose={() => setShowAddDialog(false)}
-        onAdd={addMutation.mutate}
-        isLoading={addMutation.isPending}
-        error={addMutation.error?.message}
-        onResetError={() => addMutation.reset()}
+      {/* Source Dialog */}
+      <AcestreamSourceDialog
+        open={showSourceDialog}
+        onOpenChange={handleCloseDialog}
+        source={editingSource}
+        onSubmit={handleSubmit}
+        isLoading={isSubmitting}
       />
     </div>
   );

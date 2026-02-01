@@ -154,7 +154,7 @@ pub struct XmltvSource {
     pub name: String,
     pub url: String,
     pub format: String,
-    pub refresh_hour: i32,
+    pub refresh_interval_hours: i32,
     pub last_refresh: Option<String>,
     pub is_active: i32,
     pub created_at: String,
@@ -170,14 +170,14 @@ pub struct NewXmltvSource {
     pub name: String,
     pub url: String,
     pub format: String,
-    #[serde(default = "default_refresh_hour")]
-    pub refresh_hour: i32,
+    #[serde(default = "default_xmltv_refresh_interval")]
+    pub refresh_interval_hours: i32,
     #[serde(default = "default_is_active")]
     pub is_active: i32,
 }
 
-fn default_refresh_hour() -> i32 {
-    4
+fn default_xmltv_refresh_interval() -> i32 {
+    24
 }
 
 fn default_is_active() -> i32 {
@@ -190,9 +190,14 @@ impl NewXmltvSource {
             name: name.into(),
             url: url.into(),
             format: format.into(),
-            refresh_hour: default_refresh_hour(),
+            refresh_interval_hours: default_xmltv_refresh_interval(),
             is_active: default_is_active(),
         }
+    }
+
+    pub fn with_refresh_interval(mut self, hours: i32) -> Self {
+        self.refresh_interval_hours = hours;
+        self
     }
 }
 
@@ -204,7 +209,7 @@ pub struct XmltvSourceUpdate {
     pub name: Option<String>,
     pub url: Option<String>,
     pub format: Option<String>,
-    pub refresh_hour: Option<i32>,
+    pub refresh_interval_hours: Option<i32>,
     pub is_active: Option<i32>,
     pub updated_at: Option<String>,
 }
@@ -467,6 +472,36 @@ impl NewChannelMapping {
             is_manual: 1,
             is_primary: 0,
             stream_priority,
+            source_type: "acestream".to_string(),
+            m3u_channel_id: None,
+            acestream_source_id: Some(acestream_source_id),
+        }
+    }
+
+    /// Create a manual M3U channel mapping (for orphan promotion)
+    pub fn m3u_manual(xmltv_channel_id: i32, m3u_channel_id: i32) -> Self {
+        Self {
+            xmltv_channel_id,
+            xtream_channel_id: None,
+            match_confidence: None,
+            is_manual: 1,
+            is_primary: 1,
+            stream_priority: 0,
+            source_type: "m3u".to_string(),
+            m3u_channel_id: Some(m3u_channel_id),
+            acestream_source_id: None,
+        }
+    }
+
+    /// Create a manual Acestream channel mapping (for orphan promotion)
+    pub fn acestream_manual(xmltv_channel_id: i32, acestream_source_id: i32) -> Self {
+        Self {
+            xmltv_channel_id,
+            xtream_channel_id: None,
+            match_confidence: None,
+            is_manual: 1,
+            is_primary: 1,
+            stream_priority: 0,
             source_type: "acestream".to_string(),
             m3u_channel_id: None,
             acestream_source_id: Some(acestream_source_id),

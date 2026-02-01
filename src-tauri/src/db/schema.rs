@@ -138,7 +138,7 @@ diesel::table! {
         name -> Text,
         url -> Text,
         format -> Text,
-        refresh_hour -> Integer,
+        refresh_interval_hours -> Integer,
         last_refresh -> Nullable<Text>,
         is_active -> Integer,
         created_at -> Text,

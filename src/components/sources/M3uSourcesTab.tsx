@@ -1,21 +1,34 @@
 /**
  * M3U Sources Tab Component
  * Multi-Source Stream Support: M3U Playlist Management
+ * Sources-Centric UX Unification: Phase 4.3
  *
  * Displays M3U playlist sources as expandable accordion sections.
  * Each source shows channels parsed from the playlist.
+ * Features "Add M3U Playlist" button that opens modal dialog.
  */
 import { useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { List, Plus } from 'lucide-react';
-import { getM3uSources, addM3uSource } from '../../lib/tauri';
+import {
+  getM3uSources,
+  addM3uSource,
+  updateM3uSource,
+  deleteM3uSource,
+  type M3uSource,
+} from '../../lib/tauri';
 import { M3uSourceAccordion } from './M3uSourceAccordion';
 import { SourcesErrorBoundary } from './SourcesErrorBoundary';
-import { AddM3uSourceDialog } from './AddM3uSourceDialog';
+import { M3uSourceDialog, type M3uSourceFormData } from './M3uSourceDialog';
+import { DeleteConfirmDialog } from './shared';
 
 export function M3uSourcesTab() {
-  const [showAddDialog, setShowAddDialog] = useState(false);
   const queryClient = useQueryClient();
+
+  // Dialog state
+  const [showSourceDialog, setShowSourceDialog] = useState(false);
+  const [editingSource, setEditingSource] = useState<M3uSource | undefined>(undefined);
+  const [deletingSource, setDeletingSource] = useState<M3uSource | null>(null);
 
   // Fetch M3U sources
   const {
@@ -29,26 +42,86 @@ export function M3uSourcesTab() {
 
   // Add source mutation
   const addMutation = useMutation({
-    mutationFn: async ({
-      name,
-      url,
-      refreshIntervalHours,
-      isLocalFile,
-      isSingleStream,
-    }: {
-      name: string;
-      url: string;
-      refreshIntervalHours?: number;
-      isLocalFile?: boolean;
-      isSingleStream?: boolean;
-    }) => {
-      return addM3uSource(name, url, refreshIntervalHours, isLocalFile, isSingleStream);
+    mutationFn: async (data: M3uSourceFormData) => {
+      return addM3uSource(
+        data.name,
+        data.url,
+        data.refreshIntervalHours,
+        data.isLocalFile,
+        data.isSingleStream
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['m3u-sources'] });
-      setShowAddDialog(false);
+      setShowSourceDialog(false);
+      setEditingSource(undefined);
     },
   });
+
+  // Update source mutation
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: M3uSourceFormData }) => {
+      return updateM3uSource(id, {
+        name: data.name,
+        url: data.url,
+        refreshIntervalHours: data.refreshIntervalHours,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['m3u-sources'] });
+      setShowSourceDialog(false);
+      setEditingSource(undefined);
+    },
+  });
+
+  // Delete source mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return deleteM3uSource(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['m3u-sources'] });
+      setDeletingSource(null);
+    },
+  });
+
+  // Submit handler for dialog
+  const handleSubmit = async (data: M3uSourceFormData): Promise<void> => {
+    if (editingSource) {
+      await updateMutation.mutateAsync({ id: editingSource.id, data });
+    } else {
+      await addMutation.mutateAsync(data);
+    }
+  };
+
+  // Edit handler from accordion
+  const handleEdit = (source: M3uSource) => {
+    setEditingSource(source);
+    setShowSourceDialog(true);
+  };
+
+  // Delete handler from accordion
+  const handleDelete = (source: M3uSource) => {
+    setDeletingSource(source);
+  };
+
+  // Add button handler
+  const handleAdd = () => {
+    setEditingSource(undefined);
+    setShowSourceDialog(true);
+  };
+
+  // Close dialog handler
+  const handleCloseDialog = (open: boolean) => {
+    if (!open) {
+      setShowSourceDialog(false);
+      setEditingSource(undefined);
+      addMutation.reset();
+      updateMutation.reset();
+    }
+  };
+
+  const isSubmitting = addMutation.isPending || updateMutation.isPending;
 
   // Loading state
   if (isLoading) {
@@ -68,9 +141,7 @@ export function M3uSourcesTab() {
         data-testid="m3u-sources-tab"
         className="p-4 bg-red-50 border border-red-200 rounded-lg"
       >
-        <p className="text-red-700">
-          Failed to load M3U sources: {error instanceof Error ? error.message : String(error)}
-        </p>
+        <p className="text-red-700">Failed to load M3U sources</p>
       </div>
     );
   }
@@ -91,7 +162,7 @@ export function M3uSourcesTab() {
           </div>
           <button
             data-testid="add-m3u-source-button"
-            onClick={() => setShowAddDialog(true)}
+            onClick={handleAdd}
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors inline-flex items-center gap-2"
           >
             <Plus className="w-5 h-5" />
@@ -99,13 +170,12 @@ export function M3uSourcesTab() {
           </button>
         </div>
 
-        <AddM3uSourceDialog
-          isOpen={showAddDialog}
-          onClose={() => setShowAddDialog(false)}
-          onAdd={addMutation.mutate}
-          isLoading={addMutation.isPending}
-          error={addMutation.error?.message}
-          onResetError={() => addMutation.reset()}
+        <M3uSourceDialog
+          open={showSourceDialog}
+          onOpenChange={handleCloseDialog}
+          source={editingSource}
+          onSubmit={handleSubmit}
+          isLoading={isSubmitting}
         />
       </div>
     );
@@ -118,7 +188,7 @@ export function M3uSourcesTab() {
       <div className="flex justify-end">
         <button
           data-testid="add-m3u-source-button"
-          onClick={() => setShowAddDialog(true)}
+          onClick={handleAdd}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors inline-flex items-center gap-2 text-sm"
         >
           <Plus className="w-4 h-4" />
@@ -131,17 +201,38 @@ export function M3uSourcesTab() {
           key={source.id}
           fallbackMessage={`Error loading channels for ${source.name}`}
         >
-          <M3uSourceAccordion source={source} />
+          <M3uSourceAccordion
+            source={source}
+            onEdit={() => handleEdit(source)}
+            onDelete={() => handleDelete(source)}
+          />
         </SourcesErrorBoundary>
       ))}
 
-      <AddM3uSourceDialog
-        isOpen={showAddDialog}
-        onClose={() => setShowAddDialog(false)}
-        onAdd={addMutation.mutate}
-        isLoading={addMutation.isPending}
-        error={addMutation.error?.message}
-        onResetError={() => addMutation.reset()}
+      {/* Source Dialog */}
+      <M3uSourceDialog
+        open={showSourceDialog}
+        onOpenChange={handleCloseDialog}
+        source={editingSource}
+        onSubmit={handleSubmit}
+        isLoading={isSubmitting}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmDialog
+        open={!!deletingSource}
+        onOpenChange={(open) => {
+          if (!open) setDeletingSource(null);
+        }}
+        title="Delete M3U Source"
+        description={`Are you sure you want to delete "${deletingSource?.name}"? This will remove all associated channels and mappings.`}
+        isDeleting={deleteMutation.isPending}
+        onConfirm={() => {
+          if (deletingSource) {
+            deleteMutation.mutate(deletingSource.id);
+          }
+        }}
+        testIdPrefix="m3u-delete"
       />
     </div>
   );
