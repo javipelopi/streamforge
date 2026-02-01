@@ -328,7 +328,7 @@ pub async fn update_account(
         .map_err(|_| AccountError::NotFound)?;
 
     // Get current timestamp for updated_at
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = chrono::Utc::now().to_rfc3339();
 
     // Update basic fields
     diesel::update(accounts::table.filter(accounts::id.eq(id)))
@@ -363,6 +363,44 @@ pub async fn update_account(
     // Retrieve and return the updated account
     let account: Account = accounts::table
         .filter(accounts::id.eq(id))
+        .first(&mut conn)
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    Ok(AccountResponse::from(account))
+}
+
+/// Toggle account active status
+#[tauri::command]
+pub async fn toggle_account(
+    db: State<'_, DbConnection>,
+    account_id: i32,
+    is_active: bool,
+) -> Result<AccountResponse, String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    // Check if account exists
+    let _existing: Account = accounts::table
+        .filter(accounts::id.eq(account_id))
+        .first(&mut conn)
+        .map_err(|_| AccountError::NotFound)?;
+
+    // Get current timestamp for updated_at
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Update is_active field
+    diesel::update(accounts::table.filter(accounts::id.eq(account_id)))
+        .set((
+            accounts::is_active.eq(if is_active { 1 } else { 0 }),
+            accounts::updated_at.eq(&now),
+        ))
+        .execute(&mut conn)
+        .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
+
+    // Retrieve and return the updated account
+    let account: Account = accounts::table
+        .filter(accounts::id.eq(account_id))
         .first(&mut conn)
         .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
 

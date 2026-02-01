@@ -64,6 +64,15 @@ pub struct AddM3uSourceInput {
     pub is_single_stream: bool,
 }
 
+/// Input for updating an existing M3U source
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateM3uSourceInput {
+    pub name: Option<String>,
+    pub url: Option<String>,
+    pub refresh_interval_hours: Option<i32>,
+}
+
 /// Result of refreshing an M3U source
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -504,6 +513,99 @@ pub fn get_m3u_channels(
         .collect();
 
     Ok(result)
+}
+
+/// Update an existing M3U source.
+///
+/// # Arguments
+///
+/// * `source_id` - The M3U source ID to update
+/// * `input` - Update data (name, url, refresh_interval_hours)
+///
+/// # Returns
+///
+/// The updated M3U source with channel count
+#[tauri::command]
+pub fn update_m3u_source(
+    db: State<DbConnection>,
+    source_id: i32,
+    input: UpdateM3uSourceInput,
+) -> Result<M3uSourceWithStats, String> {
+    if source_id <= 0 {
+        return Err("Invalid source ID".to_string());
+    }
+
+    // Validate input
+    if let Some(ref name) = input.name {
+        if name.trim().is_empty() {
+            return Err("Source name cannot be empty".to_string());
+        }
+    }
+
+    if let Some(ref url) = input.url {
+        if url.trim().is_empty() {
+            return Err("URL cannot be empty".to_string());
+        }
+        // URL validation for non-local files
+        if !url.starts_with("/") && !url.starts_with("http://") && !url.starts_with("https://") {
+            return Err("URL must start with http://, https://, or be a local file path".to_string());
+        }
+        if url.len() > 8192 {
+            return Err("URL exceeds maximum length of 8192 characters".to_string());
+        }
+    }
+
+    if let Some(hours) = input.refresh_interval_hours {
+        if hours < 1 || hours > 168 {
+            return Err("Refresh interval must be between 1 and 168 hours".to_string());
+        }
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    // Load the existing source
+    let source: M3uSource = m3u_sources::table
+        .filter(m3u_sources::id.eq(source_id))
+        .first(&mut conn)
+        .map_err(|_| "M3U source not found".to_string())?;
+
+    // Build update changeset
+    let now = Utc::now().to_rfc3339();
+    let name_update = input.name.map(|n| n.trim().to_string()).unwrap_or(source.name);
+    let url_update = input.url.map(|u| u.trim().to_string()).unwrap_or(source.url);
+    let refresh_update = input.refresh_interval_hours.unwrap_or(source.refresh_interval_hours);
+
+    // Update the source
+    diesel::update(m3u_sources::table.filter(m3u_sources::id.eq(source_id)))
+        .set((
+            m3u_sources::name.eq(&name_update),
+            m3u_sources::url.eq(&url_update),
+            m3u_sources::refresh_interval_hours.eq(refresh_update),
+            m3u_sources::updated_at.eq(&now),
+        ))
+        .execute(&mut conn)
+        .map_err(|e| format!("Failed to update M3U source: {}", e))?;
+
+    // Get channel count
+    let channel_count: i64 = m3u_channels::table
+        .filter(m3u_channels::source_id.eq(source_id))
+        .count()
+        .get_result(&mut conn)
+        .unwrap_or(0);
+
+    Ok(M3uSourceWithStats {
+        id: source_id,
+        name: name_update,
+        url: url_update,
+        refresh_interval_hours: refresh_update,
+        last_refresh: source.last_refresh,
+        is_active: source.is_active != 0,
+        is_local_file: source.is_local_file != 0,
+        created_at: source.created_at,
+        channel_count: channel_count.try_into().unwrap_or(i32::MAX),
+    })
 }
 
 /// Toggle M3U source active status.

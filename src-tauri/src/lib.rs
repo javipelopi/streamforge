@@ -318,6 +318,7 @@ pub fn run() {
             commands::accounts::get_accounts,
             commands::accounts::delete_account,
             commands::accounts::update_account,
+            commands::accounts::toggle_account,
             commands::accounts::test_connection,
             commands::channels::scan_channels,
             commands::channels::scan_and_rematch,
@@ -369,6 +370,10 @@ pub fn run() {
             commands::xmltv_channels::bulk_toggle_channels,
             commands::xmltv_channels::get_orphan_xtream_streams,
             commands::xmltv_channels::promote_orphan_to_plex,
+            commands::xmltv_channels::get_orphan_m3u_channels,
+            commands::xmltv_channels::promote_m3u_orphan_to_plex,
+            commands::xmltv_channels::get_orphan_acestream_sources,
+            commands::xmltv_channels::promote_acestream_orphan_to_plex,
             commands::xmltv_channels::update_synthetic_channel,
             commands::xmltv_channels::get_target_lineup_channels,
             commands::xmltv_channels::get_xmltv_channels_for_source,
@@ -409,12 +414,14 @@ pub fn run() {
             commands::m3u_sources::delete_m3u_source,
             commands::m3u_sources::get_m3u_channels,
             commands::m3u_sources::toggle_m3u_source,
+            commands::m3u_sources::update_m3u_source,
             // Acestream source commands (Multi-Source Stream Support)
             commands::acestream_sources::check_acestream_status,
             commands::acestream_sources::add_acestream_source,
             commands::acestream_sources::get_acestream_sources,
             commands::acestream_sources::delete_acestream_source,
-            commands::acestream_sources::toggle_acestream_source
+            commands::acestream_sources::toggle_acestream_source,
+            commands::acestream_sources::update_acestream_source
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

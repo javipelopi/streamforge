@@ -45,6 +45,13 @@ pub struct AddAcestreamSourceInput {
     pub content_id_or_url: String,
 }
 
+/// Input for updating an existing Acestream source
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAcestreamSourceInput {
+    pub name: Option<String>,
+}
+
 // ============================================================================
 // Commands
 // ============================================================================
@@ -300,6 +307,109 @@ pub fn delete_acestream_source(db: State<DbConnection>, source_id: i32) -> Resul
     }
 
     Ok(())
+}
+
+/// Update an existing Acestream source.
+///
+/// # Arguments
+///
+/// * `source_id` - The Acestream source ID to update
+/// * `input` - Update data (name only, content_id cannot be changed)
+///
+/// # Returns
+///
+/// The updated Acestream source
+#[tauri::command]
+pub fn update_acestream_source(
+    db: State<DbConnection>,
+    source_id: i32,
+    input: UpdateAcestreamSourceInput,
+) -> Result<AcestreamSourceResponse, String> {
+    use crate::db::schema::{channel_mappings, xmltv_channels};
+
+    if source_id <= 0 {
+        return Err("Invalid source ID".to_string());
+    }
+
+    // Validate input
+    if let Some(ref name) = input.name {
+        if name.trim().is_empty() {
+            return Err("Source name cannot be empty".to_string());
+        }
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| {
+            tracing::error!("Database connection error in update_acestream_source: {}", e);
+            "Database connection unavailable. Please try again.".to_string()
+        })?;
+
+    // Load the existing source
+    let source: AcestreamSource = acestream_sources::table
+        .filter(acestream_sources::id.eq(source_id))
+        .first(&mut conn)
+        .map_err(|_| "Acestream source not found".to_string())?;
+
+    // Build update changeset
+    let now = Utc::now().to_rfc3339();
+    let name_update = input.name.map(|n| n.trim().to_string()).unwrap_or(source.name.clone());
+
+    // Update the source
+    diesel::update(acestream_sources::table.filter(acestream_sources::id.eq(source_id)))
+        .set((
+            acestream_sources::name.eq(&name_update),
+            acestream_sources::updated_at.eq(&now),
+        ))
+        .execute(&mut conn)
+        .map_err(|e| {
+            tracing::error!("Failed to update Acestream source {}: {}", source_id, e);
+            "Failed to update Acestream source. Please try again.".to_string()
+        })?;
+
+    // Build stream URL
+    let stream_url = build_acestream_url(&source.content_id).ok();
+
+    // Get link status
+    let mappings: Vec<(Option<i32>, i32)> = channel_mappings::table
+        .filter(channel_mappings::acestream_source_id.eq(source_id))
+        .select((
+            channel_mappings::acestream_source_id,
+            channel_mappings::xmltv_channel_id,
+        ))
+        .load(&mut conn)
+        .unwrap_or_default();
+
+    let xmltv_ids: Vec<i32> = mappings.iter().map(|(_, xmltv_id)| *xmltv_id).collect();
+    let synthetic_ids: Vec<i32> = xmltv_channels::table
+        .filter(xmltv_channels::id.eq_any(&xmltv_ids))
+        .filter(xmltv_channels::is_synthetic.eq(1))
+        .select(xmltv_channels::id)
+        .load::<Option<i32>>(&mut conn)
+        .unwrap_or_default()
+        .into_iter()
+        .flatten()
+        .collect();
+
+    let has_synthetic = synthetic_ids.iter().any(|id| xmltv_ids.contains(id));
+    let link_status = if has_synthetic {
+        "promoted".to_string()
+    } else if !xmltv_ids.is_empty() {
+        "linked".to_string()
+    } else {
+        "orphan".to_string()
+    };
+
+    Ok(AcestreamSourceResponse {
+        id: source_id,
+        name: name_update,
+        content_id: source.content_id,
+        is_active: source.is_active != 0,
+        created_at: source.created_at,
+        stream_url,
+        link_status,
+        linked_xmltv_ids: xmltv_ids,
+    })
 }
 
 /// Toggle Acestream source active status.
