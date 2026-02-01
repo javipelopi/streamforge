@@ -1169,6 +1169,113 @@ export async function promoteOrphanToPlex(
   });
 }
 
+// ============================================================================
+// Orphan M3U Channels
+// ============================================================================
+
+/** Orphan M3U channel info (channels not matched to any XMLTV channel) */
+export interface OrphanM3uChannel {
+  id: number;
+  sourceId: number;
+  sourceName: string;
+  name: string;
+  streamUrl: string;
+  tvgId: string | null;
+  tvgName: string | null;
+  tvgLogo: string | null;
+  groupTitle: string | null;
+}
+
+/**
+ * Get all M3U channels that are NOT matched to any XMLTV channel.
+ *
+ * These are "orphan" channels that exist in M3U sources but have no
+ * corresponding XMLTV channel entry for EPG data. Users can "promote" these
+ * to create synthetic XMLTV channels with placeholder EPG.
+ *
+ * @returns List of M3U channels not mapped to any XMLTV channel
+ */
+export async function getOrphanM3uChannels(): Promise<OrphanM3uChannel[]> {
+  return invoke<OrphanM3uChannel[]>('get_orphan_m3u_channels');
+}
+
+/**
+ * Promote an orphan M3U channel to a synthetic XMLTV channel for Plex.
+ *
+ * Creates:
+ * 1. A synthetic `xmltv_channels` entry with `is_synthetic = true`
+ * 2. A `channel_mappings` entry linking it to the M3U channel
+ * 3. A `xmltv_channel_settings` entry with `is_enabled = 0`
+ * 4. Placeholder EPG data for the next 7 days
+ *
+ * @param m3uChannelId - The M3U channel ID to promote
+ * @param displayName - Display name for the synthetic channel
+ * @param iconUrl - Optional icon URL for the channel
+ * @returns The newly created XmltvChannelWithMappings
+ */
+export async function promoteM3uOrphanToPlex(
+  m3uChannelId: number,
+  displayName: string,
+  iconUrl: string | null
+): Promise<XmltvChannelWithMappings> {
+  return invoke<XmltvChannelWithMappings>('promote_m3u_orphan_to_plex', {
+    m3uChannelId,
+    displayName,
+    iconUrl,
+  });
+}
+
+// ============================================================================
+// Orphan Acestream Sources
+// ============================================================================
+
+/** Orphan Acestream source info (sources not matched to any XMLTV channel) */
+export interface OrphanAcestreamSource {
+  id: number;
+  name: string;
+  contentId: string;
+  isActive: boolean;
+}
+
+/**
+ * Get all Acestream sources that are NOT matched to any XMLTV channel.
+ *
+ * These are "orphan" sources that exist but have no corresponding XMLTV
+ * channel entry for EPG data. Users can "promote" these to create
+ * synthetic XMLTV channels with placeholder EPG.
+ *
+ * @returns List of Acestream sources not mapped to any XMLTV channel
+ */
+export async function getOrphanAcestreamSources(): Promise<OrphanAcestreamSource[]> {
+  return invoke<OrphanAcestreamSource[]>('get_orphan_acestream_sources');
+}
+
+/**
+ * Promote an orphan Acestream source to a synthetic XMLTV channel for Plex.
+ *
+ * Creates:
+ * 1. A synthetic `xmltv_channels` entry with `is_synthetic = true`
+ * 2. A `channel_mappings` entry linking it to the Acestream source
+ * 3. A `xmltv_channel_settings` entry with `is_enabled = 0`
+ * 4. Placeholder EPG data for the next 7 days
+ *
+ * @param acestreamSourceId - The Acestream source ID to promote
+ * @param displayName - Display name for the synthetic channel
+ * @param iconUrl - Optional icon URL for the channel
+ * @returns The newly created XmltvChannelWithMappings
+ */
+export async function promoteAcestreamOrphanToPlex(
+  acestreamSourceId: number,
+  displayName: string,
+  iconUrl: string | null
+): Promise<XmltvChannelWithMappings> {
+  return invoke<XmltvChannelWithMappings>('promote_acestream_orphan_to_plex', {
+    acestreamSourceId,
+    displayName,
+    iconUrl,
+  });
+}
+
 /**
  * Update a synthetic channel's display name and icon.
  *
@@ -1933,8 +2040,10 @@ export interface M3uChannel {
   tvgName: string | null;
   tvgLogo: string | null;
   groupTitle: string | null;
-  createdAt: string;
-  updatedAt: string;
+  /** "linked" | "orphan" | "promoted" */
+  linkStatus: LinkStatus;
+  /** XMLTV channel IDs this channel is linked to */
+  linkedXmltvIds: number[];
 }
 
 /** Request type for adding a new M3U source */
@@ -2026,7 +2135,12 @@ export interface AcestreamSource {
   contentId: string;
   isActive: boolean;
   createdAt: string;
-  updatedAt: string;
+  /** Pre-computed stream URL for display */
+  streamUrl: string | null;
+  /** "linked" | "orphan" | "promoted" */
+  linkStatus: LinkStatus;
+  /** XMLTV channel IDs this source is linked to */
+  linkedXmltvIds: number[];
 }
 
 /** Acestream engine status */

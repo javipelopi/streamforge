@@ -14,16 +14,20 @@ export { XmltvSourceChannelRow } from './XmltvSourceChannelRow';
 export { XtreamSourcesTab } from './XtreamSourcesTab';
 export { XtreamAccountAccordion } from './XtreamAccountAccordion';
 export { XtreamStreamRow } from './XtreamStreamRow';
-export { XtreamLinkToChannelDialog } from './XtreamLinkToChannelDialog';
 
 // M3U Components (Multi-Source Support)
 export { M3uSourcesTab } from './M3uSourcesTab';
 export { M3uSourceAccordion } from './M3uSourceAccordion';
+export { M3uChannelRow } from './M3uChannelRow';
 export { AddM3uSourceDialog } from './AddM3uSourceDialog';
 
 // Acestream Components (Multi-Source Support)
 export { AcestreamSourcesTab } from './AcestreamSourcesTab';
+export { AcestreamSourceRow } from './AcestreamSourceRow';
 export { AddAcestreamDialog } from './AddAcestreamDialog';
+
+// Shared Components
+export { LinkToXmltvChannelDialog } from './LinkToXmltvChannelDialog';
 
 // Error Boundary (Code Review Fix #1)
 export { SourcesErrorBoundary } from './SourcesErrorBoundary';

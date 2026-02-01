@@ -16,7 +16,6 @@ import {
   X,
   RefreshCw,
   Trash2,
-  ExternalLink,
 } from 'lucide-react';
 import {
   getM3uChannels,
@@ -24,13 +23,13 @@ import {
   deleteM3uSource,
   toggleM3uSource,
   type M3uSource,
-  type M3uChannel,
 } from '../../lib/tauri';
 import {
   PaginationControls,
   PAGE_SIZE_OPTIONS,
   type PageSize,
 } from '../ui/PaginationControls';
+import { M3uChannelRow } from './M3uChannelRow';
 
 interface M3uSourceAccordionProps {
   source: M3uSource;
@@ -145,6 +144,12 @@ export function M3uSourceAccordion({ source }: M3uSourceAccordionProps) {
   const handleDelete = () => {
     deleteMutation.mutate();
     setShowDeleteConfirm(false);
+  };
+
+  // Handler for channel row updates (e.g., promote to lineup)
+  const handleChannelUpdate = () => {
+    queryClient.invalidateQueries({ queryKey: ['m3u-channels', source.id] });
+    queryClient.invalidateQueries({ queryKey: ['m3u-sources'] });
   };
 
   const formatLastRefresh = (dateStr: string | null) => {
@@ -339,7 +344,12 @@ export function M3uSourceAccordion({ source }: M3uSourceAccordionProps) {
               {filteredChannels.length > 0 && (
                 <div className="divide-y divide-gray-100">
                   {paginatedChannels.map((channel) => (
-                    <M3uChannelRow key={channel.id} channel={channel} />
+                    <M3uChannelRow
+                      key={channel.id}
+                      channel={channel}
+                      sourceId={source.id}
+                      onUpdate={handleChannelUpdate}
+                    />
                   ))}
                 </div>
               )}
@@ -368,14 +378,6 @@ export function M3uSourceAccordion({ source }: M3uSourceAccordionProps) {
     </div>
   );
 }
-
-/**
- * Validates that a URL is safe (http or https protocol only).
- * Prevents XSS via javascript: or other dangerous protocols.
- */
-const isValidHttpUrl = (url: string): boolean => {
-  return /^https?:\/\//i.test(url);
-};
 
 /**
  * Delete confirmation dialog with keyboard trap and focus management
@@ -466,68 +468,6 @@ function DeleteConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-// Simple channel row component
-function M3uChannelRow({ channel }: { channel: M3uChannel }) {
-  // Security: Validate tvgLogo URL to prevent XSS via javascript: or data: URLs
-  const safeLogoUrl = channel.tvgLogo && isValidHttpUrl(channel.tvgLogo)
-    ? channel.tvgLogo
-    : null;
-
-  return (
-    <div
-      data-testid={`m3u-channel-row-${channel.id}`}
-      className="px-4 py-3 flex items-center gap-4 hover:bg-gray-50"
-    >
-      {/* Channel logo */}
-      {safeLogoUrl ? (
-        <img
-          src={safeLogoUrl}
-          alt=""
-          className="w-10 h-10 rounded object-cover bg-gray-100"
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = 'none';
-          }}
-        />
-      ) : (
-        <div className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center">
-          <span className="text-gray-400 text-xs">TV</span>
-        </div>
-      )}
-
-      {/* Channel info */}
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-gray-900 truncate">{channel.name}</div>
-        {channel.groupTitle && (
-          <div className="text-sm text-gray-500 truncate">{channel.groupTitle}</div>
-        )}
-      </div>
-
-      {/* Stream URL indicator - only render as link if valid http/https URL */}
-      {isValidHttpUrl(channel.streamUrl) ? (
-        <a
-          href={channel.streamUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
-          title="Open stream URL"
-          aria-label="Open stream URL in new tab"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <ExternalLink className="w-4 h-4" />
-        </a>
-      ) : (
-        <span
-          className="p-2 text-gray-300 cursor-not-allowed"
-          title="Invalid URL format"
-          aria-label="Stream URL is not a valid HTTP link"
-        >
-          <ExternalLink className="w-4 h-4" />
-        </span>
-      )}
     </div>
   );
 }
