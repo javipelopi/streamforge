@@ -380,6 +380,7 @@ pub fn run() {
             commands::xtream_sources::get_xtream_streams_for_account,
             commands::xtream_sources::get_account_stream_stats,
             commands::xtream_sources::unlink_xtream_stream,
+            commands::xtream_sources::get_xtream_stream_url,
             commands::logs::log_event,
             commands::logs::get_events,
             commands::logs::get_unread_event_count,

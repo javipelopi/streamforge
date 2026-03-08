@@ -7,7 +7,8 @@
 import { memo, useState, useCallback, useEffect, KeyboardEvent } from 'react';
 import { AlertTriangle, FileText, Trash2 } from 'lucide-react';
 import type { VirtualItem } from '@tanstack/react-virtual';
-import type { TargetLineupChannel } from '../../lib/tauri';
+import { getServerPort, buildProxyStreamUrl, type TargetLineupChannel } from '../../lib/tauri';
+import { PlayButton } from '../player';
 
 interface TargetLineupChannelRowProps {
   channel: TargetLineupChannel;
@@ -176,6 +177,18 @@ export const TargetLineupChannelRow = memo(function TargetLineupChannelRow({
               )}
             </div>
           </div>
+
+          {/* Play button (only if channel has streams) */}
+          {hasStreams && (
+            <PlayButton
+              getStreamUrl={async () => {
+                const port = await getServerPort();
+                return buildProxyStreamUrl(channel.id, port);
+              }}
+              title={channel.displayName}
+              icon={channel.icon}
+            />
+          )}
 
           {/* No stream warning badge with icon */}
           {!hasStreams && (
