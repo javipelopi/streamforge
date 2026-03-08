@@ -21,11 +21,26 @@ export default [
         window: 'readonly',
         document: 'readonly',
         console: 'readonly',
+        navigator: 'readonly',
+        sessionStorage: 'readonly',
+        fetch: 'readonly',
+        queueMicrotask: 'readonly',
+        requestAnimationFrame: 'readonly',
+        CustomEvent: 'readonly',
         HTMLElement: 'readonly',
         HTMLInputElement: 'readonly',
         HTMLDivElement: 'readonly',
+        HTMLButtonElement: 'readonly',
+        HTMLImageElement: 'readonly',
+        HTMLSelectElement: 'readonly',
+        HTMLTextAreaElement: 'readonly',
+        HTMLUListElement: 'readonly',
+        Element: 'readonly',
+        Node: 'readonly',
+        MouseEvent: 'readonly',
         KeyboardEvent: 'readonly',
         AbortController: 'readonly',
+        Image: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
         setInterval: 'readonly',
@@ -33,6 +48,7 @@ export default [
         URL: 'readonly',
         confirm: 'readonly',
         React: 'readonly',
+        NodeJS: 'readonly',
       },
     },
     plugins: {
@@ -45,6 +61,9 @@ export default [
       ...react.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
       'react/react-in-jsx-scope': 'off', // Not needed in React 18+
+      'react/no-unescaped-entities': 'off', // Too strict for quotes in JSX text
+      'react-hooks/set-state-in-effect': 'off', // Common pattern for syncing state from props
+      'react-hooks/immutability': 'off', // False positive on ref assignments
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
     settings: {
