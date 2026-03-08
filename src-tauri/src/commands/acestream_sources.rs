@@ -477,6 +477,8 @@ mod tests {
             is_active: true,
             created_at: "2024-01-01T00:00:00Z".to_string(),
             stream_url: Some("http://127.0.0.1:6878/ace/getstream?id=1234567890abcdef1234567890abcdef12345678".to_string()),
+            link_status: "orphan".to_string(),
+            linked_xmltv_ids: vec![],
         };
 
         let json = serde_json::to_string(&source).unwrap();
