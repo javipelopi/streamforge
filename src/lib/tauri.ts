@@ -1463,6 +1463,19 @@ export async function unlinkXtreamStream(xtreamChannelId: number): Promise<numbe
 }
 
 /**
+ * Get the playback URL for an Xtream stream.
+ *
+ * Builds the full stream URL with decrypted credentials for playback.
+ * Used by the video player to play streams directly.
+ *
+ * @param xtreamChannelId - The database ID of the Xtream channel/stream
+ * @returns The full stream URL for playback
+ */
+export async function getXtreamStreamUrl(xtreamChannelId: number): Promise<string> {
+  return invoke<string>('get_xtream_stream_url', { xtreamChannelId });
+}
+
+/**
  * Get link status badge color classes for display
  * Story 3-11 AC #2: Linked (blue), Orphan (amber), Promoted (green)
  * @param status - Link status
@@ -2339,5 +2352,32 @@ export async function addAcestreamChannelMapping(
  */
 export async function getAllChannelMappings(xmltvChannelId: number): Promise<AllChannelMappings> {
   return invoke<AllChannelMappings>('get_all_channel_mappings', { xmltvChannelId });
+}
+
+// ============================================================================
+// Stream URL Helpers for Video Playback
+// ============================================================================
+
+/**
+ * Build the stream URL for an XMLTV channel using the internal proxy.
+ * Used for Target Lineup and EPG playback.
+ *
+ * @param xmltvChannelId - XMLTV channel ID
+ * @param serverPort - The server port (from getServerPort())
+ * @returns The proxy stream URL
+ */
+export function buildProxyStreamUrl(xmltvChannelId: number, serverPort: number): string {
+  return `http://127.0.0.1:${serverPort}/stream/${xmltvChannelId}`;
+}
+
+/**
+ * Build the stream URL for an Acestream source.
+ * Connects to the local Acestream engine.
+ *
+ * @param contentId - Acestream content ID (40-char hex string)
+ * @returns The Acestream engine URL
+ */
+export function buildAcestreamUrl(contentId: string): string {
+  return `http://127.0.0.1:6878/ace/getstream?id=${contentId}`;
 }
 

@@ -18,6 +18,7 @@ import {
 import { ROUTES } from '../../lib/routes';
 import { TOAST_DURATION_MS } from '../../lib/constants';
 import { LinkToXmltvChannelDialog } from './LinkToXmltvChannelDialog';
+import { PlayButton } from '../player';
 
 // Validates that a URL is safe (http or https protocol only)
 const isValidHttpUrl = (url: string): boolean => {
@@ -196,6 +197,13 @@ export function M3uChannelRow({ channel, sourceId, onUpdate }: M3uChannelRowProp
             )}
           </div>
         </div>
+
+        {/* Play Button */}
+        <PlayButton
+          getStreamUrl={() => channel.streamUrl}
+          title={channel.name}
+          icon={safeLogoUrl}
+        />
 
         {/* Action Menu */}
         <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>

@@ -33,6 +33,9 @@ pub use test_data::{seed_stream_proxy_test_data, clear_stream_proxy_test_data};
 // Re-export M3U auto-match commands (Multi-Source Stream Support)
 pub use matcher::{auto_match_m3u_channels, get_m3u_auto_match_results};
 
+// Re-export Xtream stream URL command for video playback
+pub use xtream_sources::get_xtream_stream_url;
+
 /// Response type for autostart status queries
 #[derive(Serialize)]
 pub struct AutostartStatus {
