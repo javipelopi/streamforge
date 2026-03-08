@@ -6,11 +6,13 @@
 
 use diesel::prelude::*;
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
-use crate::db::models::{ChannelMapping, XmltvChannel, XtreamChannel};
-use crate::db::schema::{channel_mappings, xmltv_channels, xtream_channels};
+use crate::credentials::CredentialManager;
+use crate::db::models::{Account, ChannelMapping, XmltvChannel, XtreamChannel};
+use crate::db::schema::{accounts, channel_mappings, xmltv_channels, xtream_channels};
 use crate::db::DbConnection;
+use crate::server::stream::build_stream_url;
 
 // ============================================================================
 // Response Types
@@ -363,6 +365,70 @@ pub fn unlink_xtream_stream(
     .map_err(|e| format!("Failed to unlink stream: {}", e))?;
 
     Ok(deleted_count as i32)
+}
+
+/// Get the playback URL for an Xtream stream.
+///
+/// Builds the full stream URL with decrypted credentials for playback.
+/// Used by the video player to play streams directly.
+///
+/// # Arguments
+///
+/// * `app` - Tauri app handle for accessing app data directory
+/// * `xtream_channel_id` - The database ID of the Xtream channel/stream
+///
+/// # Returns
+///
+/// The full stream URL (e.g., http://server.com/live/user/pass/12345.ts)
+#[tauri::command]
+pub async fn get_xtream_stream_url(
+    app: AppHandle,
+    db: State<'_, DbConnection>,
+    xtream_channel_id: i32,
+) -> Result<String, String> {
+    // Validate input
+    if xtream_channel_id <= 0 {
+        return Err("Invalid Xtream channel ID".to_string());
+    }
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    // Load the Xtream channel
+    let xtream_channel: XtreamChannel = xtream_channels::table
+        .filter(xtream_channels::id.eq(xtream_channel_id))
+        .first::<XtreamChannel>(&mut conn)
+        .map_err(|e| format!("Xtream channel not found: {}", e))?;
+
+    // Load the account for this channel
+    let account: Account = accounts::table
+        .filter(accounts::id.eq(xtream_channel.account_id))
+        .first::<Account>(&mut conn)
+        .map_err(|e| format!("Account not found: {}", e))?;
+
+    // Get app data directory for credential manager
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+
+    // Decrypt the password
+    let credential_manager = CredentialManager::new(app_data_dir);
+    let account_id_str = account.id.map(|id| id.to_string()).unwrap_or_default();
+    let password = credential_manager
+        .retrieve_password(&account_id_str, &account.password_encrypted)
+        .map_err(|e| format!("Failed to decrypt credentials: {}", e))?;
+
+    // Build the stream URL
+    let stream_url = build_stream_url(
+        &account.server_url,
+        &account.username,
+        &password,
+        xtream_channel.stream_id,
+    );
+
+    Ok(stream_url)
 }
 
 #[cfg(test)]
