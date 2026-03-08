@@ -52,13 +52,16 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDAzMjUyQ0JFOEFCOEI5MjIKUldRaXViaUt2aXdsQXlzYi9FK0U0TXhWRGcycXNVVjJXakhjTjVvZFNLUDNySjI3bGFzalljZTAK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDAzMjUyQ0JFOEFCOEI5MjIKUldRaXViaUt2aXdsQXlzYi9FL0U0TXhWRGcycXNVVjJXakhjTjVvZFNLUDNySjI3bGFzalljZTAK",
       "endpoints": [
         "https://github.com/javipelopi/streamforge/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"
       }
+    },
+    "shell": {
+      "open": true
     }
   }
 }

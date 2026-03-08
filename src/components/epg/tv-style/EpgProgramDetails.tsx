@@ -6,10 +6,12 @@
  * episode info, channel badge with status, metadata, and description.
  */
 
-import { useRef, useMemo, useCallback } from 'react';
+import { useRef, useMemo, useCallback, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { Clock, Calendar } from 'lucide-react';
+import { Clock, Calendar, Play, ExternalLink, Loader2 } from 'lucide-react';
 import { useProgramDetails } from '../../../hooks/useProgramDetails';
+import { getServerPort, buildProxyStreamUrl } from '../../../lib/tauri';
+import { useVideoPlayer } from '../../player';
 
 // Constants for styling
 const STATUS_COLORS = {
@@ -120,6 +122,33 @@ function parseCategories(category: string | undefined): string[] {
 export function EpgProgramDetails({ selectedProgramId, onClose, onNavigateUp, onNavigateLeft }: EpgProgramDetailsProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const { programWithChannel, isLoading, error } = useProgramDetails(selectedProgramId);
+  const { playStream, openInExternalPlayer } = useVideoPlayer();
+  const [isPlayLoading, setIsPlayLoading] = useState(false);
+
+  // Handle play button click
+  const handlePlay = useCallback(async (external: boolean) => {
+    if (!programWithChannel?.channel) return;
+
+    setIsPlayLoading(true);
+    try {
+      const port = await getServerPort();
+      const url = buildProxyStreamUrl(programWithChannel.channel.id, port);
+
+      if (external) {
+        await openInExternalPlayer(url);
+      } else {
+        playStream({
+          url,
+          title: programWithChannel.channel.displayName,
+          icon: programWithChannel.channel.icon,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to play stream:', err);
+    } finally {
+      setIsPlayLoading(false);
+    }
+  }, [programWithChannel, playStream, openInExternalPlayer]);
 
   // Handle keyboard navigation - Escape or Left arrow to close
   // Uses local handler instead of global document listener to avoid conflicts
@@ -299,6 +328,30 @@ export function EpgProgramDetails({ selectedProgramId, onClose, onNavigateUp, on
             </p>
           )}
         </div>
+      </div>
+
+      {/* Watch Now Buttons */}
+      <div className="flex gap-2 mt-4">
+        <button
+          onClick={() => handlePlay(false)}
+          disabled={isPlayLoading}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+        >
+          {isPlayLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Play className="w-4 h-4" />
+          )}
+          Watch Now
+        </button>
+        <button
+          onClick={() => handlePlay(true)}
+          disabled={isPlayLoading}
+          className="px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+          title="Open in VLC/mpv"
+        >
+          <ExternalLink className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Divider (Task 4.4) */}

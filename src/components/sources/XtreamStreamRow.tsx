@@ -16,11 +16,13 @@ import {
   getQualityBadgeClasses,
   getLinkStatusBadgeClasses,
   getLinkStatusLabel,
+  getXtreamStreamUrl,
   type XtreamAccountStream,
 } from '../../lib/tauri';
 import { ROUTES } from '../../lib/routes';
 import { TOAST_DURATION_MS } from '../../lib/constants';
 import { LinkToXmltvChannelDialog } from './LinkToXmltvChannelDialog';
+import { PlayButton } from '../player';
 
 interface XtreamStreamRowProps {
   stream: XtreamAccountStream;
@@ -229,6 +231,13 @@ export function XtreamStreamRow({ stream, accountId, onUpdate }: XtreamStreamRow
             )}
           </div>
         </div>
+
+        {/* Play Button */}
+        <PlayButton
+          getStreamUrl={() => getXtreamStreamUrl(stream.id)}
+          title={stream.name}
+          icon={stream.streamIcon}
+        />
 
         {/* Action Menu */}
         <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>

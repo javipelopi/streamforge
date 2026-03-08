@@ -15,11 +15,13 @@ import {
   getLinkStatusLabel,
   deleteAcestreamSource,
   toggleAcestreamSource,
+  buildAcestreamUrl,
   type AcestreamSource,
 } from '../../lib/tauri';
 import { ROUTES } from '../../lib/routes';
 import { TOAST_DURATION_MS } from '../../lib/constants';
 import { LinkToXmltvChannelDialog } from './LinkToXmltvChannelDialog';
+import { PlayButton } from '../player';
 
 interface AcestreamSourceRowProps {
   source: AcestreamSource;
@@ -222,6 +224,12 @@ export function AcestreamSourceRow({ source, onUpdate, onEdit }: AcestreamSource
 
         {/* Actions */}
         <div className="flex items-center gap-1">
+          {/* Play Button */}
+          <PlayButton
+            getStreamUrl={() => buildAcestreamUrl(source.contentId)}
+            title={source.name}
+          />
+
           {/* Toggle button */}
           <button
             onClick={() => toggleMutation.mutate(!source.isActive)}

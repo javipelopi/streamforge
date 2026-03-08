@@ -1,3 +1,4 @@
+pub mod browser_stream;
 pub mod buffer;
 pub mod epg;
 pub mod failover;
