@@ -870,7 +870,7 @@ mod tests {
                         "name": "Source",
                         "url": "http://epg.com",
                         "format": "xml",
-                        "refreshHour": 4,
+                        "refreshIntervalHours": 4,
                         "isActive": true
                     }
                 ],

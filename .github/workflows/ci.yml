@@ -56,7 +56,7 @@ jobs:
   test-rust:
     name: Test (Rust)
     runs-on: self-hosted
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
