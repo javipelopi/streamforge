@@ -49,6 +49,7 @@ export default [
         confirm: 'readonly',
         React: 'readonly',
         NodeJS: 'readonly',
+        HTMLVideoElement: 'readonly',
       },
     },
     plugins: {
