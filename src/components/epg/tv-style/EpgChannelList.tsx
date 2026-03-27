@@ -14,6 +14,7 @@ import { EpgChannelRow } from './EpgChannelRow';
 import { useEpgChannelList } from '../../../hooks/useEpgChannelList';
 import { useListNavigation } from '../../../hooks/useListNavigation';
 import { useCombinedRef } from '../../../hooks/useFocusManager';
+import { useVideoPlayer } from '../../player';
 
 interface EpgChannelListProps {
   /** Currently selected channel ID */
@@ -47,6 +48,18 @@ export const EpgChannelList = forwardRef<HTMLDivElement, EpgChannelListProps>(
   const setRefs = useCombinedRef(parentRef, forwardedRef);
 
   const { channels, isLoading, error } = useEpgChannelList();
+  const { setChannelList } = useVideoPlayer();
+
+  // Sync channel list to player context for channel switching
+  useEffect(() => {
+    if (channels.length > 0) {
+      setChannelList(channels.map(ch => ({
+        channelId: ch.channelId,
+        channelName: ch.channelName,
+        channelIcon: ch.channelIcon,
+      })));
+    }
+  }, [channels, setChannelList]);
 
   // Track if selection is internal (auto-select, keyboard nav, click) to avoid double-scroll
   // External selections (e.g., from search) should trigger scroll-to-selected

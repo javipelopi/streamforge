@@ -5,7 +5,7 @@
  * Uses local FFmpeg-based HLS proxy for reliable playback of any stream format.
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { X, Volume2, VolumeX, Maximize, Minimize, Play, Pause, Loader2, AlertCircle, Tv, ExternalLink } from 'lucide-react';
+import { X, Volume2, VolumeX, Volume1, Maximize, Minimize, Play, Pause, Loader2, AlertCircle, Tv, ExternalLink, SkipBack, SkipForward } from 'lucide-react';
 import Hls from 'hls.js';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getServerPort } from '../../lib/tauri';
@@ -23,9 +23,13 @@ interface VideoPlayerProps {
   onClose: () => void;
   /** Callback to open in external player */
   onOpenExternal?: () => void;
+  /** Callback for next channel */
+  onNextChannel?: () => void;
+  /** Callback for previous channel */
+  onPrevChannel?: () => void;
 }
 
-export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal }: VideoPlayerProps) {
+export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal, onNextChannel, onPrevChannel }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -36,6 +40,7 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
   const [error, setError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -283,7 +288,10 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
       console.log('[VideoPlayer] Video pause event');
       setIsPlaying(false);
     };
-    const handleVolumeChange = () => setIsMuted(video.muted);
+    const handleVolumeChange = () => {
+      setIsMuted(video.muted);
+      setVolume(video.volume);
+    };
     const handleWaiting = () => setIsLoading(true);
     const handlePlaying = () => {
       console.log('[VideoPlayer] Video playing event');
@@ -366,13 +374,35 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
             onOpenExternal();
           }
           break;
+        case 'ArrowUp':
+          e.preventDefault();
+          handleVolumeUp();
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          handleVolumeDown();
+          break;
+        case 'n':
+        case 'ArrowRight':
+          if (onNextChannel) {
+            e.preventDefault();
+            onNextChannel();
+          }
+          break;
+        case 'p':
+        case 'ArrowLeft':
+          if (onPrevChannel) {
+            e.preventDefault();
+            onPrevChannel();
+          }
+          break;
       }
       resetControlsTimeout();
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isFullscreen, onClose, onOpenExternal, resetControlsTimeout]);
+  }, [isOpen, isFullscreen, onClose, onOpenExternal, onNextChannel, onPrevChannel, resetControlsTimeout]);
 
   const togglePlayPause = () => {
     const video = videoRef.current;
@@ -389,6 +419,31 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
     const video = videoRef.current;
     if (!video) return;
     video.muted = !video.muted;
+  };
+
+  const handleVolumeChange = (newVolume: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    const clamped = Math.max(0, Math.min(1, newVolume));
+    video.volume = clamped;
+    setVolume(clamped);
+    if (clamped > 0 && video.muted) {
+      video.muted = false;
+    }
+  };
+
+  const handleVolumeUp = () => {
+    handleVolumeChange(volume + 0.1);
+  };
+
+  const handleVolumeDown = () => {
+    handleVolumeChange(volume - 0.1);
+  };
+
+  const getVolumeIcon = () => {
+    if (isMuted || volume === 0) return <VolumeX className="w-5 h-5 text-white" />;
+    if (volume < 0.5) return <Volume1 className="w-5 h-5 text-white" />;
+    return <Volume2 className="w-5 h-5 text-white" />;
   };
 
   const toggleFullscreen = async () => {
@@ -515,6 +570,18 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
+              {/* Previous channel */}
+              {onPrevChannel && (
+                <button
+                  onClick={onPrevChannel}
+                  className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                  aria-label="Previous channel"
+                  title="Previous channel"
+                >
+                  <SkipBack className="w-5 h-5 text-white" />
+                </button>
+              )}
+
               {/* Play/Pause */}
               <button
                 onClick={togglePlayPause}
@@ -528,18 +595,36 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
                 )}
               </button>
 
-              {/* Mute */}
+              {/* Next channel */}
+              {onNextChannel && (
+                <button
+                  onClick={onNextChannel}
+                  className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                  aria-label="Next channel"
+                  title="Next channel"
+                >
+                  <SkipForward className="w-5 h-5 text-white" />
+                </button>
+              )}
+
+              {/* Volume controls */}
               <button
                 onClick={toggleMute}
                 className="p-2 rounded-full hover:bg-white/10 transition-colors"
                 aria-label={isMuted ? 'Unmute' : 'Mute'}
               >
-                {isMuted ? (
-                  <VolumeX className="w-5 h-5 text-white" />
-                ) : (
-                  <Volume2 className="w-5 h-5 text-white" />
-                )}
+                {getVolumeIcon()}
               </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={isMuted ? 0 : volume}
+                onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                className="w-20 h-1 appearance-none bg-white/30 rounded-full cursor-pointer accent-white [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                aria-label="Volume"
+              />
             </div>
 
             <div className="flex items-center gap-2">
@@ -572,7 +657,7 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
 
           {/* Keyboard shortcuts hint */}
           <div className="mt-2 text-center text-white/40 text-xs">
-            Space: Play/Pause | M: Mute | F: Fullscreen | E: External Player | Esc: Close
+            Space: Play/Pause | M: Mute | F: Fullscreen | E: External Player{onNextChannel ? ' | \u2190/\u2192: Channels' : ''} | \u2191/\u2193: Volume | Esc: Close
           </div>
         </div>
       </div>

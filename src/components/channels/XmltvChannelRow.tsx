@@ -2,7 +2,8 @@ import { memo, type ReactNode } from 'react';
 import * as Switch from '@radix-ui/react-switch';
 import { ChevronDown, ChevronRight, AlertTriangle, FileText, Pencil } from 'lucide-react';
 import type { XmltvChannelWithMappings } from '../../lib/tauri';
-import { formatConfidence, getMatchCountLabel } from '../../lib/tauri';
+import { formatConfidence, getMatchCountLabel, getServerPort, buildProxyStreamUrl } from '../../lib/tauri';
+import { PlayButton } from '../player';
 
 interface XmltvChannelRowProps {
   channel: XmltvChannelWithMappings;
@@ -178,6 +179,19 @@ export const XmltvChannelRow = memo(function XmltvChannelRow({
             >
               {primaryMatch.name}
             </span>
+          )}
+
+          {/* Play button - only show when channel has matched streams */}
+          {hasMatches && channel.isEnabled && (
+            <PlayButton
+              getStreamUrl={async () => {
+                const port = await getServerPort();
+                return buildProxyStreamUrl(channel.id, port);
+              }}
+              title={channel.displayName}
+              icon={channel.icon}
+              size="sm"
+            />
           )}
 
           {/* Add Stream Button (Story 3-3) */}

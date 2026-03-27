@@ -5,9 +5,12 @@
  * Individual channel row displaying logo, name, current program info, and progress bar.
  */
 
-import { memo } from 'react';
+import { memo, useCallback, useState } from 'react';
+import { Play, Loader2 } from 'lucide-react';
 import { EpgProgressBar } from './EpgProgressBar';
 import type { EpgChannelListItem } from '../../../hooks/useEpgChannelList';
+import { useVideoPlayer } from '../../player';
+import { getServerPort, buildProxyStreamUrl } from '../../../lib/tauri';
 
 interface EpgChannelRowProps {
   /** Channel data with current program */
@@ -65,7 +68,28 @@ export const EpgChannelRow = memo(function EpgChannelRow({
   onClick,
   'data-index': dataIndex,
 }: EpgChannelRowProps) {
+  const { playStream } = useVideoPlayer();
+  const [isPlayLoading, setIsPlayLoading] = useState(false);
   const currentProgram = channel.currentProgram;
+
+  const handlePlayClick = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsPlayLoading(true);
+    try {
+      const port = await getServerPort();
+      const url = buildProxyStreamUrl(channel.channelId, port);
+      playStream({
+        url,
+        title: channel.channelName,
+        icon: channel.channelIcon,
+        channelId: channel.channelId,
+      });
+    } catch (err) {
+      console.error('Failed to play channel:', err);
+    } finally {
+      setIsPlayLoading(false);
+    }
+  }, [channel, playStream]);
   const hasProgram = !!currentProgram;
 
   // Format time range if program exists
@@ -141,6 +165,21 @@ export const EpgChannelRow = memo(function EpgChannelRow({
         {/* Row 3: Progress bar (only if program exists) */}
         {hasProgram && <EpgProgressBar percent={progress} />}
       </div>
+
+      {/* Play button */}
+      <button
+        onClick={handlePlayClick}
+        disabled={isPlayLoading}
+        className="flex-shrink-0 p-2 rounded-full hover:bg-white/10 transition-colors text-white/50 hover:text-green-400 disabled:opacity-50"
+        aria-label={`Play ${channel.channelName}`}
+        title={`Play ${channel.channelName}`}
+      >
+        {isPlayLoading ? (
+          <Loader2 className="w-5 h-5 animate-spin" />
+        ) : (
+          <Play className="w-5 h-5" />
+        )}
+      </button>
     </div>
   );
 });
