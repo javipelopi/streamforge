@@ -75,6 +75,7 @@ pub struct ExportedSettings {
     pub epg_schedule_minute: Option<String>,
     pub epg_schedule_enabled: Option<String>,
     pub match_threshold: Option<String>,
+    pub failover_strictness: Option<String>,
 }
 
 /// Exported account (excludes password_encrypted for security)
@@ -216,6 +217,7 @@ pub fn export_configuration(db: State<DbConnection>) -> Result<String, String> {
         epg_schedule_minute: None,
         epg_schedule_enabled: None,
         match_threshold: None,
+        failover_strictness: None,
     };
 
     for setting in settings_rows {
@@ -226,6 +228,7 @@ pub fn export_configuration(db: State<DbConnection>) -> Result<String, String> {
             "epg_schedule_minute" => exported_settings.epg_schedule_minute = Some(setting.value),
             "epg_schedule_enabled" => exported_settings.epg_schedule_enabled = Some(setting.value),
             "match_threshold" => exported_settings.match_threshold = Some(setting.value),
+            "failover_strictness" => exported_settings.failover_strictness = Some(setting.value),
             _ => {} // Skip other settings
         }
     }
@@ -501,6 +504,11 @@ pub fn import_configuration(
                 .values(&Setting::new("match_threshold", v))
                 .execute(conn)?;
         }
+        if let Some(v) = &config.data.settings.failover_strictness {
+            diesel::insert_into(settings::table)
+                .values(&Setting::new("failover_strictness", v))
+                .execute(conn)?;
+        }
 
         // Insert accounts with empty passwords (Task 2.9)
         // SECURITY: Passwords are NOT exported, so we insert with empty placeholder
@@ -691,6 +699,9 @@ fn count_settings(settings: &ExportedSettings) -> usize {
     if settings.match_threshold.is_some() {
         count += 1;
     }
+    if settings.failover_strictness.is_some() {
+        count += 1;
+    }
     count
 }
 
@@ -716,6 +727,7 @@ mod tests {
                     epg_schedule_minute: Some("0".to_string()),
                     epg_schedule_enabled: Some("true".to_string()),
                     match_threshold: Some("0.85".to_string()),
+                    failover_strictness: None,
                 },
                 accounts: vec![ExportedAccount {
                     id: 1,
@@ -895,6 +907,7 @@ mod tests {
             epg_schedule_minute: None,
             epg_schedule_enabled: None,
             match_threshold: None,
+            failover_strictness: None,
         };
 
         assert_eq!(count_settings(&settings), 2);

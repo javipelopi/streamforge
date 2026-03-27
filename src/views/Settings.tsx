@@ -38,6 +38,10 @@ import {
   UpdateInfo,
   UpdateSettings,
   formatLastCheckTime,
+  getResilienceConfig,
+  setFailoverStrictness,
+  FailoverStrictness,
+  ResilienceConfig,
 } from '../lib/tauri';
 import { ImportPreviewDialog } from '../components/settings/ImportPreviewDialog';
 
@@ -123,6 +127,11 @@ export function Settings() {
   const [logVerbosity, setLogVerbosityState] = useState<LogVerbosity>('verbose');
   const [savedLogVerbosity, setSavedLogVerbosity] = useState<LogVerbosity>('verbose');
 
+  // Failover resilience state (ip-6fj)
+  const [failoverStrictness, setFailoverStrictnessState] = useState<FailoverStrictness>('balanced');
+  const [savedFailoverStrictness, setSavedFailoverStrictness] = useState<FailoverStrictness>('balanced');
+  const [resilienceDetails, setResilienceDetails] = useState<ResilienceConfig | null>(null);
+
   // Update state (Story 6-5)
   const [updateSettings, setUpdateSettingsState] = useState<UpdateSettings | null>(null);
   const [autoCheckUpdates, setAutoCheckUpdatesState] = useState(true);
@@ -173,6 +182,16 @@ export function Settings() {
         setLogVerbosityState(verbosity);
         setSavedLogVerbosity(verbosity);
 
+        // Load failover resilience settings (ip-6fj)
+        try {
+          const resilience = await getResilienceConfig();
+          setFailoverStrictnessState(resilience.strictness);
+          setSavedFailoverStrictness(resilience.strictness);
+          setResilienceDetails(resilience);
+        } catch (resilienceErr) {
+          console.warn('Failed to load resilience settings:', resilienceErr);
+        }
+
         // Load update settings (Story 6-5)
         try {
           const updateSettingsData = await getUpdateSettings();
@@ -200,9 +219,10 @@ export function Settings() {
       epgRefreshTime !== savedEpgRefreshTime ||
       scheduleEnabled !== savedScheduleEnabled ||
       logVerbosity !== savedLogVerbosity ||
-      autoCheckUpdates !== savedAutoCheckUpdates
+      autoCheckUpdates !== savedAutoCheckUpdates ||
+      failoverStrictness !== savedFailoverStrictness
     );
-  }, [serverPort, savedServerPort, autostartEnabled, savedAutostartEnabled, epgRefreshTime, savedEpgRefreshTime, scheduleEnabled, savedScheduleEnabled, logVerbosity, savedLogVerbosity, autoCheckUpdates, savedAutoCheckUpdates]);
+  }, [serverPort, savedServerPort, autostartEnabled, savedAutostartEnabled, epgRefreshTime, savedEpgRefreshTime, scheduleEnabled, savedScheduleEnabled, logVerbosity, savedLogVerbosity, autoCheckUpdates, savedAutoCheckUpdates, failoverStrictness, savedFailoverStrictness]);
 
   // Validate port on change
   const handlePortChange = useCallback((value: string) => {
@@ -293,6 +313,14 @@ export function Settings() {
         messages.push(`Log verbosity set to ${logVerbosity}`);
       }
 
+      // Save failover strictness if changed (ip-6fj)
+      if (failoverStrictness !== savedFailoverStrictness) {
+        const updated = await setFailoverStrictness(failoverStrictness);
+        setSavedFailoverStrictness(failoverStrictness);
+        setResilienceDetails(updated);
+        messages.push(`Stream failover set to ${failoverStrictness}`);
+      }
+
       // Save auto-check updates if changed (Story 6-5)
       if (autoCheckUpdates !== savedAutoCheckUpdates) {
         await setAutoCheckUpdates(autoCheckUpdates);
@@ -323,11 +351,12 @@ export function Settings() {
     setScheduleEnabled(savedScheduleEnabled);
     setLogVerbosityState(savedLogVerbosity);
     setAutoCheckUpdatesState(savedAutoCheckUpdates);
+    setFailoverStrictnessState(savedFailoverStrictness);
     setError(null);
     setSuccessMessage(null);
     setUpdateError(null);
     setUpdateCheckMessage(null);
-  }, [savedServerPort, savedAutostartEnabled, savedEpgRefreshTime, savedScheduleEnabled, savedLogVerbosity, savedAutoCheckUpdates]);
+  }, [savedServerPort, savedAutostartEnabled, savedEpgRefreshTime, savedScheduleEnabled, savedLogVerbosity, savedAutoCheckUpdates, savedFailoverStrictness]);
 
   // Calculate next refresh time display
   const parsedTime = parseTimeString(epgRefreshTime);
@@ -741,6 +770,67 @@ export function Settings() {
                 : 'Never'}
             </span>
           </div>
+        </div>
+      </section>
+
+      {/* Stream Resilience Section (ip-6fj) */}
+      <section data-testid="resilience-section" className="mb-8">
+        <h2 className="text-lg font-semibold mb-2 text-gray-700">Stream Resilience</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Control how aggressively the player fails over to backup streams
+        </p>
+
+        <div className="bg-white rounded-lg shadow p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <label
+                htmlFor="failover-strictness-select"
+                className="font-medium text-gray-900"
+              >
+                Failover Strictness
+              </label>
+              <p className="text-sm text-gray-500 mt-1">
+                <strong>Strict</strong>: Switch immediately on first error (lowest latency).{' '}
+                <strong>Balanced</strong>: Retry 2x with backoff before switching (recommended).{' '}
+                <strong>Lenient</strong>: Retry 3x with longer backoff, try alternate servers first.
+              </p>
+            </div>
+
+            <select
+              id="failover-strictness-select"
+              data-testid="failover-strictness-select"
+              value={failoverStrictness}
+              onChange={(e) => setFailoverStrictnessState(e.target.value as FailoverStrictness)}
+              disabled={isSaving}
+              className="block w-32 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <option value="strict">Strict</option>
+              <option value="balanced">Balanced</option>
+              <option value="lenient">Lenient</option>
+            </select>
+          </div>
+
+          {/* Show details for current config */}
+          {resilienceDetails && (
+            <div className="border-t pt-3 mt-3">
+              <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                <span>Retries before failover:</span>
+                <span className="font-mono">{resilienceDetails.maxRetries}</span>
+                <span>Backoff base delay:</span>
+                <span className="font-mono">{resilienceDetails.backoffBaseMs}ms</span>
+                <span>Recovery health check:</span>
+                <span className="font-mono">
+                  {resilienceDetails.recoveryCheckSecs > 0
+                    ? `Every ${resilienceDetails.recoveryCheckSecs}s`
+                    : 'Disabled'}
+                </span>
+                <span>Try alternate endpoints:</span>
+                <span className="font-mono">
+                  {resilienceDetails.tryAlternateEndpoints ? 'Yes' : 'No'}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 

@@ -389,6 +389,9 @@ pub fn run() {
             commands::logs::clear_old_events,
             commands::logs::get_log_verbosity,
             commands::logs::set_log_verbosity,
+            // Failover resilience commands (ip-6fj)
+            commands::get_resilience_config,
+            commands::set_failover_strictness,
             // Configuration export/import commands (Story 6-2)
             commands::config::export_configuration,
             commands::config::validate_import_file,

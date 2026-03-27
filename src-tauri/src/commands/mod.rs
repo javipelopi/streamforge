@@ -187,6 +187,69 @@ pub async fn restart_server() -> Result<(), String> {
     Ok(())
 }
 
+/// Get the current failover resilience configuration
+///
+/// Returns the active resilience config including strictness, retry count, and backoff settings.
+#[allow(dead_code)]
+#[tauri::command]
+pub fn get_resilience_config(
+    db: State<DbConnection>,
+) -> Result<crate::server::failover::ResilienceConfig, String> {
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    Ok(crate::server::failover::ResilienceConfig::from_db(&mut conn))
+}
+
+/// Set the failover strictness level
+///
+/// Accepts "strict", "balanced", or "lenient". Updates the settings table.
+#[allow(dead_code)]
+#[tauri::command]
+pub fn set_failover_strictness(
+    db: State<DbConnection>,
+    strictness: String,
+) -> Result<crate::server::failover::ResilienceConfig, String> {
+    use crate::server::failover::FailoverStrictness;
+
+    // Validate the strictness value
+    let parsed: FailoverStrictness = strictness
+        .parse()
+        .map_err(|e: String| e)?;
+
+    let mut conn = db
+        .get_connection()
+        .map_err(|e| format!("Database connection error: {}", e))?;
+
+    // Save to settings
+    let setting = Setting::new("failover_strictness", parsed.to_string());
+    diesel::replace_into(settings::table)
+        .values(&setting)
+        .execute(&mut conn)
+        .map_err(|e| format!("Save error: {}", e))?;
+
+    // Log the change
+    if let Err(e) = logs::log_event_internal(
+        &mut conn,
+        "info",
+        "config",
+        &format!("Failover strictness changed to {}", parsed),
+        Some(
+            &serde_json::json!({
+                "setting": "failover_strictness",
+                "value": parsed.to_string(),
+            })
+            .to_string(),
+        ),
+    ) {
+        eprintln!("[WARN] Failed to log config change: {}", e);
+    }
+
+    // Return the full config for the new strictness level
+    Ok(crate::server::failover::ResilienceConfig::from_db(&mut conn))
+}
+
 /// Get the current autostart status
 ///
 /// Returns whether the application is configured to auto-start on boot.

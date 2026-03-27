@@ -15,6 +15,7 @@
 use bytes::Bytes;
 use diesel::prelude::*;
 use futures_util::Stream;
+use serde::{Deserialize, Serialize};
 use std::io;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -42,6 +43,207 @@ pub const QUALITY_UPGRADE_RECOVERY_PERIOD: Duration = Duration::from_secs(60);
 
 /// Maximum backup attempts within the failover window
 pub const MAX_FAILOVER_ATTEMPTS: usize = 2;
+
+// ============================================================================
+// Resilience Configuration (ip-6fj)
+// ============================================================================
+
+/// How strict the failover behavior should be
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FailoverStrictness {
+    /// Current behavior - fail immediately, move to next stream
+    Strict,
+    /// 2 retries with 1s base backoff before failover (default)
+    Balanced,
+    /// 3 retries with 2s base backoff, periodic health checks to recover
+    Lenient,
+}
+
+impl Default for FailoverStrictness {
+    fn default() -> Self {
+        Self::Balanced
+    }
+}
+
+impl std::fmt::Display for FailoverStrictness {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Strict => write!(f, "strict"),
+            Self::Balanced => write!(f, "balanced"),
+            Self::Lenient => write!(f, "lenient"),
+        }
+    }
+}
+
+impl std::str::FromStr for FailoverStrictness {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "strict" => Ok(Self::Strict),
+            "balanced" => Ok(Self::Balanced),
+            "lenient" => Ok(Self::Lenient),
+            _ => Err(format!("Unknown strictness level: {}", s)),
+        }
+    }
+}
+
+/// Configuration for resilient stream failover behavior
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResilienceConfig {
+    /// Strictness level controlling overall behavior
+    pub strictness: FailoverStrictness,
+    /// Number of retries on the same stream before moving to next
+    pub max_retries: u32,
+    /// Base backoff delay in milliseconds for retries
+    pub backoff_base_ms: u64,
+    /// Exponential multiplier for backoff (delay *= multiplier each retry)
+    pub backoff_multiplier: f64,
+    /// Maximum backoff delay cap in milliseconds
+    pub backoff_max_ms: u64,
+    /// Seconds between periodic health checks to restore original quality
+    pub recovery_check_secs: u64,
+    /// Whether to try same quality on different server endpoints before downgrading
+    pub try_alternate_endpoints: bool,
+}
+
+impl Default for ResilienceConfig {
+    fn default() -> Self {
+        Self::from_strictness(FailoverStrictness::default())
+    }
+}
+
+impl ResilienceConfig {
+    /// Create a config from a strictness preset
+    pub fn from_strictness(strictness: FailoverStrictness) -> Self {
+        match strictness {
+            FailoverStrictness::Strict => Self {
+                strictness,
+                max_retries: 0,
+                backoff_base_ms: 0,
+                backoff_multiplier: 1.0,
+                backoff_max_ms: 0,
+                recovery_check_secs: 0, // No periodic recovery
+                try_alternate_endpoints: false,
+            },
+            FailoverStrictness::Balanced => Self {
+                strictness,
+                max_retries: 2,
+                backoff_base_ms: 1000,
+                backoff_multiplier: 2.0,
+                backoff_max_ms: 4000,
+                recovery_check_secs: 60,
+                try_alternate_endpoints: true,
+            },
+            FailoverStrictness::Lenient => Self {
+                strictness,
+                max_retries: 3,
+                backoff_base_ms: 2000,
+                backoff_multiplier: 2.0,
+                backoff_max_ms: 10000,
+                recovery_check_secs: 30,
+                try_alternate_endpoints: true,
+            },
+        }
+    }
+
+    /// Load resilience config from database settings
+    pub fn from_db(conn: &mut DbPooledConnection) -> Self {
+        use crate::db::schema::settings;
+
+        let strictness_str: Option<String> = settings::table
+            .filter(settings::key.eq("failover_strictness"))
+            .select(settings::value)
+            .first(conn)
+            .optional()
+            .ok()
+            .flatten();
+
+        let strictness = strictness_str
+            .and_then(|s| s.parse::<FailoverStrictness>().ok())
+            .unwrap_or_default();
+
+        // Start with preset, then override with any custom settings
+        let mut config = Self::from_strictness(strictness);
+
+        // Override max_retries if explicitly set
+        if let Some(val) = Self::read_setting_u32(conn, "failover_max_retries") {
+            config.max_retries = val;
+        }
+
+        // Override recovery_check_secs if explicitly set
+        if let Some(val) = Self::read_setting_u64(conn, "failover_recovery_check_secs") {
+            config.recovery_check_secs = val;
+        }
+
+        config
+    }
+
+    fn read_setting_u32(conn: &mut DbPooledConnection, key: &str) -> Option<u32> {
+        use crate::db::schema::settings;
+        settings::table
+            .filter(settings::key.eq(key))
+            .select(settings::value)
+            .first::<String>(conn)
+            .optional()
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse().ok())
+    }
+
+    fn read_setting_u64(conn: &mut DbPooledConnection, key: &str) -> Option<u64> {
+        use crate::db::schema::settings;
+        settings::table
+            .filter(settings::key.eq(key))
+            .select(settings::value)
+            .first::<String>(conn)
+            .optional()
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse().ok())
+    }
+
+    /// Calculate backoff delay for a given retry attempt (0-indexed)
+    pub fn backoff_delay(&self, attempt: u32) -> Duration {
+        if self.backoff_base_ms == 0 {
+            return Duration::ZERO;
+        }
+        let delay_ms = (self.backoff_base_ms as f64)
+            * self.backoff_multiplier.powi(attempt as i32);
+        let capped_ms = delay_ms.min(self.backoff_max_ms as f64) as u64;
+        Duration::from_millis(capped_ms)
+    }
+
+    /// Whether retries are enabled
+    pub fn retries_enabled(&self) -> bool {
+        self.max_retries > 0
+    }
+
+    /// Whether periodic recovery checks are enabled
+    pub fn recovery_enabled(&self) -> bool {
+        self.recovery_check_secs > 0
+    }
+
+    /// Get the recovery period as a Duration
+    pub fn recovery_period(&self) -> Duration {
+        if self.recovery_check_secs > 0 {
+            Duration::from_secs(self.recovery_check_secs)
+        } else {
+            QUALITY_UPGRADE_RECOVERY_PERIOD
+        }
+    }
+
+    /// Check if a failure reason is transient (worth retrying)
+    pub fn is_transient_failure(reason: &FailureReason) -> bool {
+        matches!(
+            reason,
+            FailureReason::ConnectionTimeout
+                | FailureReason::ConnectionError(_)
+                | FailureReason::StreamError(_)
+        )
+    }
+}
 
 /// Represents an available backup stream for failover
 ///
@@ -77,6 +279,10 @@ pub struct FailoverState {
     pub failover_count: u32,
     /// Original primary stream ID (for upgrade retry)
     pub original_stream_id: i32,
+    /// Resilience configuration
+    pub resilience: ResilienceConfig,
+    /// Current retry count for the active stream (resets on advance)
+    pub current_retry_count: u32,
 }
 
 impl FailoverState {
@@ -96,6 +302,31 @@ impl FailoverState {
             last_failover_at: None,
             failover_count: 0,
             original_stream_id,
+            resilience: ResilienceConfig::default(),
+            current_retry_count: 0,
+        }
+    }
+
+    /// Create a new FailoverState with resilience configuration
+    pub fn with_resilience(
+        xmltv_channel_id: i32,
+        available_streams: Vec<BackupStream>,
+        resilience: ResilienceConfig,
+    ) -> Self {
+        let original_stream_id = available_streams
+            .first()
+            .map(|s| s.stream_id)
+            .unwrap_or(0);
+
+        Self {
+            xmltv_channel_id,
+            current_stream_idx: 0,
+            available_streams,
+            last_failover_at: None,
+            failover_count: 0,
+            original_stream_id,
+            resilience,
+            current_retry_count: 0,
         }
     }
 
@@ -109,6 +340,68 @@ impl FailoverState {
         self.current_stream_idx + 1 < self.available_streams.len()
     }
 
+    /// Check if we should retry the current stream (transient failure)
+    ///
+    /// Returns true if retries are enabled, the failure is transient,
+    /// and we haven't exhausted the retry count.
+    pub fn should_retry(&self, reason: &FailureReason) -> bool {
+        self.resilience.retries_enabled()
+            && self.current_retry_count < self.resilience.max_retries
+            && ResilienceConfig::is_transient_failure(reason)
+    }
+
+    /// Record a retry attempt and return the backoff delay
+    pub fn record_retry(&mut self) -> Duration {
+        let delay = self.resilience.backoff_delay(self.current_retry_count);
+        self.current_retry_count += 1;
+        delay
+    }
+
+    /// Find an alternate endpoint for the same quality level
+    ///
+    /// Looks for streams from different server endpoints that offer the same
+    /// quality as the current stream. Skips the current stream and any already tried.
+    pub fn find_alternate_endpoint(&self) -> Option<usize> {
+        if !self.resilience.try_alternate_endpoints {
+            return None;
+        }
+
+        let current = self.current_stream()?;
+        let current_account_id = match &current.source_type {
+            StreamSourceType::Xtream { account_id, .. } => Some(*account_id),
+            _ => None,
+        };
+
+        // Look for streams with same quality but different endpoint
+        for (idx, stream) in self.available_streams.iter().enumerate() {
+            if idx == self.current_stream_idx {
+                continue; // Skip current
+            }
+            if idx < self.current_stream_idx {
+                continue; // Skip already tried
+            }
+
+            // Check if this stream has matching qualities from a different account
+            let stream_account_id = match &stream.source_type {
+                StreamSourceType::Xtream { account_id, .. } => Some(*account_id),
+                _ => None,
+            };
+
+            // Different endpoint (different account or different source type)
+            let is_different_endpoint = stream_account_id != current_account_id
+                || stream_account_id.is_none();
+
+            // Has overlapping qualities
+            let has_matching_quality = current.qualities.iter().any(|q| stream.qualities.contains(q));
+
+            if is_different_endpoint && has_matching_quality {
+                return Some(idx);
+            }
+        }
+
+        None
+    }
+
     /// Move to the next backup stream
     ///
     /// Returns true if successfully moved to next stream, false if no more streams
@@ -117,6 +410,20 @@ impl FailoverState {
             self.current_stream_idx += 1;
             self.last_failover_at = Some(Instant::now());
             self.failover_count += 1;
+            self.current_retry_count = 0; // Reset retries for new stream
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Move to a specific stream index (for alternate endpoint switching)
+    pub fn advance_to_stream(&mut self, idx: usize) -> bool {
+        if idx < self.available_streams.len() {
+            self.current_stream_idx = idx;
+            self.last_failover_at = Some(Instant::now());
+            self.failover_count += 1;
+            self.current_retry_count = 0;
             true
         } else {
             false
@@ -127,15 +434,17 @@ impl FailoverState {
     ///
     /// Returns true if:
     /// - We're on a backup stream (not primary)
-    /// - At least 60 seconds have passed since last failover
+    /// - Enough time has passed since last failover (uses resilience config)
     pub fn should_attempt_upgrade(&self) -> bool {
         // Only attempt upgrade if we're on a backup (not primary)
         if self.current_stream_idx == 0 {
             return false;
         }
 
+        let recovery_period = self.resilience.recovery_period();
+
         match self.last_failover_at {
-            Some(time) => time.elapsed() >= QUALITY_UPGRADE_RECOVERY_PERIOD,
+            Some(time) => time.elapsed() >= recovery_period,
             None => false,
         }
     }
@@ -180,7 +489,7 @@ impl FailoverState {
 }
 
 /// Reason why a stream failed
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FailureReason {
     /// 5-second timeout waiting for connection
     ConnectionTimeout,
@@ -752,6 +1061,8 @@ pub struct FailoverContext {
     pub session_id: String,
     /// XMLTV channel ID for event logging
     pub xmltv_channel_id: i32,
+    /// Resilience configuration for mid-stream retry behavior
+    pub resilience: ResilienceConfig,
 }
 
 impl FailoverContext {
@@ -766,6 +1077,7 @@ impl FailoverContext {
             current_idx: 0,
             session_id,
             xmltv_channel_id,
+            resilience: ResilienceConfig::default(),
         }
     }
 
@@ -782,6 +1094,24 @@ impl FailoverContext {
             current_idx,
             session_id,
             xmltv_channel_id,
+            resilience: ResilienceConfig::default(),
+        }
+    }
+
+    /// Create a failover context with resilience configuration
+    pub fn with_resilience(
+        available_streams: Vec<BackupStream>,
+        session_id: String,
+        xmltv_channel_id: i32,
+        current_idx: usize,
+        resilience: ResilienceConfig,
+    ) -> Self {
+        Self {
+            available_streams,
+            current_idx,
+            session_id,
+            xmltv_channel_id,
+            resilience,
         }
     }
 
@@ -957,8 +1287,66 @@ pub fn create_failover_stream(
                     };
 
                     // Failover triggered
-                    eprintln!("[INFO] stream:{} failover signal received (stall: {:.1}s)",
-                        ctx.session_id, stall_duration.as_secs_f64());
+                    eprintln!("[INFO] stream:{} failover signal received (stall: {:.1}s, strictness: {})",
+                        ctx.session_id, stall_duration.as_secs_f64(), ctx.resilience.strictness);
+
+                    // Retry current stream with backoff if resilience allows it
+                    let mut retried_successfully = false;
+                    if ctx.resilience.retries_enabled() {
+                        let max_retries = ctx.resilience.max_retries;
+                        for retry in 0..max_retries {
+                            let delay = ctx.resilience.backoff_delay(retry);
+                            eprintln!(
+                                "[INFO] stream:{} retry {}/{} after {}ms backoff",
+                                ctx.session_id, retry + 1, max_retries, delay.as_millis()
+                            );
+                            tokio::time::sleep(delay).await;
+
+                            // Try to reconnect to current stream
+                            let current = match ctx.current_stream() {
+                                Some(s) => s.clone(),
+                                None => break,
+                            };
+
+                            let retry_url = match build_stream_url_for_source(
+                                &current.source_type,
+                                Some(&credential_manager),
+                            ) {
+                                Ok(url) => url,
+                                Err(_) => continue,
+                            };
+
+                            match BufferedStream::new(
+                                &retry_url,
+                                BufferConfig::default(),
+                                ctx.session_id.clone(),
+                                stream_manager.clone(),
+                            ) {
+                                Ok(new) => {
+                                    eprintln!(
+                                        "[INFO] stream:{} retry {}/{} successful - resuming",
+                                        ctx.session_id, retry + 1, max_retries
+                                    );
+                                    stall_start = None;
+                                    drop(current_stream);
+                                    current_stream = new;
+                                    failover_rx = current_stream.failover_receiver();
+                                    retried_successfully = true;
+                                    break;
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "[WARN] stream:{} retry {}/{} failed: {}",
+                                        ctx.session_id, retry + 1, max_retries, e
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    if retried_successfully {
+                        continue; // Back to main loop with reconnected stream
+                    }
 
                     // Get backup stream info
                     if !ctx.has_more_backups() {
@@ -1717,5 +2105,274 @@ mod tests {
             ctx.current_stream().unwrap().source_type,
             StreamSourceType::M3u { .. }
         ));
+    }
+
+    // =========================================================================
+    // Resilience Config Tests (ip-6fj)
+    // =========================================================================
+
+    #[test]
+    fn test_strictness_from_str() {
+        assert_eq!("strict".parse::<FailoverStrictness>().unwrap(), FailoverStrictness::Strict);
+        assert_eq!("balanced".parse::<FailoverStrictness>().unwrap(), FailoverStrictness::Balanced);
+        assert_eq!("lenient".parse::<FailoverStrictness>().unwrap(), FailoverStrictness::Lenient);
+        assert_eq!("BALANCED".parse::<FailoverStrictness>().unwrap(), FailoverStrictness::Balanced);
+        assert!("unknown".parse::<FailoverStrictness>().is_err());
+    }
+
+    #[test]
+    fn test_strictness_display() {
+        assert_eq!(FailoverStrictness::Strict.to_string(), "strict");
+        assert_eq!(FailoverStrictness::Balanced.to_string(), "balanced");
+        assert_eq!(FailoverStrictness::Lenient.to_string(), "lenient");
+    }
+
+    #[test]
+    fn test_resilience_config_strict_preset() {
+        let config = ResilienceConfig::from_strictness(FailoverStrictness::Strict);
+        assert_eq!(config.max_retries, 0);
+        assert_eq!(config.backoff_base_ms, 0);
+        assert!(!config.retries_enabled());
+        assert!(!config.recovery_enabled());
+        assert!(!config.try_alternate_endpoints);
+    }
+
+    #[test]
+    fn test_resilience_config_balanced_preset() {
+        let config = ResilienceConfig::from_strictness(FailoverStrictness::Balanced);
+        assert_eq!(config.max_retries, 2);
+        assert_eq!(config.backoff_base_ms, 1000);
+        assert!(config.retries_enabled());
+        assert!(config.recovery_enabled());
+        assert!(config.try_alternate_endpoints);
+    }
+
+    #[test]
+    fn test_resilience_config_lenient_preset() {
+        let config = ResilienceConfig::from_strictness(FailoverStrictness::Lenient);
+        assert_eq!(config.max_retries, 3);
+        assert_eq!(config.backoff_base_ms, 2000);
+        assert_eq!(config.recovery_check_secs, 30);
+        assert!(config.try_alternate_endpoints);
+    }
+
+    #[test]
+    fn test_backoff_delay_exponential() {
+        let config = ResilienceConfig::from_strictness(FailoverStrictness::Balanced);
+        // base=1000, multiplier=2.0
+        assert_eq!(config.backoff_delay(0), Duration::from_millis(1000)); // 1000 * 2^0
+        assert_eq!(config.backoff_delay(1), Duration::from_millis(2000)); // 1000 * 2^1
+        assert_eq!(config.backoff_delay(2), Duration::from_millis(4000)); // 1000 * 2^2 (capped)
+    }
+
+    #[test]
+    fn test_backoff_delay_caps_at_max() {
+        let config = ResilienceConfig::from_strictness(FailoverStrictness::Balanced);
+        // backoff_max_ms = 4000 for balanced
+        assert_eq!(config.backoff_delay(5), Duration::from_millis(4000)); // Would be 32000, capped to 4000
+    }
+
+    #[test]
+    fn test_backoff_delay_zero_for_strict() {
+        let config = ResilienceConfig::from_strictness(FailoverStrictness::Strict);
+        assert_eq!(config.backoff_delay(0), Duration::ZERO);
+        assert_eq!(config.backoff_delay(5), Duration::ZERO);
+    }
+
+    #[test]
+    fn test_is_transient_failure() {
+        assert!(ResilienceConfig::is_transient_failure(&FailureReason::ConnectionTimeout));
+        assert!(ResilienceConfig::is_transient_failure(&FailureReason::ConnectionError("dns".into())));
+        assert!(ResilienceConfig::is_transient_failure(&FailureReason::StreamError("read".into())));
+        // HTTP errors and credential errors are NOT transient
+        assert!(!ResilienceConfig::is_transient_failure(&FailureReason::HttpError(404)));
+        assert!(!ResilienceConfig::is_transient_failure(&FailureReason::CredentialError("bad".into())));
+    }
+
+    #[test]
+    fn test_should_retry_with_balanced_config() {
+        let streams = vec![
+            create_test_stream(100, 0),
+            create_test_stream(101, 1),
+        ];
+        let resilience = ResilienceConfig::from_strictness(FailoverStrictness::Balanced);
+        let state = FailoverState::with_resilience(1, streams, resilience);
+
+        // Transient errors should be retried
+        assert!(state.should_retry(&FailureReason::ConnectionTimeout));
+        // HTTP errors should not be retried
+        assert!(!state.should_retry(&FailureReason::HttpError(404)));
+    }
+
+    #[test]
+    fn test_should_not_retry_with_strict_config() {
+        let streams = vec![create_test_stream(100, 0)];
+        let resilience = ResilienceConfig::from_strictness(FailoverStrictness::Strict);
+        let state = FailoverState::with_resilience(1, streams, resilience);
+
+        // Strict mode never retries
+        assert!(!state.should_retry(&FailureReason::ConnectionTimeout));
+    }
+
+    #[test]
+    fn test_retry_exhaustion() {
+        let streams = vec![
+            create_test_stream(100, 0),
+            create_test_stream(101, 1),
+        ];
+        let resilience = ResilienceConfig::from_strictness(FailoverStrictness::Balanced);
+        let mut state = FailoverState::with_resilience(1, streams, resilience);
+
+        // Should allow 2 retries for balanced
+        assert!(state.should_retry(&FailureReason::ConnectionTimeout));
+        state.record_retry();
+        assert!(state.should_retry(&FailureReason::ConnectionTimeout));
+        state.record_retry();
+        // Now exhausted
+        assert!(!state.should_retry(&FailureReason::ConnectionTimeout));
+    }
+
+    #[test]
+    fn test_retry_count_resets_on_advance() {
+        let streams = vec![
+            create_test_stream(100, 0),
+            create_test_stream(101, 1),
+            create_test_stream(102, 2),
+        ];
+        let resilience = ResilienceConfig::from_strictness(FailoverStrictness::Balanced);
+        let mut state = FailoverState::with_resilience(1, streams, resilience);
+
+        state.record_retry();
+        state.record_retry();
+        assert_eq!(state.current_retry_count, 2);
+
+        // Advance resets retry count
+        state.advance_to_next_stream();
+        assert_eq!(state.current_retry_count, 0);
+        assert!(state.should_retry(&FailureReason::ConnectionTimeout));
+    }
+
+    #[test]
+    fn test_find_alternate_endpoint_different_account() {
+        let streams = vec![
+            BackupStream {
+                source_id: 100,
+                stream_id: 100,
+                stream_priority: 0,
+                qualities: vec!["HD".to_string()],
+                source_type: StreamSourceType::Xtream {
+                    account_id: 1,
+                    stream_id: 100,
+                    server_url: "http://server1.local".to_string(),
+                    username: "user1".to_string(),
+                    password_encrypted: vec![],
+                },
+            },
+            BackupStream {
+                source_id: 200,
+                stream_id: 200,
+                stream_priority: 1,
+                qualities: vec!["HD".to_string()],
+                source_type: StreamSourceType::Xtream {
+                    account_id: 2,
+                    stream_id: 200,
+                    server_url: "http://server2.local".to_string(),
+                    username: "user2".to_string(),
+                    password_encrypted: vec![],
+                },
+            },
+            BackupStream {
+                source_id: 300,
+                stream_id: 300,
+                stream_priority: 2,
+                qualities: vec!["SD".to_string()],
+                source_type: StreamSourceType::Xtream {
+                    account_id: 3,
+                    stream_id: 300,
+                    server_url: "http://server3.local".to_string(),
+                    username: "user3".to_string(),
+                    password_encrypted: vec![],
+                },
+            },
+        ];
+        let resilience = ResilienceConfig::from_strictness(FailoverStrictness::Balanced);
+        let state = FailoverState::with_resilience(1, streams, resilience);
+
+        // Should find stream 200 as alternate (same HD quality, different account)
+        let alt = state.find_alternate_endpoint();
+        assert_eq!(alt, Some(1));
+    }
+
+    #[test]
+    fn test_find_alternate_endpoint_no_match() {
+        let streams = vec![
+            BackupStream {
+                source_id: 100,
+                stream_id: 100,
+                stream_priority: 0,
+                qualities: vec!["4K".to_string()],
+                source_type: StreamSourceType::Xtream {
+                    account_id: 1,
+                    stream_id: 100,
+                    server_url: "http://server1.local".to_string(),
+                    username: "user1".to_string(),
+                    password_encrypted: vec![],
+                },
+            },
+            BackupStream {
+                source_id: 200,
+                stream_id: 200,
+                stream_priority: 1,
+                qualities: vec!["SD".to_string()],
+                source_type: StreamSourceType::Xtream {
+                    account_id: 1, // Same account
+                    stream_id: 200,
+                    server_url: "http://server1.local".to_string(),
+                    username: "user1".to_string(),
+                    password_encrypted: vec![],
+                },
+            },
+        ];
+        let resilience = ResilienceConfig::from_strictness(FailoverStrictness::Balanced);
+        let state = FailoverState::with_resilience(1, streams, resilience);
+
+        // No alternate: same account, different quality
+        assert_eq!(state.find_alternate_endpoint(), None);
+    }
+
+    #[test]
+    fn test_advance_to_stream() {
+        let streams = vec![
+            create_test_stream(100, 0),
+            create_test_stream(101, 1),
+            create_test_stream(102, 2),
+        ];
+        let mut state = FailoverState::new(1, streams);
+
+        assert!(state.advance_to_stream(2));
+        assert_eq!(state.current_stream().unwrap().stream_id, 102);
+        assert_eq!(state.failover_count, 1);
+        assert_eq!(state.current_retry_count, 0);
+
+        // Out of bounds
+        assert!(!state.advance_to_stream(5));
+    }
+
+    #[test]
+    fn test_recovery_period_from_resilience() {
+        let streams = vec![
+            create_test_stream(100, 0),
+            create_test_stream(101, 1),
+        ];
+
+        // Balanced: 60s recovery
+        let balanced = ResilienceConfig::from_strictness(FailoverStrictness::Balanced);
+        let state = FailoverState::with_resilience(1, streams.clone(), balanced);
+        assert_eq!(state.resilience.recovery_period(), Duration::from_secs(60));
+
+        // Lenient: 30s recovery
+        let lenient = ResilienceConfig::from_strictness(FailoverStrictness::Lenient);
+        let state = FailoverState::with_resilience(1, streams, lenient);
+        assert_eq!(state.resilience.recovery_period(), Duration::from_secs(30));
     }
 }
