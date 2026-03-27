@@ -2381,3 +2381,42 @@ export function buildAcestreamUrl(contentId: string): string {
   return `http://127.0.0.1:6878/ace/getstream?id=${contentId}`;
 }
 
+// ============================================================================
+// Failover Resilience Settings (ip-6fj)
+// ============================================================================
+
+/** Failover strictness levels */
+export type FailoverStrictness = 'strict' | 'balanced' | 'lenient';
+
+/** Resilience configuration returned from the backend */
+export interface ResilienceConfig {
+  strictness: FailoverStrictness;
+  maxRetries: number;
+  backoffBaseMs: number;
+  backoffMultiplier: number;
+  backoffMaxMs: number;
+  recoveryCheckSecs: number;
+  tryAlternateEndpoints: boolean;
+}
+
+/**
+ * Get the current failover resilience configuration
+ *
+ * @returns Active resilience config including strictness, retry count, and backoff settings
+ */
+export async function getResilienceConfig(): Promise<ResilienceConfig> {
+  return invoke<ResilienceConfig>('get_resilience_config');
+}
+
+/**
+ * Set the failover strictness level
+ *
+ * @param strictness - One of 'strict', 'balanced', or 'lenient'
+ * @returns Updated resilience config reflecting the new strictness level
+ */
+export async function setFailoverStrictness(
+  strictness: FailoverStrictness
+): Promise<ResilienceConfig> {
+  return invoke<ResilienceConfig>('set_failover_strictness', { strictness });
+}
+

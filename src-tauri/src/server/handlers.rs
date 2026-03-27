@@ -13,7 +13,7 @@ use std::hash::{Hash, Hasher};
 use super::epg;
 use super::failover::{
     get_all_streams_for_channel, log_failover_event, BackupStream, FailoverState, FailureReason,
-    FAILOVER_CONNECT_TIMEOUT, FAILOVER_TOTAL_TIMEOUT,
+    ResilienceConfig, FAILOVER_CONNECT_TIMEOUT, FAILOVER_TOTAL_TIMEOUT,
 };
 use super::hdhr;
 use super::m3u;
@@ -465,8 +465,17 @@ pub async fn stream_proxy(
         }
     }
 
-    // Step 5: Initialize failover state
-    let mut failover_state = FailoverState::new(channel_id, available_streams);
+    // Step 4b: Load resilience configuration from settings
+    let resilience_config = ResilienceConfig::from_db(&mut conn);
+    eprintln!(
+        "[INFO] stream: channel {} using failover strictness={}, retries={}, backoff_base={}ms",
+        channel_id, resilience_config.strictness,
+        resilience_config.max_retries, resilience_config.backoff_base_ms
+    );
+
+    // Step 5: Initialize failover state with resilience config
+    let mut failover_state =
+        FailoverState::with_resilience(channel_id, available_streams, resilience_config.clone());
     let credential_manager = CredentialManager::new(state.app_data_dir().clone());
 
     // Step 6: Create HTTP client with aggressive failover timeouts
@@ -561,9 +570,43 @@ pub async fn stream_proxy(
                         .to_string(),
                     ),
                 );
-                last_failure_reason = Some(reason);
+                last_failure_reason = Some(reason.clone());
 
-                // Try next stream
+                // Resilient retry: retry the same stream with backoff for transient errors
+                if failover_state.should_retry(&reason) {
+                    let delay = failover_state.record_retry();
+                    state.log_stream_event(
+                        "info",
+                        &format!(
+                            "Retrying stream {} for channel {} (retry {}/{}, backoff {}ms)",
+                            current_stream.stream_id,
+                            channel_id,
+                            failover_state.current_retry_count,
+                            failover_state.resilience.max_retries,
+                            delay.as_millis()
+                        ),
+                        None,
+                    );
+                    tokio::time::sleep(delay).await;
+                    continue; // Retry same stream
+                }
+
+                // Try alternate endpoint with same quality before downgrading
+                if let Some(alt_idx) = failover_state.find_alternate_endpoint() {
+                    let alt_stream = &failover_state.available_streams[alt_idx];
+                    state.log_stream_event(
+                        "info",
+                        &format!(
+                            "Trying alternate endpoint stream {} for channel {} (same quality, different server)",
+                            alt_stream.stream_id, channel_id
+                        ),
+                        None,
+                    );
+                    failover_state.advance_to_stream(alt_idx);
+                    continue;
+                }
+
+                // Try next stream in priority order
                 if !failover_state.advance_to_next_stream() {
                     break; // No more streams
                 }
@@ -699,11 +742,12 @@ pub async fn stream_proxy(
     let body = if failover_state.has_more_backups() {
         // FIX #8 (MEDIUM): Pass current_stream_idx to FailoverContext constructor
         // Previously, context started at 0 and manual advancement skipped current stream
-        let failover_context = FailoverContext::new_with_index(
+        let failover_context = FailoverContext::with_resilience(
             failover_state.available_streams.clone(),
             session_id.clone(),
             channel_id,
             failover_state.current_stream_idx,
+            resilience_config.clone(),
         );
 
         let failover_stream = create_failover_stream(
