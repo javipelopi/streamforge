@@ -9,12 +9,13 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  # Build Tauri desktop app (macOS, Windows, Linux)
+  desktop:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
+          - platform: self-hosted
             args: --target aarch64-apple-darwin
             name: macOS-arm64
           - platform: macos-latest
@@ -28,11 +29,16 @@ jobs:
             name: Linux-x64
 
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 30
+    env:
+      RUSTC_WRAPPER: ${{ matrix.platform == 'self-hosted' && 'sccache' || '' }}
+      SCCACHE_IDLE_TIMEOUT: "0"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Rust stable
+        if: matrix.platform != 'self-hosted'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
@@ -61,22 +67,13 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           echo "Updating version to $VERSION"
-          # Update tauri.conf.json
           if [[ "$RUNNER_OS" == "macOS" ]]; then
-            sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+            sed -i'' -e "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+            sed -i'' -e "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+            sed -i'' -e "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
           else
             sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-          fi
-          # Update package.json
-          if [[ "$RUNNER_OS" == "macOS" ]]; then
-            sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
-          else
             sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
-          fi
-          # Update Cargo.toml (first version line only)
-          if [[ "$RUNNER_OS" == "macOS" ]]; then
-            sed -i '' "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-          else
             sed -i "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
           fi
           echo "Updated versions:"
@@ -84,17 +81,114 @@ jobs:
           grep '"version"' package.json
           grep '^version = ' src-tauri/Cargo.toml | head -1
 
+      - name: Start sccache (self-hosted)
+        if: matrix.platform == 'self-hosted'
+        run: sccache --start-server 2>/dev/null || true
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Story 6-5: Auto-update signing keys for signature verification
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'StreamForge ${{ github.ref_name }}'
           releaseBody: 'See the assets below to download and install StreamForge.'
-          releaseDraft: false
-          prerelease: false
+          releaseDraft: ${{ contains(github.ref_name, 'beta') }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
+
+      - name: sccache stats (self-hosted)
+        if: always() && matrix.platform == 'self-hosted'
+        run: sccache --show-stats 2>/dev/null || true
+
+  # Build headless server binary (no GUI, for Ubuntu Server / Docker)
+  server:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: self-hosted
+            target: aarch64-apple-darwin
+            name: server-macOS-arm64
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            name: server-Linux-x64
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 30
+    env:
+      RUSTC_WRAPPER: ${{ matrix.platform == 'self-hosted' && 'sccache' || '' }}
+      SCCACHE_IDLE_TIMEOUT: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        if: matrix.platform != 'self-hosted'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlite3-dev pkg-config libssl-dev
+
+      - name: Start sccache (self-hosted)
+        if: matrix.platform == 'self-hosted'
+        run: sccache --start-server 2>/dev/null || true
+
+      - name: Get version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Cargo.toml version
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            sed -i'' -e "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+          else
+            sed -i "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+          fi
+
+      - name: Build streamforge-server
+        working-directory: src-tauri
+        run: cargo build --release --bin streamforge-server --no-default-features
+
+      - name: Package binary
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BINARY="streamforge-server"
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            ARCHIVE="streamforge-server-${VERSION}-darwin-arm64.tar.gz"
+          else
+            ARCHIVE="streamforge-server-${VERSION}-linux-x64.tar.gz"
+          fi
+          cp "src-tauri/target/release/${BINARY}" .
+          tar czf "${ARCHIVE}" "${BINARY}"
+          echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
+
+      - name: Upload to release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Wait for release to be created by the desktop job
+          for i in $(seq 1 30); do
+            if gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+              break
+            fi
+            echo "Waiting for release to be created... ($i/30)"
+            sleep 10
+          done
+          gh release upload "${{ github.ref_name }}" "${ARCHIVE}" \
+            --repo "${{ github.repository }}" \
+            --clobber
+
+      - name: sccache stats (self-hosted)
+        if: always() && matrix.platform == 'self-hosted'
+        run: sccache --show-stats 2>/dev/null || true
