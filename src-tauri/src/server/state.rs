@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
-use crate::commands::logs::log_event_internal;
+use crate::logging::log_event_internal;
 use crate::db::{schema::settings, DbPool, DbPooledConnection};
 use super::stream::StreamManager;
 
