@@ -848,7 +848,7 @@ pub fn get_all_streams_for_channel(
 
 /// Helper to log database errors
 fn log_db_error(conn: &mut DbPooledConnection, xmltv_channel_id: i32, e: &diesel::result::Error) {
-    if let Err(log_err) = crate::commands::logs::log_event_internal(
+    if let Err(log_err) = crate::logging::log_event_internal(
         conn,
         "error",
         "stream",
@@ -888,7 +888,7 @@ pub fn log_failover_event(
     to_stream_id: Option<i32>,
     reason: &FailureReason,
 ) -> Result<(), diesel::result::Error> {
-    use crate::commands::logs::log_event_internal;
+    use crate::logging::log_event_internal;
 
     let level_str = if to_stream_id.is_some() {
         "warn"
@@ -935,7 +935,7 @@ pub fn log_upgrade_event(
     to_stream_id: i32,
     success: bool,
 ) -> Result<(), diesel::result::Error> {
-    use crate::commands::logs::log_event_internal;
+    use crate::logging::log_event_internal;
 
     let level_str = if success { "info" } else { "warn" };
     let message_str = if success {
@@ -983,7 +983,7 @@ pub fn log_mid_stream_failover_event(
     conn: &mut DbPooledConnection,
     event: &FailoverEvent,
 ) -> Result<(), diesel::result::Error> {
-    use crate::commands::logs::log_event_internal;
+    use crate::logging::log_event_internal;
 
     let level_str = if event.success { "warn" } else { "error" };
 

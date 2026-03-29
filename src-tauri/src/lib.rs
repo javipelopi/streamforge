@@ -2,6 +2,7 @@ pub mod acestream;
 pub mod commands;
 pub mod credentials;
 pub mod db;
+pub mod logging;
 pub mod m3u;
 pub mod matcher;
 pub mod scheduler;
@@ -55,7 +56,7 @@ pub fn run() {
 
             // Story 6-3: Log application startup event (AC #1)
             {
-                use commands::logs::log_event_internal;
+                use logging::log_event_internal;
                 if let Ok(mut log_conn) = db_connection.get_connection() {
                     let details = serde_json::json!({
                         "version": env!("CARGO_PKG_VERSION"),
