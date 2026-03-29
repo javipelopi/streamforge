@@ -44,6 +44,7 @@ impl DbConnection {
 }
 
 /// Get the database path using Tauri's app data directory API
+#[cfg(feature = "gui")]
 pub fn get_db_path(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
     use tauri::Manager;
 

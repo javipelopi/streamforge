@@ -5,7 +5,9 @@ pub mod schema;
 // Note: These exports are used by the lib crate (server module, tests), not the bin crate
 // Clippy's dead_code lint doesn't understand the lib/bin split
 #[allow(unused_imports)]
-pub use connection::{establish_connection, get_db_path, run_migrations, DbConnection, DbPool, DbPooledConnection};
+pub use connection::{establish_connection, run_migrations, DbConnection, DbPool, DbPooledConnection};
+#[cfg(feature = "gui")]
+pub use connection::get_db_path;
 pub use models::{
     Account, AccountStatusUpdate, ChannelMapping, EventCategory, EventLevel, EventLog,
     NewAccount, NewChannelMapping, NewEventLog, NewProgram, NewXmltvChannel,
