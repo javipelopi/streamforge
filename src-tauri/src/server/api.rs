@@ -14,12 +14,10 @@ use axum::{
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::commands::accounts::{
+use crate::types::{
     AccountError, AccountResponse, AddAccountRequest, UpdateAccountRequest,
+    ChannelResponse, EpgSourceError, XmltvSourceResponse, EventLogResponse,
 };
-use crate::commands::channels::ChannelResponse;
-use crate::commands::epg::{EpgSourceError, XmltvSourceResponse};
-use crate::commands::logs::EventLogResponse;
 use crate::db::models::XmltvSourceUpdate;
 use crate::db::schema::{accounts, settings, xmltv_sources};
 use crate::db::{Account, Setting, XmltvSource};
@@ -197,7 +195,7 @@ async fn toggle_account(
 async fn test_account_connection(
     State(state): State<AppState>,
     Path(id): Path<i32>,
-) -> ApiResult<crate::commands::accounts::TestConnectionResponse> {
+) -> ApiResult<crate::types::TestConnectionResponse> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let response = services::accounts::test_connection(&mut conn, state.app_data_dir(), id)
         .await
@@ -382,8 +380,8 @@ async fn refresh_epg_source(
 
 async fn get_epg_stats(
     State(state): State<AppState>,
-) -> ApiResult<crate::commands::epg::EpgStatsResponse> {
-    use crate::commands::epg::EpgStatsResponse;
+) -> ApiResult<crate::types::EpgStatsResponse> {
+    use crate::types::EpgStatsResponse;
     use crate::db::schema::{programs, xmltv_channels};
 
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
@@ -491,7 +489,7 @@ async fn get_channel_count(
 async fn scan_channels(
     State(state): State<AppState>,
     Path(account_id): Path<i32>,
-) -> ApiResult<crate::commands::channels::ScanChannelsResponse> {
+) -> ApiResult<crate::types::ScanChannelsResponse> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let response = services::channels::scan_channels(&mut conn, state.app_data_dir(), account_id)
         .await
@@ -579,8 +577,8 @@ pub struct RunMatchingRequest {
 async fn run_matching(
     State(state): State<AppState>,
     Json(req): Json<RunMatchingRequest>,
-) -> ApiResult<crate::commands::matcher::MatchResponse> {
-    use crate::commands::matcher::MatchResponse;
+) -> ApiResult<crate::types::MatchResponse> {
+    use crate::types::MatchResponse;
     use crate::services::matcher as svc;
 
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;

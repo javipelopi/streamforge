@@ -6,7 +6,6 @@
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel::Connection;
-use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::db::models::{M3uChannel, M3uSource, NewM3uChannel, NewM3uSource};
@@ -14,74 +13,11 @@ use crate::db::schema::{m3u_channels, m3u_sources};
 use crate::db::DbConnection;
 use crate::m3u::{fetch_m3u_playlist, parse_m3u_playlist, read_local_m3u_file};
 
-// ============================================================================
-// Response Types
-// ============================================================================
-
-/// M3U source with channel count for display
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct M3uSourceWithStats {
-    pub id: i32,
-    pub name: String,
-    pub url: String,
-    pub refresh_interval_hours: i32,
-    pub last_refresh: Option<String>,
-    pub is_active: bool,
-    pub is_local_file: bool,
-    pub created_at: String,
-    pub channel_count: i32,
-}
-
-/// M3U channel for frontend display
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct M3uChannelResponse {
-    pub id: i32,
-    pub source_id: i32,
-    pub stream_url: String,
-    pub name: String,
-    pub tvg_id: Option<String>,
-    pub tvg_name: Option<String>,
-    pub tvg_logo: Option<String>,
-    pub group_title: Option<String>,
-    /// "linked" | "orphan" | "promoted"
-    pub link_status: String,
-    /// XMLTV channel IDs this channel is linked to
-    pub linked_xmltv_ids: Vec<i32>,
-}
-
-/// Input for adding a new M3U source
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AddM3uSourceInput {
-    pub name: String,
-    pub url: String,
-    pub refresh_interval_hours: Option<i32>,
-    #[serde(default)]
-    pub is_local_file: bool,
-    #[serde(default)]
-    pub is_single_stream: bool,
-}
-
-/// Input for updating an existing M3U source
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateM3uSourceInput {
-    pub name: Option<String>,
-    pub url: Option<String>,
-    pub refresh_interval_hours: Option<i32>,
-}
-
-/// Result of refreshing an M3U source
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RefreshM3uResult {
-    pub source_id: i32,
-    pub channels_added: i32,
-    pub channels_removed: i32,
-    pub total_channels: i32,
-}
+// Re-export shared types from crate::types
+pub use crate::types::{
+    AddM3uSourceInput, M3uChannelResponse, M3uSourceWithStats, RefreshM3uResult,
+    UpdateM3uSourceInput,
+};
 
 // ============================================================================
 // Commands

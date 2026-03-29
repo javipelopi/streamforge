@@ -6,7 +6,7 @@ use chrono::Utc;
 use diesel::prelude::*;
 
 use crate::acestream::{build_acestream_url, parse_acestream_url};
-use crate::commands::acestream_sources::{
+use crate::types::{
     AcestreamSourceResponse, AddAcestreamSourceInput, UpdateAcestreamSourceInput,
 };
 use crate::db::models::{AcestreamSource, NewAcestreamSource};

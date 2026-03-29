@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
 
-use crate::commands::channels::{ChannelResponse, ScanAndRematchResponse, ScanChannelsResponse};
+use crate::types::{ChannelResponse, ScanAndRematchResponse, ScanChannelsResponse};
 use crate::credentials::CredentialManager;
 use crate::db::schema::{accounts, xtream_channels};
 use crate::db::{Account, AccountStatusUpdate, NewXtreamChannel, XtreamChannel, XtreamChannelUpdate};

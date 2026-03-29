@@ -1,14 +1,16 @@
 //! Query commands for retrieving XMLTV channels with mappings, target lineup, and source channels.
 
 use diesel::prelude::*;
-use serde::Serialize;
 use tauri::State;
 
 use crate::db::models::{ChannelMapping, XmltvChannel, XmltvChannelSettings, XtreamChannel};
 use crate::db::schema::{channel_mappings, xmltv_channel_settings, xmltv_channels, xtream_channels};
 use crate::db::DbConnection;
 
-use super::{build_stream_match, parse_qualities, XmltvChannelWithMappings, XtreamStreamMatch};
+use super::{
+    parse_qualities, TargetLineupChannel, XmltvChannelWithMappings,
+    XmltvSourceChannel, XtreamStreamMatch,
+};
 
 /// Get all XMLTV channels with their mapped Xtream streams.
 ///
@@ -177,21 +179,6 @@ pub fn get_xmltv_channels_with_mappings(
 // Story 3-9: Target Lineup View
 // ============================================================================
 
-/// Target Lineup channel response (simplified for lineup view)
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct TargetLineupChannel {
-    pub id: i32,
-    pub display_name: String,
-    pub icon: Option<String>,
-    pub is_enabled: bool,
-    pub is_synthetic: bool,
-    /// Number of Xtream streams mapped to this channel
-    pub stream_count: i32,
-    /// Display order in Plex lineup
-    pub plex_display_order: Option<i32>,
-}
-
 /// Get all ENABLED channels for the Target Lineup view.
 ///
 /// Story 3-9: AC #2 - Display only enabled channels
@@ -277,22 +264,6 @@ pub fn get_target_lineup_channels(
 // ============================================================================
 // Story 3-10: XMLTV Source Channel Display
 // ============================================================================
-
-/// XMLTV channel with mapping info for Sources view
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct XmltvSourceChannel {
-    pub id: i32,
-    pub source_id: i32,
-    pub channel_id: String,
-    pub display_name: String,
-    pub icon: Option<String>,
-    pub is_synthetic: bool,
-    /// Whether channel is in the Plex lineup
-    pub is_enabled: bool,
-    /// Number of Xtream streams mapped to this channel
-    pub match_count: i32,
-}
 
 /// Get all XMLTV channels for a specific source.
 ///

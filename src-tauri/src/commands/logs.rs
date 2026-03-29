@@ -5,31 +5,14 @@
 //! These commands allow the frontend to log events, query event history, and manage read state.
 
 use diesel::prelude::*;
-use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::db::models::{EventLog, NewEventLog};
 use crate::db::schema::{event_log, settings};
 use crate::db::{DbConnection, Setting};
 
-/// Response type for event log queries
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct EventLogResponse {
-    pub events: Vec<EventLog>,
-    pub total_count: i64,
-    pub unread_count: i64,
-}
-
-/// Input parameters for log_event command
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct LogEventInput {
-    pub level: String,
-    pub category: String,
-    pub message: String,
-    pub details: Option<String>,
-}
+// Re-export shared types from crate::types
+pub use crate::types::{EventLogResponse, LogEventInput};
 
 /// Log an event to the database.
 ///

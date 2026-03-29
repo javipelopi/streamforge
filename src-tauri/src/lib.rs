@@ -11,6 +11,7 @@ pub mod matcher;
 pub mod scheduler;
 pub mod server;
 pub mod services;
+pub mod types;
 pub mod xmltv;
 pub mod xtream;
 

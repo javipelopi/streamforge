@@ -6,7 +6,7 @@
 use diesel::prelude::*;
 use std::path::Path;
 
-use crate::commands::accounts::{
+use crate::types::{
     AccountError, AccountResponse, AddAccountRequest, TestConnectionResponse, UpdateAccountRequest,
 };
 use crate::credentials::CredentialManager;

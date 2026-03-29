@@ -5,7 +5,6 @@
 
 use chrono::Utc;
 use diesel::prelude::*;
-use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::acestream::{
@@ -15,42 +14,10 @@ use crate::db::models::{AcestreamSource, NewAcestreamSource};
 use crate::db::schema::acestream_sources;
 use crate::db::DbConnection;
 
-// ============================================================================
-// Response Types
-// ============================================================================
-
-/// Acestream source for frontend display
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AcestreamSourceResponse {
-    pub id: i32,
-    pub name: String,
-    pub content_id: String,
-    pub is_active: bool,
-    pub created_at: String,
-    /// Pre-computed stream URL for display
-    pub stream_url: Option<String>,
-    /// "linked" | "orphan" | "promoted"
-    pub link_status: String,
-    /// XMLTV channel IDs this source is linked to
-    pub linked_xmltv_ids: Vec<i32>,
-}
-
-/// Input for adding a new Acestream source
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AddAcestreamSourceInput {
-    pub name: String,
-    /// Can be either content ID or acestream:// URL
-    pub content_id_or_url: String,
-}
-
-/// Input for updating an existing Acestream source
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateAcestreamSourceInput {
-    pub name: Option<String>,
-}
+// Re-export shared types from crate::types
+pub use crate::types::{
+    AcestreamSourceResponse, AddAcestreamSourceInput, UpdateAcestreamSourceInput,
+};
 
 // ============================================================================
 // Commands

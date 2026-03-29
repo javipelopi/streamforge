@@ -1,7 +1,6 @@
 //! Channel mapping CRUD commands: manual stream assignment, search, and multi-source mappings.
 
 use diesel::prelude::*;
-use serde::Serialize;
 use tauri::State;
 
 use crate::db::models::{ChannelMapping, XtreamChannel};
@@ -90,21 +89,7 @@ pub fn set_primary_stream(
 // Story 3-3: Manual Match Override via Search Dropdown
 // ============================================================================
 
-/// Xtream stream info for search dropdown
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct XtreamStreamSearchResult {
-    pub id: i32,
-    pub stream_id: i32,
-    pub name: String,
-    pub stream_icon: Option<String>,
-    pub qualities: Vec<String>,
-    pub category_name: Option<String>,
-    /// List of XMLTV channel IDs this stream is already matched to
-    pub matched_to_xmltv_ids: Vec<i32>,
-    /// Fuzzy match score against search query (0.0-1.0), None if no search query
-    pub fuzzy_score: Option<f64>,
-}
+use super::XtreamStreamSearchResult;
 
 /// Minimum fuzzy score threshold for search results.
 const SEARCH_SCORE_THRESHOLD: f64 = 0.3;
@@ -445,41 +430,7 @@ pub fn remove_stream_mapping(
 // Multi-Source Channel Mapping Commands
 // ============================================================================
 
-/// Response type for M3U stream mappings
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct M3uStreamMatch {
-    pub id: i32,
-    pub mapping_id: i32,
-    pub name: String,
-    pub stream_url: String,
-    pub tvg_logo: Option<String>,
-    pub group_title: Option<String>,
-    pub is_primary: bool,
-    pub stream_priority: i32,
-}
-
-/// Response type for Acestream mappings
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct AcestreamMatch {
-    pub id: i32,
-    pub mapping_id: i32,
-    pub name: String,
-    pub content_id: String,
-    pub is_primary: bool,
-    pub stream_priority: i32,
-}
-
-/// Response type for all channel mappings across source types
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct AllChannelMappings {
-    pub xmltv_channel_id: i32,
-    pub xtream_matches: Vec<XtreamStreamMatch>,
-    pub m3u_matches: Vec<M3uStreamMatch>,
-    pub acestream_matches: Vec<AcestreamMatch>,
-}
+use super::{AcestreamMatch, AllChannelMappings, M3uStreamMatch};
 
 /// Add a manual M3U channel mapping to an XMLTV channel.
 #[tauri::command]

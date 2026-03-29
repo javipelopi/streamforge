@@ -14,7 +14,7 @@ use crate::logging::{
 };
 
 // Re-export response type so commands and API can use it.
-pub use crate::commands::logs::EventLogResponse;
+pub use crate::types::EventLogResponse;
 
 /// Log an event, respecting verbosity settings.
 ///

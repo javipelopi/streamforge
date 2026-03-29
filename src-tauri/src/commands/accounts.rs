@@ -6,9 +6,7 @@
 //! Story 6-3: Connection event logging for Xtream authentication
 
 use diesel::prelude::*;
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
-use thiserror::Error;
 
 use crate::commands::logs::log_event_internal;
 use crate::credentials::CredentialManager;
@@ -18,101 +16,10 @@ use crate::db::{
 };
 use crate::xtream::XtreamClient;
 
-/// Error types for account operations
-#[derive(Debug, Error)]
-pub enum AccountError {
-    #[error("Account name is required")]
-    NameRequired,
-
-    #[error("Server URL is required")]
-    ServerUrlRequired,
-
-    #[error("Server URL format is invalid - must start with http:// or https://")]
-    InvalidServerUrl,
-
-    #[error("Username is required")]
-    UsernameRequired,
-
-    #[error("Password is required")]
-    PasswordRequired,
-
-    #[error("Failed to store credentials securely")]
-    CredentialStorageError,
-
-    #[error("Database error: {0}")]
-    DatabaseError(String),
-
-    #[error("Account not found")]
-    NotFound,
-
-    #[error("Failed to get app data directory")]
-    AppDataDirError,
-}
-
-impl From<AccountError> for String {
-    fn from(err: AccountError) -> Self {
-        err.to_string()
-    }
-}
-
-/// Response type for account data (excludes password)
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct AccountResponse {
-    pub id: i32,
-    pub name: String,
-    pub server_url: String,
-    pub username: String,
-    pub max_connections: i32,
-    pub is_active: bool,
-    pub created_at: String,
-    pub updated_at: String,
-    // Connection status fields
-    pub connection_status: Option<String>,
-    pub expiry_date: Option<String>,
-    pub max_connections_actual: Option<i32>,
-    pub active_connections: Option<i32>,
-}
-
-impl From<Account> for AccountResponse {
-    fn from(account: Account) -> Self {
-        Self {
-            id: account.id.unwrap_or(0),
-            name: account.name,
-            server_url: account.server_url,
-            username: account.username,
-            max_connections: account.max_connections,
-            is_active: account.is_active != 0,
-            created_at: account.created_at,
-            updated_at: account.updated_at,
-            // Connection status fields
-            connection_status: account.connection_status,
-            expiry_date: account.expiry_date,
-            max_connections_actual: account.max_connections_actual,
-            active_connections: account.active_connections,
-        }
-    }
-}
-
-/// Request type for adding a new account
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AddAccountRequest {
-    pub name: String,
-    pub server_url: String,
-    pub username: String,
-    pub password: String,
-}
-
-/// Request type for updating an account
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateAccountRequest {
-    pub name: String,
-    pub server_url: String,
-    pub username: String,
-    pub password: Option<String>, // Optional - only update if provided
-}
+// Re-export shared types from crate::types
+pub use crate::types::{
+    AccountError, AccountResponse, AddAccountRequest, TestConnectionResponse, UpdateAccountRequest,
+};
 
 /// Normalize server URL by removing trailing slashes
 fn normalize_url(url: &str) -> String {
@@ -405,19 +312,6 @@ pub async fn toggle_account(
         .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
 
     Ok(AccountResponse::from(account))
-}
-
-/// Response type for test_connection command
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct TestConnectionResponse {
-    pub success: bool,
-    pub status: Option<String>,
-    pub expiry_date: Option<String>,
-    pub max_connections: Option<i32>,
-    pub active_connections: Option<i32>,
-    pub error_message: Option<String>,
-    pub suggestions: Option<Vec<String>>,
 }
 
 /// Test connection to Xtream Codes server

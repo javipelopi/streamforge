@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use diesel::prelude::*;
 
-use crate::commands::epg::{
+use crate::types::{
     ChannelInfo, ChannelStreamInfo, EpgGridChannel, EpgGridProgram, EpgSearchResult,
     EpgSourceError, EpgStatsResponse, ProgramResponse, ProgramWithChannel, SearchMatchType,
     SearchResultType, XmltvChannelResponse, XmltvSourceResponse,
@@ -520,11 +520,11 @@ pub fn get_programs(
 }
 
 /// Get EPG schedule settings.
-pub fn get_epg_schedule(conn: &mut SqliteConnection) -> crate::commands::epg::EpgScheduleResponse {
+pub fn get_epg_schedule(conn: &mut SqliteConnection) -> crate::types::EpgScheduleResponse {
     let config = crate::scheduler::get_epg_schedule(conn);
     let last_refresh = crate::scheduler::get_last_scheduled_refresh(conn);
 
-    crate::commands::epg::EpgScheduleResponse {
+    crate::types::EpgScheduleResponse {
         hour: config.hour,
         minute: config.minute,
         enabled: config.enabled,
