@@ -15,7 +15,7 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::accounts::{
-    AccountResponse, AddAccountRequest, UpdateAccountRequest,
+    AccountError, AccountResponse, AddAccountRequest, UpdateAccountRequest,
 };
 use crate::commands::channels::ChannelResponse;
 use crate::commands::epg::XmltvSourceResponse;
@@ -30,6 +30,7 @@ use crate::db::{
 };
 use crate::logging::log_event_internal;
 use crate::matcher::{calculate_match_stats, MatchStats};
+use crate::services;
 use crate::xmltv::{fetch_xmltv, parse_xmltv_data};
 
 use super::state::AppState;
@@ -59,6 +60,22 @@ fn not_found(msg: impl Into<String>) -> (StatusCode, Json<ApiError>) {
 
 fn bad_request(msg: impl Into<String>) -> (StatusCode, Json<ApiError>) {
     api_err(StatusCode::BAD_REQUEST, msg)
+}
+
+/// Map `AccountError` to an appropriate HTTP status + JSON error body.
+fn account_err(e: AccountError) -> (StatusCode, Json<ApiError>) {
+    let status = match &e {
+        AccountError::NotFound => StatusCode::NOT_FOUND,
+        AccountError::NameRequired
+        | AccountError::ServerUrlRequired
+        | AccountError::InvalidServerUrl
+        | AccountError::UsernameRequired
+        | AccountError::PasswordRequired => StatusCode::BAD_REQUEST,
+        AccountError::CredentialStorageError | AccountError::DatabaseError(_) => {
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    };
+    api_err(status, e.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -103,12 +120,8 @@ pub fn api_router() -> Router<AppState> {
 
 async fn list_accounts(State(state): State<AppState>) -> ApiResult<Vec<AccountResponse>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let rows: Vec<Account> = accounts::table
-        .load(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    Ok(Json(rows.into_iter().map(AccountResponse::from).collect()))
+    let accounts = services::accounts::get_accounts(&mut conn).map_err(account_err)?;
+    Ok(Json(accounts))
 }
 
 async fn get_account(
