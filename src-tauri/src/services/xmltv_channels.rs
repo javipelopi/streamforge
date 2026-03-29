@@ -11,9 +11,12 @@ use strsim::jaro_winkler;
 use crate::types::{
     build_stream_match, parse_qualities, AcestreamMatch, AllChannelMappings, M3uStreamMatch,
     TargetLineupChannel, XmltvChannelWithMappings, XmltvSourceChannel, XtreamStreamMatch,
-    XtreamStreamSearchResult,
+    XtreamStreamSearchResult, SYNTHETIC_SOURCE_ID,
 };
-use crate::db::models::{ChannelMapping, XmltvChannel, XmltvChannelSettings, XtreamChannel};
+use crate::db::models::{
+    ChannelMapping, NewChannelMapping, NewXmltvChannel, NewXmltvChannelSettings,
+    XmltvChannel, XmltvChannelSettings, XtreamChannel,
+};
 use crate::db::schema::{channel_mappings, xmltv_channel_settings, xmltv_channels, xtream_channels};
 use crate::matcher::normalize_channel_name;
 
@@ -1098,6 +1101,263 @@ pub fn get_orphan_acestream_sources(
         .collect();
 
     Ok(result)
+}
+
+// ============================================================================
+// Promote orphans to synthetic channels
+// ============================================================================
+
+/// Promote an orphan Xtream stream to a synthetic XMLTV channel.
+///
+/// Creates a synthetic XMLTV channel, enables it, and maps the Xtream stream
+/// as the primary source.
+pub fn promote_orphan_to_plex(
+    conn: &mut SqliteConnection,
+    xtream_channel_id: i32,
+    display_name: &str,
+    icon_url: Option<&str>,
+) -> Result<XmltvChannelWithMappings, String> {
+    if xtream_channel_id <= 0 {
+        return Err("Invalid Xtream channel ID".to_string());
+    }
+    if display_name.trim().is_empty() {
+        return Err("Display name is required".to_string());
+    }
+
+    conn.transaction(|conn| {
+        // Create synthetic XMLTV channel
+        let channel_id_str = format!("synthetic-xtream-{}", xtream_channel_id);
+        let new_channel = NewXmltvChannel::synthetic(
+            SYNTHETIC_SOURCE_ID,
+            &channel_id_str,
+            display_name,
+            icon_url.map(|s| s.to_string()),
+        );
+
+        diesel::insert_into(xmltv_channels::table)
+            .values(&new_channel)
+            .execute(conn)?;
+
+        let channel: XmltvChannel = xmltv_channels::table
+            .filter(xmltv_channels::channel_id.eq(&channel_id_str))
+            .first::<XmltvChannel>(conn)?;
+
+        let xmltv_id = channel.id.ok_or_else(|| {
+            diesel::result::Error::NotFound
+        })?;
+
+        // Create settings (enabled by default for promoted channels)
+        let settings = NewXmltvChannelSettings::enabled(xmltv_id);
+        diesel::insert_into(xmltv_channel_settings::table)
+            .values(&settings)
+            .execute(conn)?;
+
+        // Create mapping to the Xtream stream as primary
+        let mapping = NewChannelMapping::manual(xmltv_id, xtream_channel_id)
+            .with_primary(true)
+            .with_priority(0);
+        diesel::insert_into(channel_mappings::table)
+            .values(&mapping)
+            .execute(conn)?;
+
+        Ok(XmltvChannelWithMappings {
+            id: xmltv_id,
+            source_id: SYNTHETIC_SOURCE_ID,
+            channel_id: channel_id_str,
+            display_name: display_name.to_string(),
+            icon: icon_url.map(|s| s.to_string()),
+            is_synthetic: true,
+            is_enabled: true,
+            plex_display_order: None,
+            match_count: 1,
+            matches: vec![],  // Caller can reload if needed
+        })
+    })
+    .map_err(|e: diesel::result::Error| format!("Failed to promote orphan Xtream stream: {}", e))
+}
+
+/// Promote an orphan M3U channel to a synthetic XMLTV channel.
+pub fn promote_m3u_orphan_to_plex(
+    conn: &mut SqliteConnection,
+    m3u_channel_id: i32,
+    display_name: &str,
+    icon_url: Option<&str>,
+) -> Result<XmltvChannelWithMappings, String> {
+    if m3u_channel_id <= 0 {
+        return Err("Invalid M3U channel ID".to_string());
+    }
+    if display_name.trim().is_empty() {
+        return Err("Display name is required".to_string());
+    }
+
+    conn.transaction(|conn| {
+        let channel_id_str = format!("synthetic-m3u-{}", m3u_channel_id);
+        let new_channel = NewXmltvChannel::synthetic(
+            SYNTHETIC_SOURCE_ID,
+            &channel_id_str,
+            display_name,
+            icon_url.map(|s| s.to_string()),
+        );
+
+        diesel::insert_into(xmltv_channels::table)
+            .values(&new_channel)
+            .execute(conn)?;
+
+        let channel: XmltvChannel = xmltv_channels::table
+            .filter(xmltv_channels::channel_id.eq(&channel_id_str))
+            .first::<XmltvChannel>(conn)?;
+
+        let xmltv_id = channel.id.ok_or_else(|| diesel::result::Error::NotFound)?;
+
+        let settings = NewXmltvChannelSettings::enabled(xmltv_id);
+        diesel::insert_into(xmltv_channel_settings::table)
+            .values(&settings)
+            .execute(conn)?;
+
+        let mapping = NewChannelMapping::m3u_manual(xmltv_id, m3u_channel_id)
+            .with_primary(true)
+            .with_priority(0);
+        diesel::insert_into(channel_mappings::table)
+            .values(&mapping)
+            .execute(conn)?;
+
+        Ok(XmltvChannelWithMappings {
+            id: xmltv_id,
+            source_id: SYNTHETIC_SOURCE_ID,
+            channel_id: channel_id_str,
+            display_name: display_name.to_string(),
+            icon: icon_url.map(|s| s.to_string()),
+            is_synthetic: true,
+            is_enabled: true,
+            plex_display_order: None,
+            match_count: 1,
+            matches: vec![],
+        })
+    })
+    .map_err(|e: diesel::result::Error| format!("Failed to promote orphan M3U channel: {}", e))
+}
+
+/// Promote an orphan Acestream source to a synthetic XMLTV channel.
+pub fn promote_acestream_orphan_to_plex(
+    conn: &mut SqliteConnection,
+    acestream_source_id: i32,
+    display_name: &str,
+    icon_url: Option<&str>,
+) -> Result<XmltvChannelWithMappings, String> {
+    if acestream_source_id <= 0 {
+        return Err("Invalid Acestream source ID".to_string());
+    }
+    if display_name.trim().is_empty() {
+        return Err("Display name is required".to_string());
+    }
+
+    conn.transaction(|conn| {
+        let channel_id_str = format!("synthetic-acestream-{}", acestream_source_id);
+        let new_channel = NewXmltvChannel::synthetic(
+            SYNTHETIC_SOURCE_ID,
+            &channel_id_str,
+            display_name,
+            icon_url.map(|s| s.to_string()),
+        );
+
+        diesel::insert_into(xmltv_channels::table)
+            .values(&new_channel)
+            .execute(conn)?;
+
+        let channel: XmltvChannel = xmltv_channels::table
+            .filter(xmltv_channels::channel_id.eq(&channel_id_str))
+            .first::<XmltvChannel>(conn)?;
+
+        let xmltv_id = channel.id.ok_or_else(|| diesel::result::Error::NotFound)?;
+
+        let settings = NewXmltvChannelSettings::enabled(xmltv_id);
+        diesel::insert_into(xmltv_channel_settings::table)
+            .values(&settings)
+            .execute(conn)?;
+
+        let mapping = NewChannelMapping::acestream_manual(xmltv_id, acestream_source_id)
+            .with_primary(true)
+            .with_priority(0);
+        diesel::insert_into(channel_mappings::table)
+            .values(&mapping)
+            .execute(conn)?;
+
+        Ok(XmltvChannelWithMappings {
+            id: xmltv_id,
+            source_id: SYNTHETIC_SOURCE_ID,
+            channel_id: channel_id_str,
+            display_name: display_name.to_string(),
+            icon: icon_url.map(|s| s.to_string()),
+            is_synthetic: true,
+            is_enabled: true,
+            plex_display_order: None,
+            match_count: 1,
+            matches: vec![],
+        })
+    })
+    .map_err(|e: diesel::result::Error| format!("Failed to promote orphan Acestream source: {}", e))
+}
+
+/// Update a synthetic channel's display name and icon.
+///
+/// Only works for channels where `is_synthetic = 1`.
+pub fn update_synthetic_channel(
+    conn: &mut SqliteConnection,
+    channel_id: i32,
+    display_name: &str,
+    icon_url: Option<&str>,
+) -> Result<XmltvChannelWithMappings, String> {
+    if channel_id <= 0 {
+        return Err("Invalid channel ID".to_string());
+    }
+    if display_name.trim().is_empty() {
+        return Err("Display name is required".to_string());
+    }
+
+    // Verify the channel exists and is synthetic
+    let channel: XmltvChannel = xmltv_channels::table
+        .find(channel_id)
+        .first::<XmltvChannel>(conn)
+        .map_err(|_| format!("Channel {} not found", channel_id))?;
+
+    if channel.is_synthetic.unwrap_or(0) != 1 {
+        return Err("Only synthetic channels can be updated via this endpoint".to_string());
+    }
+
+    // Update the channel
+    diesel::update(xmltv_channels::table.find(channel_id))
+        .set((
+            xmltv_channels::display_name.eq(display_name),
+            xmltv_channels::icon.eq(icon_url),
+        ))
+        .execute(conn)
+        .map_err(|e| format!("Failed to update synthetic channel: {}", e))?;
+
+    // Load settings
+    let settings: Option<XmltvChannelSettings> = xmltv_channel_settings::table
+        .filter(xmltv_channel_settings::xmltv_channel_id.eq(channel_id))
+        .first::<XmltvChannelSettings>(conn)
+        .optional()
+        .map_err(|e| format!("Failed to load settings: {}", e))?;
+
+    let is_enabled = settings
+        .as_ref()
+        .map(|s| s.is_enabled.unwrap_or(0) != 0)
+        .unwrap_or(false);
+    let plex_display_order = settings.as_ref().and_then(|s| s.plex_display_order);
+
+    Ok(XmltvChannelWithMappings {
+        id: channel_id,
+        source_id: channel.source_id,
+        channel_id: channel.channel_id,
+        display_name: display_name.to_string(),
+        icon: icon_url.map(|s| s.to_string()),
+        is_synthetic: true,
+        is_enabled,
+        plex_display_order,
+        match_count: 0,
+        matches: vec![],
+    })
 }
 
 // ============================================================================

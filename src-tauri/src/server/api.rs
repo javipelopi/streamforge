@@ -147,6 +147,12 @@ pub fn api_router() -> Router<AppState> {
         .route("/xtream-streams/account/{account_id}/stats", get(get_account_stream_stats))
         .route("/xtream-streams/{id}/unlink", post(unlink_xtream_stream))
         .route("/xtream-streams/{id}/url", get(get_xtream_stream_url))
+        // Orphan promote endpoints
+        .route("/xmltv-channels/orphans/xtream/{id}/promote", post(promote_orphan_to_plex))
+        .route("/xmltv-channels/orphans/m3u/{id}/promote", post(promote_m3u_orphan_to_plex))
+        .route("/xmltv-channels/orphans/acestream/{id}/promote", post(promote_acestream_orphan_to_plex))
+        // Synthetic channel update
+        .route("/xmltv-channels/synthetic/{id}", put(update_synthetic_channel))
         // Orphan M3U and Acestream
         .route("/orphans/m3u", get(get_orphan_m3u_channels))
         .route("/orphans/acestream", get(get_orphan_acestream_sources))
@@ -750,6 +756,92 @@ async fn get_orphan_acestream_sources(
     let sources = services::xmltv_channels::get_orphan_acestream_sources(&mut conn)
         .map_err(|e| internal(e))?;
     Ok(Json(sources))
+}
+
+// ---------------------------------------------------------------------------
+// Promote orphans to synthetic channels
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromoteOrphanRequest {
+    pub display_name: String,
+    pub icon_url: Option<String>,
+}
+
+async fn promote_orphan_to_plex(
+    State(state): State<AppState>,
+    Path(xtream_channel_id): Path<i32>,
+    Json(req): Json<PromoteOrphanRequest>,
+) -> ApiResult<XmltvChannelWithMappings> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    let result = services::xmltv_channels::promote_orphan_to_plex(
+        &mut conn,
+        xtream_channel_id,
+        &req.display_name,
+        req.icon_url.as_deref(),
+    )
+    .map_err(|e| internal(e))?;
+    state.invalidate_epg_cache();
+    Ok(Json(result))
+}
+
+async fn promote_m3u_orphan_to_plex(
+    State(state): State<AppState>,
+    Path(m3u_channel_id): Path<i32>,
+    Json(req): Json<PromoteOrphanRequest>,
+) -> ApiResult<XmltvChannelWithMappings> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    let result = services::xmltv_channels::promote_m3u_orphan_to_plex(
+        &mut conn,
+        m3u_channel_id,
+        &req.display_name,
+        req.icon_url.as_deref(),
+    )
+    .map_err(|e| internal(e))?;
+    state.invalidate_epg_cache();
+    Ok(Json(result))
+}
+
+async fn promote_acestream_orphan_to_plex(
+    State(state): State<AppState>,
+    Path(acestream_source_id): Path<i32>,
+    Json(req): Json<PromoteOrphanRequest>,
+) -> ApiResult<XmltvChannelWithMappings> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    let result = services::xmltv_channels::promote_acestream_orphan_to_plex(
+        &mut conn,
+        acestream_source_id,
+        &req.display_name,
+        req.icon_url.as_deref(),
+    )
+    .map_err(|e| internal(e))?;
+    state.invalidate_epg_cache();
+    Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSyntheticChannelRequest {
+    pub display_name: String,
+    pub icon_url: Option<String>,
+}
+
+async fn update_synthetic_channel(
+    State(state): State<AppState>,
+    Path(channel_id): Path<i32>,
+    Json(req): Json<UpdateSyntheticChannelRequest>,
+) -> ApiResult<XmltvChannelWithMappings> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    let result = services::xmltv_channels::update_synthetic_channel(
+        &mut conn,
+        channel_id,
+        &req.display_name,
+        req.icon_url.as_deref(),
+    )
+    .map_err(|e| internal(e))?;
+    state.invalidate_epg_cache();
+    Ok(Json(result))
 }
 
 async fn get_target_lineup_channels(
