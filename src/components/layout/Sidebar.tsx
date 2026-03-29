@@ -21,7 +21,7 @@ import {
 import { ListChecks, Database } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { NAV_ITEMS } from '../../lib/routes';
-import { getUnreadEventCount } from '../../lib/tauri';
+import { getUnreadEventCount } from '../../lib/api';
 
 const iconMap: Record<string, ComponentType<{ className?: string }>> = {
   dashboard: HomeIcon,

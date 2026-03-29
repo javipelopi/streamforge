@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { X, Volume2, VolumeX, Maximize, Minimize, Play, Pause, Loader2, AlertCircle, Tv, ExternalLink } from 'lucide-react';
 import Hls from 'hls.js';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { getServerPort } from '../../lib/tauri';
+import { getServerPort } from '../../lib/api';
 
 interface VideoPlayerProps {
   /** Whether the player modal is open */

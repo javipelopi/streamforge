@@ -16,7 +16,7 @@ import { DayNavigationBar } from './DayNavigationBar';
 import { useEpgSearch } from '../../../hooks/useEpgSearch';
 import { useAppStore } from '../../../stores/appStore';
 import type { DayOption } from '../../../hooks/useEpgDayNavigation';
-import type { EpgSearchResult } from '../../../lib/tauri';
+import type { EpgSearchResult } from '../../../lib/api';
 
 interface EpgTopBarProps {
   /** Currently selected day option */

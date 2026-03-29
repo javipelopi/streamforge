@@ -5,7 +5,7 @@ import {
   promoteM3uOrphanToPlex,
   type OrphanM3uChannel,
   type XmltvChannelWithMappings,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { PromoteOrphanDialog } from './PromoteOrphanDialog';
 
 /**

@@ -12,8 +12,8 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogCancelButton, DialogSubmitButton } from '../common/Dialog';
-import type { XmltvSource, XmltvFormat, NewXmltvSource } from '../../lib/tauri';
-import { detectXmltvFormat } from '../../lib/tauri';
+import type { XmltvSource, XmltvFormat, NewXmltvSource } from '../../lib/api';
+import { detectXmltvFormat } from '../../lib/api';
 
 export interface XmltvSourceDialogProps {
   /** Whether the dialog is open */

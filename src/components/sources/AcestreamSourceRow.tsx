@@ -17,7 +17,7 @@ import {
   toggleAcestreamSource,
   buildAcestreamUrl,
   type AcestreamSource,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { ROUTES } from '../../lib/routes';
 import { TOAST_DURATION_MS } from '../../lib/constants';
 import { LinkToXmltvChannelDialog } from './LinkToXmltvChannelDialog';

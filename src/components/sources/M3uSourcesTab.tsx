@@ -16,7 +16,7 @@ import {
   updateM3uSource,
   deleteM3uSource,
   type M3uSource,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { M3uSourceAccordion } from './M3uSourceAccordion';
 import { SourcesErrorBoundary } from './SourcesErrorBoundary';
 import { M3uSourceDialog, type M3uSourceFormData } from './M3uSourceDialog';

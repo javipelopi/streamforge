@@ -4,7 +4,7 @@
  * AC #4: Preview shows counts of items to be imported
  */
 
-import { ImportPreview } from '../../lib/tauri';
+import { ImportPreview } from '../../lib/api';
 
 interface ImportPreviewDialogProps {
   preview: ImportPreview;

@@ -8,7 +8,7 @@
  * and options to download/install or remind later.
  */
 import { useState } from 'react';
-import { UpdateInfo, downloadAndInstallUpdate } from '../../lib/tauri';
+import { UpdateInfo, downloadAndInstallUpdate } from '../../lib/api';
 
 interface UpdateNotificationDialogProps {
   updateInfo: UpdateInfo;

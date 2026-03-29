@@ -13,7 +13,7 @@
 import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Copy, Check, AlertCircle, Server } from 'lucide-react';
-import { getPlexConfig } from '../../lib/tauri';
+import { getPlexConfig } from '../../lib/api';
 
 /** Props for ConfigUrlRow component */
 interface ConfigUrlRowProps {

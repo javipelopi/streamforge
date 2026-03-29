@@ -18,7 +18,7 @@ import {
   getLinkStatusLabel,
   getXtreamStreamUrl,
   type XtreamAccountStream,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { ROUTES } from '../../lib/routes';
 import { TOAST_DURATION_MS } from '../../lib/constants';
 import { LinkToXmltvChannelDialog } from './LinkToXmltvChannelDialog';

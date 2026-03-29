@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback, useEffect, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Search, Check, X, Loader2 } from 'lucide-react';
-import type { XtreamStreamSearchResult } from '../../lib/tauri';
-import { getQualityBadgeClasses, searchXtreamStreams } from '../../lib/tauri';
+import type { XtreamStreamSearchResult } from '../../lib/api';
+import { getQualityBadgeClasses, searchXtreamStreams } from '../../lib/api';
 
 interface StreamSearchDropdownProps {
   /** XMLTV channel name to use as initial search query */

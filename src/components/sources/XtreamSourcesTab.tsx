@@ -18,7 +18,7 @@ import {
   testConnection,
   type Account,
   type TestConnectionResponse,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { XtreamAccountAccordion } from './XtreamAccountAccordion';
 import { SourcesErrorBoundary } from './SourcesErrorBoundary';
 import { XtreamAccountDialog, type XtreamAccountFormData } from './XtreamAccountDialog';

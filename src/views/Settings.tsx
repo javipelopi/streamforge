@@ -42,7 +42,7 @@ import {
   setFailoverStrictness,
   FailoverStrictness,
   ResilienceConfig,
-} from '../lib/tauri';
+} from '../lib/api';
 import { ImportPreviewDialog } from '../components/settings/ImportPreviewDialog';
 
 /** Port validation constants */

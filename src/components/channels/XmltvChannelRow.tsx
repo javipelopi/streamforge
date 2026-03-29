@@ -1,8 +1,8 @@
 import { memo, type ReactNode } from 'react';
 import * as Switch from '@radix-ui/react-switch';
 import { ChevronDown, ChevronRight, AlertTriangle, FileText, Pencil } from 'lucide-react';
-import type { XmltvChannelWithMappings } from '../../lib/tauri';
-import { formatConfidence, getMatchCountLabel } from '../../lib/tauri';
+import type { XmltvChannelWithMappings } from '../../lib/api';
+import { formatConfidence, getMatchCountLabel } from '../../lib/api';
 
 interface XmltvChannelRowProps {
   channel: XmltvChannelWithMappings;

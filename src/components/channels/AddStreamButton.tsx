@@ -1,7 +1,7 @@
 import { useState, useCallback, memo } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { Plus, Loader2 } from 'lucide-react';
-import type { XtreamStreamSearchResult, XtreamStreamMatch } from '../../lib/tauri';
+import type { XtreamStreamSearchResult, XtreamStreamMatch } from '../../lib/api';
 import { StreamSearchDropdown } from './StreamSearchDropdown';
 
 interface AddStreamButtonProps {

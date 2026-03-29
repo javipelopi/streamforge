@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getEnabledChannelsWithPrograms, type EpgProgram } from '../lib/tauri';
+import { getEnabledChannelsWithPrograms, type EpgProgram } from '../lib/api';
 
 /**
  * Channel list item with current program info

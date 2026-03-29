@@ -17,7 +17,7 @@ import {
   UpdateInfo,
   getUpdateSettings,
   checkForUpdate,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { UpdateNotificationDialog } from '../settings/UpdateNotificationDialog';
 
 /** Routes that should render in full-screen mode (no header, no padding) */

@@ -15,7 +15,7 @@ import { useState, useEffect } from 'react';
 import { Link, FileText, Radio, FolderOpen } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Dialog, DialogCancelButton, DialogSubmitButton } from '../common/Dialog';
-import type { M3uSource } from '../../lib/tauri';
+import type { M3uSource } from '../../lib/api';
 
 export type M3uSourceType = 'playlist' | 'file' | 'stream';
 

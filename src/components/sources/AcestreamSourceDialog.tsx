@@ -11,7 +11,7 @@
  */
 import { useState, useEffect } from 'react';
 import { Dialog, DialogCancelButton, DialogSubmitButton } from '../common/Dialog';
-import type { AcestreamSource } from '../../lib/tauri';
+import type { AcestreamSource } from '../../lib/api';
 
 export interface AcestreamSourceFormData {
   name: string;

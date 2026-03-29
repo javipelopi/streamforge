@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { getProgramById, type ProgramWithChannel } from '../lib/tauri';
+import { getProgramById, type ProgramWithChannel } from '../lib/api';
 
 interface UseProgramDetailsResult {
   /** Program with channel data, or null if not found/loading */

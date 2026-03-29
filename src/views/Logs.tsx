@@ -19,7 +19,7 @@ import {
   parseEventDetails,
   type EventLogEntry,
   type EventLevel,
-} from '../lib/tauri';
+} from '../lib/api';
 
 /**
  * Get icon for event level

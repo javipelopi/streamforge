@@ -8,7 +8,7 @@
  */
 import { useState, useRef, useEffect } from 'react';
 import { MoreVertical, Plus, Link, Unlink, Eye, Edit } from 'lucide-react';
-import type { LinkStatus } from '../../../lib/tauri';
+import type { LinkStatus } from '../../../lib/api';
 
 export interface SourceActionMenuAction {
   /** Action identifier */

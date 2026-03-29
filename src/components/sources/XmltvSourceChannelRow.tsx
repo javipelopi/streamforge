@@ -9,7 +9,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Popover from '@radix-ui/react-popover';
 import { MoreVertical, AlertTriangle, Radio } from 'lucide-react';
-import { toggleXmltvChannel, type XmltvSourceChannel } from '../../lib/tauri';
+import { toggleXmltvChannel, type XmltvSourceChannel } from '../../lib/api';
 import { XmltvLinkStreamsDialog } from './XmltvLinkStreamsDialog';
 import { TOAST_DURATION_MS } from '../../lib/constants';
 

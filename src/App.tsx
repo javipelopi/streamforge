@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { greet } from "./lib/tauri";
+import { greet } from './lib/api';
 
 function App() {
   const [greeting, setGreeting] = useState("");

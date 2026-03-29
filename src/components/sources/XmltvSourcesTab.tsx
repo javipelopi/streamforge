@@ -17,7 +17,7 @@ import {
   deleteXmltvSource,
   type XmltvSource,
   type NewXmltvSource,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { XmltvSourceAccordion } from './XmltvSourceAccordion';
 import { SourcesErrorBoundary } from './SourcesErrorBoundary';
 import { XmltvSourceDialog } from './XmltvSourceDialog';
