@@ -17,7 +17,7 @@ use crate::db::schema::{
 use crate::db::Setting;
 use crate::logging::log_event_internal;
 use crate::matcher::{
-    calculate_match_stats, get_channel_mappings as db_get_channel_mappings,
+    get_channel_mappings as db_get_channel_mappings,
     get_xmltv_channel_settings as db_get_xmltv_channel_settings, match_channels,
     match_m3u_channels, save_channel_mappings, ChangedStream, M3uMatchResult, MatchConfig,
     MatchStats, MatchType, ProviderChanges,
@@ -154,7 +154,7 @@ pub fn get_match_stats(conn: &mut SqliteConnection) -> Result<MatchStats, String
     // For now, we query the stats directly.
     use crate::db::schema::channel_mappings;
 
-    let total_mappings: i64 = channel_mappings::table
+    let _total_mappings: i64 = channel_mappings::table
         .count()
         .get_result(conn)
         .map_err(|e| format!("Failed to count mappings: {}", e))?;
