@@ -1316,7 +1316,7 @@ pub fn update_synthetic_channel(
 
     // Verify the channel exists and is synthetic
     let channel: XmltvChannel = xmltv_channels::table
-        .find(channel_id)
+        .filter(xmltv_channels::id.eq(channel_id))
         .first::<XmltvChannel>(conn)
         .map_err(|_| format!("Channel {} not found", channel_id))?;
 
@@ -1325,7 +1325,7 @@ pub fn update_synthetic_channel(
     }
 
     // Update the channel
-    diesel::update(xmltv_channels::table.find(channel_id))
+    diesel::update(xmltv_channels::table.filter(xmltv_channels::id.eq(channel_id)))
         .set((
             xmltv_channels::display_name.eq(display_name),
             xmltv_channels::icon.eq(icon_url),
