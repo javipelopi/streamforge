@@ -192,6 +192,338 @@ const ROUTES: Record<string, RouteSpec> = {
     path: '/api/matcher/run',
     mapBody: (args) => ({ threshold: args.threshold }),
   },
+  get_channel_mappings_for_xmltv: {
+    method: 'GET',
+    path: '/api/matcher/mappings/{xmltvChannelId}',
+    pathParams: ['xmltvChannelId'],
+  },
+  get_match_threshold: {
+    method: 'GET',
+    path: '/api/matcher/threshold',
+  },
+  set_match_threshold: {
+    method: 'PUT',
+    path: '/api/matcher/threshold',
+    mapBody: (args) => ({ threshold: args.threshold }),
+  },
+  normalize_channel_name: {
+    method: 'POST',
+    path: '/api/matcher/normalize',
+    mapBody: (args) => ({ name: args.name }),
+  },
+  calculate_match_score: {
+    method: 'POST',
+    path: '/api/matcher/score',
+    mapBody: (args) => ({ name1: args.name1, name2: args.name2 }),
+  },
+  scan_and_rematch: {
+    method: 'POST',
+    path: '/api/channels/{accountId}/scan-and-rematch',
+    pathParams: ['accountId'],
+  },
+  auto_match_m3u_channels: {
+    method: 'POST',
+    path: '/api/matcher/auto-match-m3u',
+    mapBody: (args) => ({ sourceId: args.sourceId }),
+  },
+  get_m3u_auto_match_results: {
+    method: 'GET',
+    path: '/api/matcher/auto-match-m3u/results',
+    queryParams: ['sourceId'],
+  },
+
+  // -- M3U Sources ----------------------------------------------------------
+  add_m3u_source: {
+    method: 'POST',
+    path: '/api/m3u-sources',
+    mapBody: bodyAll,
+  },
+  get_m3u_sources: {
+    method: 'GET',
+    path: '/api/m3u-sources',
+  },
+  refresh_m3u_source: {
+    method: 'POST',
+    path: '/api/m3u-sources/{sourceId}/refresh',
+    pathParams: ['sourceId'],
+  },
+  delete_m3u_source: {
+    method: 'DELETE',
+    path: '/api/m3u-sources/{sourceId}',
+    pathParams: ['sourceId'],
+  },
+  get_m3u_channels: {
+    method: 'GET',
+    path: '/api/m3u-sources/{sourceId}/channels',
+    pathParams: ['sourceId'],
+  },
+  toggle_m3u_source: {
+    method: 'POST',
+    path: '/api/m3u-sources/{sourceId}/toggle',
+    pathParams: ['sourceId'],
+    mapBody: (args) => ({ active: args.active }),
+  },
+  update_m3u_source: {
+    method: 'PUT',
+    path: '/api/m3u-sources/{sourceId}',
+    pathParams: ['sourceId'],
+    mapBody: bodyKey('updates'),
+  },
+
+  // -- Acestream Sources ----------------------------------------------------
+  check_acestream_status: {
+    method: 'GET',
+    path: '/api/acestream-sources/status',
+  },
+  add_acestream_source: {
+    method: 'POST',
+    path: '/api/acestream-sources',
+    mapBody: bodyAll,
+  },
+  get_acestream_sources: {
+    method: 'GET',
+    path: '/api/acestream-sources',
+  },
+  delete_acestream_source: {
+    method: 'DELETE',
+    path: '/api/acestream-sources/{sourceId}',
+    pathParams: ['sourceId'],
+  },
+  toggle_acestream_source: {
+    method: 'POST',
+    path: '/api/acestream-sources/{sourceId}/toggle',
+    pathParams: ['sourceId'],
+    mapBody: (args) => ({ active: args.active }),
+  },
+  update_acestream_source: {
+    method: 'PUT',
+    path: '/api/acestream-sources/{sourceId}',
+    pathParams: ['sourceId'],
+    mapBody: bodyKey('updates'),
+  },
+
+  // -- XMLTV Channels -------------------------------------------------------
+  get_xmltv_channels_with_mappings: {
+    method: 'GET',
+    path: '/api/xmltv-channels/with-mappings',
+    queryParams: ['sourceId'],
+  },
+  set_primary_stream: {
+    method: 'POST',
+    path: '/api/xmltv-channels/{xmltvChannelId}/primary',
+    pathParams: ['xmltvChannelId'],
+    mapBody: (args) => ({ mappingId: args.mappingId }),
+  },
+  toggle_xmltv_channel: {
+    method: 'POST',
+    path: '/api/xmltv-channels/{xmltvChannelId}/toggle',
+    pathParams: ['xmltvChannelId'],
+    mapBody: (args) => ({ enabled: args.enabled }),
+  },
+  update_channel_order: {
+    method: 'POST',
+    path: '/api/xmltv-channels/{xmltvChannelId}/order',
+    pathParams: ['xmltvChannelId'],
+    mapBody: (args) => ({ order: args.order }),
+  },
+  get_all_xtream_streams: {
+    method: 'GET',
+    path: '/api/xmltv-channels/xtream-streams',
+  },
+  search_xtream_streams: {
+    method: 'GET',
+    path: '/api/xmltv-channels/xtream-streams/search',
+    queryParams: ['query', 'accountId'],
+  },
+  add_manual_stream_mapping: {
+    method: 'POST',
+    path: '/api/xmltv-channels/{xmltvChannelId}/mappings',
+    pathParams: ['xmltvChannelId'],
+    mapBody: (args) => ({ xtreamChannelId: args.xtreamChannelId, isPrimary: args.isPrimary }),
+  },
+  remove_stream_mapping: {
+    method: 'DELETE',
+    path: '/api/xmltv-channels/mappings/{mappingId}',
+    pathParams: ['mappingId'],
+  },
+  add_m3u_channel_mapping: {
+    method: 'POST',
+    path: '/api/xmltv-channels/{xmltvChannelId}/mappings/m3u',
+    pathParams: ['xmltvChannelId'],
+    mapBody: (args) => ({ m3uChannelId: args.m3uChannelId }),
+  },
+  add_acestream_channel_mapping: {
+    method: 'POST',
+    path: '/api/xmltv-channels/{xmltvChannelId}/mappings/acestream',
+    pathParams: ['xmltvChannelId'],
+    mapBody: (args) => ({ acestreamSourceId: args.acestreamSourceId }),
+  },
+  get_all_channel_mappings: {
+    method: 'GET',
+    path: '/api/xmltv-channels/mappings',
+  },
+  bulk_toggle_channels: {
+    method: 'POST',
+    path: '/api/xmltv-channels/bulk-toggle',
+    mapBody: (args) => ({ channelIds: args.channelIds, enabled: args.enabled }),
+  },
+  get_orphan_xtream_streams: {
+    method: 'GET',
+    path: '/api/xmltv-channels/orphans/xtream',
+  },
+  promote_orphan_to_plex: {
+    method: 'POST',
+    path: '/api/xmltv-channels/orphans/xtream/{xtreamChannelId}/promote',
+    pathParams: ['xtreamChannelId'],
+  },
+  get_orphan_m3u_channels: {
+    method: 'GET',
+    path: '/api/xmltv-channels/orphans/m3u',
+  },
+  promote_m3u_orphan_to_plex: {
+    method: 'POST',
+    path: '/api/xmltv-channels/orphans/m3u/{m3uChannelId}/promote',
+    pathParams: ['m3uChannelId'],
+  },
+  get_orphan_acestream_sources: {
+    method: 'GET',
+    path: '/api/xmltv-channels/orphans/acestream',
+  },
+  promote_acestream_orphan_to_plex: {
+    method: 'POST',
+    path: '/api/xmltv-channels/orphans/acestream/{acestreamSourceId}/promote',
+    pathParams: ['acestreamSourceId'],
+  },
+  update_synthetic_channel: {
+    method: 'PUT',
+    path: '/api/xmltv-channels/synthetic/{channelId}',
+    pathParams: ['channelId'],
+    mapBody: bodyKey('updates'),
+  },
+  get_target_lineup_channels: {
+    method: 'GET',
+    path: '/api/xmltv-channels/target-lineup',
+  },
+  get_xmltv_channels_for_source: {
+    method: 'GET',
+    path: '/api/xmltv-channels/by-source/{sourceId}',
+    pathParams: ['sourceId'],
+  },
+
+  // -- Xtream Streams -------------------------------------------------------
+  get_xtream_streams_for_account: {
+    method: 'GET',
+    path: '/api/xtream/{accountId}/streams',
+    pathParams: ['accountId'],
+  },
+  get_account_stream_stats: {
+    method: 'GET',
+    path: '/api/xtream/{accountId}/stats',
+    pathParams: ['accountId'],
+  },
+  unlink_xtream_stream: {
+    method: 'POST',
+    path: '/api/xtream/streams/{streamId}/unlink',
+    pathParams: ['streamId'],
+  },
+  get_xtream_stream_url: {
+    method: 'GET',
+    path: '/api/xtream/streams/{streamId}/url',
+    pathParams: ['streamId'],
+    queryParams: ['accountId'],
+  },
+
+  // -- EPG (additional) -----------------------------------------------------
+  get_xmltv_channels: {
+    method: 'GET',
+    path: '/api/epg/channels',
+    queryParams: ['sourceId'],
+  },
+  get_programs: {
+    method: 'GET',
+    path: '/api/epg/programs',
+    queryParams: ['channelId', 'limit', 'offset'],
+  },
+  get_epg_schedule: {
+    method: 'GET',
+    path: '/api/epg/schedule',
+  },
+  set_epg_schedule: {
+    method: 'PUT',
+    path: '/api/epg/schedule',
+    mapBody: (args) => ({ enabled: args.enabled, hour: args.hour, minute: args.minute }),
+  },
+  get_enabled_channels_with_programs: {
+    method: 'GET',
+    path: '/api/epg/channels/enabled-with-programs',
+  },
+  search_epg_programs: {
+    method: 'GET',
+    path: '/api/epg/programs/search',
+    queryParams: ['query', 'limit'],
+  },
+  get_channel_stream_info: {
+    method: 'GET',
+    path: '/api/epg/channels/{channelId}/stream-info',
+    pathParams: ['channelId'],
+  },
+  get_program_by_id: {
+    method: 'GET',
+    path: '/api/epg/programs/{programId}',
+    pathParams: ['programId'],
+  },
+  get_xmltv_channel_settings: {
+    method: 'GET',
+    path: '/api/epg/channels/{channelId}/settings',
+    pathParams: ['channelId'],
+  },
+
+  // -- Logs (additional) ----------------------------------------------------
+  log_event: {
+    method: 'POST',
+    path: '/api/events',
+    mapBody: (args) => ({ level: args.level, category: args.category, message: args.message, details: args.details }),
+  },
+  clear_old_events: {
+    method: 'DELETE',
+    path: '/api/events/old',
+    queryParams: ['keepCount'],
+  },
+
+  // -- Settings (additional) ------------------------------------------------
+  get_plex_config: {
+    method: 'GET',
+    path: '/api/settings/plex-config',
+  },
+  get_resilience_config: {
+    method: 'GET',
+    path: '/api/settings/resilience',
+  },
+  set_failover_strictness: {
+    method: 'PUT',
+    path: '/api/settings/failover-strictness',
+    mapBody: (args) => ({ strictness: args.strictness }),
+  },
+  restart_server: {
+    method: 'POST',
+    path: '/api/settings/restart-server',
+  },
+
+  // -- Config ---------------------------------------------------------------
+  export_configuration: {
+    method: 'GET',
+    path: '/api/config/export',
+  },
+  import_configuration: {
+    method: 'POST',
+    path: '/api/config/import',
+    mapBody: bodyAll,
+  },
+  validate_import_file: {
+    method: 'POST',
+    path: '/api/config/validate',
+    mapBody: bodyAll,
+  },
 };
 
 // ---------------------------------------------------------------------------
