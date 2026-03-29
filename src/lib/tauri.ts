@@ -1,4 +1,24 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { invokeApi } from './api-adapter';
+
+/**
+ * Detect whether we're running inside a Tauri webview or a plain browser.
+ * In Tauri, the runtime injects `window.__TAURI__` before any app code runs.
+ */
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI__' in window;
+}
+
+/**
+ * Unified invoke that routes to Tauri IPC or the REST API adapter
+ * depending on the runtime environment.
+ */
+function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  if (isTauri()) {
+    return tauriInvoke<T>(cmd, args);
+  }
+  return invokeApi<T>(cmd, args);
+}
 
 export async function greet(name: string): Promise<string> {
   return invoke('greet', { name });
