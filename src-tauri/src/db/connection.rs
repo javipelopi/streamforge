@@ -61,6 +61,28 @@ pub fn get_db_path(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Erro
     Ok(app_data_dir.join("iptv.db"))
 }
 
+/// Get the database path without Tauri, for headless/CLI use
+///
+/// Resolves the DB path using an explicit `data_dir` override or
+/// falls back to the platform's standard data directory via `dirs::data_dir()`.
+pub fn get_db_path_standalone(data_dir: Option<std::path::PathBuf>) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let base = match data_dir {
+        Some(dir) => dir,
+        None => dirs::data_dir()
+            .ok_or("Cannot determine platform data directory (dirs::data_dir() returned None)")?
+            .join("streamforge"),
+    };
+
+    std::fs::create_dir_all(&base)
+        .map_err(|e| format!(
+            "Cannot create database directory at '{}': {}. Please check folder permissions.",
+            base.display(),
+            e
+        ))?;
+
+    Ok(base.join("iptv.db"))
+}
+
 /// Establish a connection to the SQLite database with busy timeout
 pub fn establish_connection(database_url: &str) -> Result<SqliteConnection, diesel::ConnectionError> {
     let mut conn = SqliteConnection::establish(database_url)?;

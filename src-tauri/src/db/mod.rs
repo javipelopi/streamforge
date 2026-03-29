@@ -8,6 +8,7 @@ pub mod schema;
 pub use connection::{establish_connection, run_migrations, DbConnection, DbPool, DbPooledConnection};
 #[cfg(feature = "gui")]
 pub use connection::get_db_path;
+pub use connection::get_db_path_standalone;
 pub use models::{
     Account, AccountStatusUpdate, ChannelMapping, EventCategory, EventLevel, EventLog,
     NewAccount, NewChannelMapping, NewEventLog, NewProgram, NewXmltvChannel,
