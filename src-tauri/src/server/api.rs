@@ -820,53 +820,23 @@ async fn run_matching(
     Json(req): Json<RunMatchingRequest>,
 ) -> ApiResult<crate::commands::matcher::MatchResponse> {
     use crate::commands::matcher::MatchResponse;
-    use crate::db::schema::{xmltv_channels, xtream_channels};
-    use crate::db::{XmltvChannel, XtreamChannel};
-    use crate::matcher::{match_channels, save_channel_mappings, MatchConfig};
+    use crate::services::matcher as svc;
 
-    let threshold = req.threshold.unwrap_or(0.85);
-    if !(0.0..=1.0).contains(&threshold) {
-        return Err(bad_request("Threshold must be between 0.0 and 1.0"));
-    }
-
-    let config = MatchConfig::default().with_threshold(threshold);
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
 
-    let xmltv_chs: Vec<XmltvChannel> = xmltv_channels::table
-        .load(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    let xtream_chs: Vec<XtreamChannel> = xtream_channels::table
-        .load(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    let (matches, stats) = match_channels(&xmltv_chs, &xtream_chs, &config);
-
-    let xmltv_ids: Vec<i32> = xmltv_chs.iter().filter_map(|c| c.id).collect();
-    let saved_count = save_channel_mappings(&mut conn, &matches, &xmltv_ids)
-        .map_err(|e| internal(e.to_string()))?;
-
-    let _ = log_event_internal(
-        &mut conn, "info", "match",
-        &format!("Channel matching completed: {} of {} matched (threshold: {:.0}%)",
-            stats.matched, stats.total_xmltv, threshold * 100.0),
-        Some(&serde_json::json!({
-            "matchedCount": stats.matched,
-            "unmatchedCount": stats.unmatched,
-            "threshold": threshold,
-        }).to_string()),
-    );
+    let result = svc::run_channel_matching(&mut conn, req.threshold, |_| {})
+        .map_err(|e| internal(e))?;
 
     Ok(Json(MatchResponse {
         success: true,
-        matched_count: stats.matched,
-        unmatched_count: stats.unmatched,
-        total_xmltv: stats.total_xmltv,
-        total_source_channels: stats.total_source_channels,
-        duration_ms: stats.duration_ms,
+        matched_count: result.matched_count,
+        unmatched_count: result.unmatched_count,
+        total_xmltv: result.total_xmltv,
+        total_source_channels: result.total_source_channels,
+        duration_ms: result.duration_ms,
         message: format!(
             "Matched {} of {} XMLTV channels. {} mappings saved.",
-            stats.matched, stats.total_xmltv, saved_count
+            result.matched_count, result.total_xmltv, result.mappings_saved
         ),
     }))
 }
