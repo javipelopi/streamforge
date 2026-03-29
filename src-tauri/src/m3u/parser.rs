@@ -136,7 +136,7 @@ fn parse_extinf_attributes(line: &str) -> HashMap<String, String> {
 /// NOTE: Unicode normalization should be applied to channel names to ensure
 /// consistent matching across different Unicode representations (e.g., é vs e + combining accent).
 /// This would require adding the `unicode-normalization` crate to Cargo.toml and using:
-/// ```rust
+/// ```rust,ignore
 /// use unicode_normalization::UnicodeNormalization;
 /// let name = name.nfc().collect::<String>();
 /// ```
