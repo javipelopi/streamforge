@@ -50,6 +50,8 @@ export default [
         React: 'readonly',
         NodeJS: 'readonly',
         HTMLVideoElement: 'readonly',
+        URLSearchParams: 'readonly',
+        RequestInit: 'readonly',
       },
     },
     plugins: {
