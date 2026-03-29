@@ -4,6 +4,7 @@ pub mod commands;
 pub mod credentials;
 pub mod db;
 pub mod epg_ops;
+pub mod headless;
 pub mod logging;
 pub mod m3u;
 pub mod matcher;
