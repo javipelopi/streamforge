@@ -8,7 +8,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{delete, get, post, put},
+    routing::{get, post},
     Json, Router,
 };
 use diesel::prelude::*;
@@ -18,20 +18,13 @@ use crate::commands::accounts::{
     AccountError, AccountResponse, AddAccountRequest, UpdateAccountRequest,
 };
 use crate::commands::channels::ChannelResponse;
-use crate::commands::epg::XmltvSourceResponse;
+use crate::commands::epg::{EpgSourceError, XmltvSourceResponse};
 use crate::commands::logs::EventLogResponse;
-use crate::credentials::CredentialManager;
-use crate::db::models::{EventLog, NewEventLog, NewXmltvSource, XmltvSourceUpdate};
-use crate::db::schema::{
-    accounts, event_log, settings, xmltv_sources, xtream_channels,
-};
-use crate::db::{
-    Account, Setting, XmltvSource, XtreamChannel,
-};
-use crate::logging::log_event_internal;
-use crate::matcher::{calculate_match_stats, MatchStats};
+use crate::db::models::XmltvSourceUpdate;
+use crate::db::schema::{accounts, settings, xmltv_sources};
+use crate::db::{Account, Setting, XmltvSource};
+use crate::matcher::MatchStats;
 use crate::services;
-use crate::xmltv::{fetch_xmltv, parse_xmltv_data};
 
 use super::state::AppState;
 
@@ -58,10 +51,6 @@ fn not_found(msg: impl Into<String>) -> (StatusCode, Json<ApiError>) {
     api_err(StatusCode::NOT_FOUND, msg)
 }
 
-fn bad_request(msg: impl Into<String>) -> (StatusCode, Json<ApiError>) {
-    api_err(StatusCode::BAD_REQUEST, msg)
-}
-
 /// Map `AccountError` to an appropriate HTTP status + JSON error body.
 fn account_err(e: AccountError) -> (StatusCode, Json<ApiError>) {
     let status = match &e {
@@ -76,6 +65,21 @@ fn account_err(e: AccountError) -> (StatusCode, Json<ApiError>) {
         | AccountError::AppDataDirError => {
             StatusCode::INTERNAL_SERVER_ERROR
         }
+    };
+    api_err(status, e.to_string())
+}
+
+/// Map `EpgSourceError` to an appropriate HTTP status + JSON error body.
+fn epg_err(e: EpgSourceError) -> (StatusCode, Json<ApiError>) {
+    let status = match &e {
+        EpgSourceError::NotFound => StatusCode::NOT_FOUND,
+        EpgSourceError::NameRequired
+        | EpgSourceError::UrlRequired
+        | EpgSourceError::InvalidUrl
+        | EpgSourceError::InvalidUrlScheme
+        | EpgSourceError::InvalidFormat
+        | EpgSourceError::DuplicateUrl => StatusCode::BAD_REQUEST,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
     };
     api_err(status, e.to_string())
 }
@@ -207,12 +211,9 @@ async fn test_account_connection(
 
 async fn list_xmltv_sources(State(state): State<AppState>) -> ApiResult<Vec<XmltvSourceResponse>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let rows: Vec<XmltvSource> = xmltv_sources::table
-        .load(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    Ok(Json(rows.into_iter().map(XmltvSourceResponse::from).collect()))
+    let sources = services::epg::get_xmltv_sources(&mut conn)
+        .map_err(|e| epg_err(e))?;
+    Ok(Json(sources))
 }
 
 async fn get_xmltv_source(
@@ -249,36 +250,10 @@ async fn create_xmltv_source(
     State(state): State<AppState>,
     Json(req): Json<CreateXmltvSourceRequest>,
 ) -> Result<(StatusCode, Json<XmltvSourceResponse>), (StatusCode, Json<ApiError>)> {
-    if req.name.trim().is_empty() {
-        return Err(bad_request("Source name is required"));
-    }
-    if req.url.trim().is_empty() {
-        return Err(bad_request("URL is required"));
-    }
-    let valid_formats = ["xml", "xml_gz", "auto"];
-    if !valid_formats.contains(&req.format.as_str()) {
-        return Err(bad_request("Format must be one of: xml, xml_gz, auto"));
-    }
-
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let new_source = NewXmltvSource::new(
-        req.name,
-        req.url,
-        req.format,
-    ).with_refresh_interval(req.refresh_interval_hours);
-
-    diesel::insert_into(xmltv_sources::table)
-        .values(&new_source)
-        .execute(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    let inserted: XmltvSource = xmltv_sources::table
-        .order(xmltv_sources::id.desc())
-        .first(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    Ok((StatusCode::CREATED, Json(XmltvSourceResponse::from(inserted))))
+    let source = services::epg::add_xmltv_source(&mut conn, &req.name, &req.url, &req.format)
+        .map_err(|e| epg_err(e))?;
+    Ok((StatusCode::CREATED, Json(source)))
 }
 
 #[derive(Deserialize)]
@@ -297,34 +272,18 @@ async fn update_xmltv_source(
 ) -> ApiResult<XmltvSourceResponse> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
 
-    let _existing: XmltvSource = xmltv_sources::table
-        .filter(xmltv_sources::id.eq(id))
-        .first(&mut conn)
-        .optional()
-        .map_err(|e| internal(e.to_string()))?
-        .ok_or_else(|| not_found("XMLTV source not found"))?;
-
-    let now = chrono::Utc::now().to_rfc3339();
-    let update = XmltvSourceUpdate {
+    let updates = XmltvSourceUpdate {
         name: Some(req.name),
         url: Some(req.url),
         format: Some(req.format),
         refresh_interval_hours: Some(req.refresh_interval_hours),
         is_active: None,
-        updated_at: Some(now),
+        updated_at: None, // service sets this
     };
 
-    diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(id)))
-        .set(&update)
-        .execute(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    let source: XmltvSource = xmltv_sources::table
-        .filter(xmltv_sources::id.eq(id))
-        .first(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    Ok(Json(XmltvSourceResponse::from(source)))
+    let source = services::epg::update_xmltv_source(&mut conn, id, updates)
+        .map_err(|e| epg_err(e))?;
+    Ok(Json(source))
 }
 
 async fn delete_xmltv_source(
@@ -332,15 +291,8 @@ async fn delete_xmltv_source(
     Path(id): Path<i32>,
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let deleted = diesel::delete(xmltv_sources::table.filter(xmltv_sources::id.eq(id)))
-        .execute(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    if deleted == 0 {
-        return Err(not_found("XMLTV source not found"));
-    }
-
+    services::epg::delete_xmltv_source(&mut conn, id)
+        .map_err(|e| epg_err(e))?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -350,29 +302,9 @@ async fn toggle_xmltv_source(
     Json(req): Json<ToggleRequest>,
 ) -> ApiResult<XmltvSourceResponse> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let _existing: XmltvSource = xmltv_sources::table
-        .filter(xmltv_sources::id.eq(id))
-        .first(&mut conn)
-        .optional()
-        .map_err(|e| internal(e.to_string()))?
-        .ok_or_else(|| not_found("XMLTV source not found"))?;
-
-    let now = chrono::Utc::now().to_rfc3339();
-    diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(id)))
-        .set((
-            xmltv_sources::is_active.eq(if req.is_active { 1 } else { 0 }),
-            xmltv_sources::updated_at.eq(&now),
-        ))
-        .execute(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    let source: XmltvSource = xmltv_sources::table
-        .filter(xmltv_sources::id.eq(id))
-        .first(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    Ok(Json(XmltvSourceResponse::from(source)))
+    let source = services::epg::toggle_xmltv_source(&mut conn, id, req.is_active)
+        .map_err(|e| epg_err(e))?;
+    Ok(Json(source))
 }
 
 // ===========================================================================
@@ -393,6 +325,7 @@ async fn refresh_all_epg(
 ) -> ApiResult<EpgRefreshResult> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
 
+    // Load active sources to iterate and report per-source results
     let sources: Vec<XmltvSource> = xmltv_sources::table
         .filter(xmltv_sources::is_active.eq(1))
         .load(&mut conn)
@@ -403,18 +336,13 @@ async fn refresh_all_epg(
 
     for source in &sources {
         let source_id = source.id.unwrap_or(0);
-        match do_refresh_source(&mut conn, source).await {
+        match services::epg::refresh_epg_source(&mut conn, source_id).await {
             Ok(()) => {
                 success_count += 1;
                 state.invalidate_epg_cache();
             }
             Err(msg) => {
                 errors.push(format!("{}: {}", source.name, msg));
-                let _ = log_event_internal(
-                    &mut conn, "error", "epg",
-                    &format!("EPG refresh failed for {}: {}", source.name, msg),
-                    Some(&serde_json::json!({"sourceId": source_id}).to_string()),
-                );
             }
         }
     }
@@ -433,14 +361,7 @@ async fn refresh_epg_source(
 ) -> ApiResult<EpgRefreshResult> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
 
-    let source: XmltvSource = xmltv_sources::table
-        .filter(xmltv_sources::id.eq(source_id))
-        .first(&mut conn)
-        .optional()
-        .map_err(|e| internal(e.to_string()))?
-        .ok_or_else(|| not_found("XMLTV source not found"))?;
-
-    match do_refresh_source(&mut conn, &source).await {
+    match services::epg::refresh_epg_source(&mut conn, source_id).await {
         Ok(()) => {
             state.invalidate_epg_cache();
             Ok(Json(EpgRefreshResult {
@@ -457,101 +378,6 @@ async fn refresh_epg_source(
             errors: vec![msg],
         })),
     }
-}
-
-/// Shared EPG refresh logic (fetch, parse, store).
-async fn do_refresh_source(
-    conn: &mut diesel::SqliteConnection,
-    source: &XmltvSource,
-) -> Result<(), String> {
-    use crate::db::schema::{programs, xmltv_channels};
-    use crate::db::{NewProgram, NewXmltvChannel};
-    use crate::epg_ops::{preserve_channel_data, restore_channel_data};
-
-    let source_id = source.id.unwrap_or(0);
-    let data = fetch_xmltv(&source.url, &source.format)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let (parsed_channels, parsed_programs) =
-        parse_xmltv_data(&data).map_err(|e| e.to_string())?;
-
-    // Preserve manual mappings before clearing
-    let preserved = preserve_channel_data(conn, source_id)
-        .map_err(|e| e.to_string())?;
-
-    // Delete old data for this source
-    let old_channel_ids: Vec<Option<i32>> = xmltv_channels::table
-        .filter(xmltv_channels::source_id.eq(source_id))
-        .select(xmltv_channels::id)
-        .load(conn)
-        .map_err(|e| e.to_string())?;
-
-    for cid in &old_channel_ids {
-        if let Some(id) = cid {
-            diesel::delete(programs::table.filter(programs::xmltv_channel_id.eq(*id)))
-                .execute(conn)
-                .map_err(|e| e.to_string())?;
-        }
-    }
-    diesel::delete(xmltv_channels::table.filter(xmltv_channels::source_id.eq(source_id)))
-        .execute(conn)
-        .map_err(|e| e.to_string())?;
-
-    // Insert new channels and build ID map
-    let mut channel_id_map = std::collections::HashMap::new();
-    for ch in &parsed_channels {
-        let new_ch = NewXmltvChannel {
-            source_id,
-            channel_id: ch.channel_id.clone(),
-            display_name: ch.display_name.clone(),
-            icon: ch.icon.clone(),
-            is_synthetic: Some(0),
-        };
-        diesel::insert_into(xmltv_channels::table)
-            .values(&new_ch)
-            .execute(conn)
-            .map_err(|e| e.to_string())?;
-
-        let inserted_id: i32 = diesel::select(diesel::dsl::sql::<diesel::sql_types::Integer>(
-            "last_insert_rowid()",
-        ))
-        .get_result(conn)
-        .map_err(|e| e.to_string())?;
-
-        channel_id_map.insert(ch.channel_id.clone(), inserted_id);
-    }
-
-    // Insert programs
-    for prog in &parsed_programs {
-        if let Some(&db_channel_id) = channel_id_map.get(&prog.channel_id) {
-            let new_prog = NewProgram {
-                xmltv_channel_id: db_channel_id,
-                title: prog.title.clone(),
-                description: prog.description.clone(),
-                start_time: prog.start_time.clone(),
-                end_time: prog.end_time.clone(),
-                category: prog.category.clone(),
-                episode_info: prog.episode_info.clone(),
-            };
-            diesel::insert_into(programs::table)
-                .values(&new_prog)
-                .execute(conn)
-                .map_err(|e| e.to_string())?;
-        }
-    }
-
-    // Restore preserved data
-    let _ = restore_channel_data(conn, &preserved, &channel_id_map);
-
-    // Update last_refresh timestamp
-    let now = chrono::Utc::now().to_rfc3339();
-    diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(source_id)))
-        .set(xmltv_sources::last_refresh.eq(&now))
-        .execute(conn)
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
 }
 
 async fn get_epg_stats(
@@ -617,14 +443,8 @@ async fn get_setting(
     Path(key): Path<String>,
 ) -> ApiResult<serde_json::Value> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let value: Option<String> = settings::table
-        .filter(settings::key.eq(&key))
-        .select(settings::value)
-        .first(&mut conn)
-        .optional()
+    let value = services::settings::get_setting(&mut conn, &key)
         .map_err(|e| internal(e.to_string()))?;
-
     Ok(Json(serde_json::json!({ "key": key, "value": value })))
 }
 
@@ -639,14 +459,8 @@ async fn set_setting(
     Json(req): Json<SetSettingRequest>,
 ) -> ApiResult<serde_json::Value> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let setting = Setting::new(key.clone(), req.value.clone());
-
-    diesel::replace_into(settings::table)
-        .values(&setting)
-        .execute(&mut conn)
+    services::settings::set_setting(&mut conn, &key, &req.value)
         .map_err(|e| internal(e.to_string()))?;
-
     Ok(Json(serde_json::json!({ "key": key, "value": req.value })))
 }
 
@@ -706,68 +520,23 @@ async fn list_events(
     Query(q): Query<EventsQuery>,
 ) -> ApiResult<EventLogResponse> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let limit = q.limit.unwrap_or(50);
-    let offset = q.offset.unwrap_or(0);
-
-    let mut query = event_log::table.into_boxed();
-
-    if let Some(ref lvl) = q.level {
-        query = query.filter(event_log::level.eq(lvl));
-    }
-    if let Some(ref cat) = q.category {
-        query = query.filter(event_log::category.eq(cat));
-    }
-    if q.unread_only.unwrap_or(false) {
-        query = query.filter(event_log::is_read.eq(0));
-    }
-    if let Some(ref after) = q.created_after {
-        query = query.filter(event_log::timestamp.ge(after));
-    }
-    if let Some(ref before) = q.created_before {
-        query = query.filter(event_log::timestamp.lt(before));
-    }
-
-    // Count with same filters
-    let total_count: i64 = {
-        let mut cq = event_log::table.into_boxed();
-        if let Some(ref lvl) = q.level { cq = cq.filter(event_log::level.eq(lvl)); }
-        if let Some(ref cat) = q.category { cq = cq.filter(event_log::category.eq(cat)); }
-        if q.unread_only.unwrap_or(false) { cq = cq.filter(event_log::is_read.eq(0)); }
-        if let Some(ref after) = q.created_after { cq = cq.filter(event_log::timestamp.ge(after)); }
-        if let Some(ref before) = q.created_before { cq = cq.filter(event_log::timestamp.lt(before)); }
-        cq.count().get_result(&mut conn).map_err(|e| internal(e.to_string()))?
-    };
-
-    let unread_count: i64 = event_log::table
-        .filter(event_log::is_read.eq(0))
-        .count()
-        .get_result(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    let events: Vec<EventLog> = query
-        .order(event_log::timestamp.desc())
-        .limit(limit)
-        .offset(offset)
-        .load(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    Ok(Json(EventLogResponse {
-        events,
-        total_count,
-        unread_count,
-    }))
+    let response = services::logs::get_events(
+        &mut conn,
+        q.limit,
+        q.offset,
+        q.level.as_deref(),
+        q.category.as_deref(),
+        q.unread_only,
+        q.created_after.as_deref(),
+        q.created_before.as_deref(),
+    ).map_err(|e| internal(e))?;
+    Ok(Json(response))
 }
 
 async fn get_unread_count(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let count: i64 = event_log::table
-        .filter(event_log::is_read.eq(0))
-        .count()
-        .get_result(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
+    let count = services::logs::get_unread_event_count(&mut conn)
+        .map_err(|e| internal(e))?;
     Ok(Json(serde_json::json!({ "count": count })))
 }
 
@@ -776,12 +545,8 @@ async fn mark_event_read(
     Path(id): Path<i32>,
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    diesel::update(event_log::table.filter(event_log::id.eq(Some(id))))
-        .set(event_log::is_read.eq(1))
-        .execute(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
+    services::logs::mark_event_read(&mut conn, id)
+        .map_err(|e| internal(e))?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -789,12 +554,8 @@ async fn mark_all_events_read(
     State(state): State<AppState>,
 ) -> ApiResult<serde_json::Value> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let count = diesel::update(event_log::table.filter(event_log::is_read.eq(0)))
-        .set(event_log::is_read.eq(1))
-        .execute(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
+    let count = services::logs::mark_all_events_read(&mut conn)
+        .map_err(|e| internal(e))?;
     Ok(Json(serde_json::json!({ "markedRead": count })))
 }
 
@@ -803,9 +564,9 @@ async fn mark_all_events_read(
 // ===========================================================================
 
 async fn get_matcher_stats(State(state): State<AppState>) -> ApiResult<MatchStats> {
-    let pool = state.pool().clone();
-    let stats = calculate_match_stats(&pool)
-        .map_err(|e| internal(e.to_string()))?;
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    let stats = services::matcher::get_match_stats(&mut conn)
+        .map_err(|e| internal(e))?;
     Ok(Json(stats))
 }
 
