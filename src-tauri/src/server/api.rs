@@ -144,61 +144,10 @@ async fn create_account(
     State(state): State<AppState>,
     Json(req): Json<AddAccountRequest>,
 ) -> Result<(StatusCode, Json<AccountResponse>), (StatusCode, Json<ApiError>)> {
-    // Validate
-    if req.name.trim().is_empty() {
-        return Err(bad_request("Account name is required"));
-    }
-    if !req.server_url.starts_with("http://") && !req.server_url.starts_with("https://") {
-        return Err(bad_request("Server URL must start with http:// or https://"));
-    }
-    if req.username.trim().is_empty() {
-        return Err(bad_request("Username is required"));
-    }
-    if req.password.trim().is_empty() {
-        return Err(bad_request("Password is required"));
-    }
-
-    let normalized_url = req.server_url.trim().trim_end_matches('/').to_string();
-    let app_data_dir = state.app_data_dir().clone();
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    // Insert account
-    let new_account = crate::db::NewAccount::new(
-        req.name.clone(),
-        normalized_url,
-        req.username.clone(),
-        vec![], // placeholder password
-    );
-
-    diesel::insert_into(accounts::table)
-        .values(&new_account)
-        .execute(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    let inserted: Account = accounts::table
-        .order(accounts::id.desc())
-        .first(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    let account_id = inserted.id.unwrap_or(0);
-
-    // Store password securely
-    let cred_mgr = CredentialManager::new(app_data_dir);
-    let (_, encrypted) = cred_mgr
-        .store_password(&account_id.to_string(), &req.password)
-        .map_err(|_| internal("Failed to store credentials securely"))?;
-
-    diesel::update(accounts::table.filter(accounts::id.eq(account_id)))
-        .set(accounts::password_encrypted.eq(&encrypted))
-        .execute(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    let account: Account = accounts::table
-        .filter(accounts::id.eq(account_id))
-        .first(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    Ok((StatusCode::CREATED, Json(AccountResponse::from(account))))
+    let account = services::accounts::add_account(&mut conn, state.app_data_dir(), &req)
+        .map_err(account_err)?;
+    Ok((StatusCode::CREATED, Json(account)))
 }
 
 async fn update_account(
@@ -206,74 +155,19 @@ async fn update_account(
     Path(id): Path<i32>,
     Json(req): Json<UpdateAccountRequest>,
 ) -> ApiResult<AccountResponse> {
-    if req.name.trim().is_empty() {
-        return Err(bad_request("Account name is required"));
-    }
-
-    let normalized_url = req.server_url.trim().trim_end_matches('/').to_string();
-    let app_data_dir = state.app_data_dir().clone();
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let existing: Account = accounts::table
-        .filter(accounts::id.eq(id))
-        .first(&mut conn)
-        .optional()
-        .map_err(|e| internal(e.to_string()))?
-        .ok_or_else(|| not_found("Account not found"))?;
-
-    let now = chrono::Utc::now().to_rfc3339();
-
-    diesel::update(accounts::table.filter(accounts::id.eq(id)))
-        .set((
-            accounts::name.eq(&req.name),
-            accounts::server_url.eq(&normalized_url),
-            accounts::username.eq(&req.username),
-            accounts::updated_at.eq(&now),
-        ))
-        .execute(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    if let Some(password) = &req.password {
-        let cred_mgr = CredentialManager::new(app_data_dir);
-        let _ = cred_mgr.delete_password(&id.to_string(), &existing.password_encrypted);
-        let (_, encrypted) = cred_mgr
-            .store_password(&id.to_string(), password)
-            .map_err(|_| internal("Failed to store credentials"))?;
-        diesel::update(accounts::table.filter(accounts::id.eq(id)))
-            .set(accounts::password_encrypted.eq(&encrypted))
-            .execute(&mut conn)
-            .map_err(|e| internal(e.to_string()))?;
-    }
-
-    let account: Account = accounts::table
-        .filter(accounts::id.eq(id))
-        .first(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    Ok(Json(AccountResponse::from(account)))
+    let account = services::accounts::update_account(&mut conn, state.app_data_dir(), id, &req)
+        .map_err(account_err)?;
+    Ok(Json(account))
 }
 
 async fn delete_account(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
-    let app_data_dir = state.app_data_dir().clone();
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let account: Account = accounts::table
-        .filter(accounts::id.eq(id))
-        .first(&mut conn)
-        .optional()
-        .map_err(|e| internal(e.to_string()))?
-        .ok_or_else(|| not_found("Account not found"))?;
-
-    let cred_mgr = CredentialManager::new(app_data_dir);
-    let _ = cred_mgr.delete_password(&id.to_string(), &account.password_encrypted);
-
-    diesel::delete(accounts::table.filter(accounts::id.eq(id)))
-        .execute(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
+    services::accounts::delete_account(&mut conn, state.app_data_dir(), id)
+        .map_err(account_err)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -289,107 +183,20 @@ async fn toggle_account(
     Json(req): Json<ToggleRequest>,
 ) -> ApiResult<AccountResponse> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let _existing: Account = accounts::table
-        .filter(accounts::id.eq(id))
-        .first(&mut conn)
-        .optional()
-        .map_err(|e| internal(e.to_string()))?
-        .ok_or_else(|| not_found("Account not found"))?;
-
-    let now = chrono::Utc::now().to_rfc3339();
-    diesel::update(accounts::table.filter(accounts::id.eq(id)))
-        .set((
-            accounts::is_active.eq(if req.is_active { 1 } else { 0 }),
-            accounts::updated_at.eq(&now),
-        ))
-        .execute(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    let account: Account = accounts::table
-        .filter(accounts::id.eq(id))
-        .first(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    Ok(Json(AccountResponse::from(account)))
+    let account = services::accounts::toggle_account(&mut conn, id, req.is_active)
+        .map_err(account_err)?;
+    Ok(Json(account))
 }
 
 async fn test_account_connection(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> ApiResult<crate::commands::accounts::TestConnectionResponse> {
-    use crate::commands::accounts::TestConnectionResponse;
-    use crate::db::AccountStatusUpdate;
-    use crate::xtream::XtreamClient;
-
-    let app_data_dir = state.app_data_dir().clone();
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let account: Account = accounts::table
-        .filter(accounts::id.eq(id))
-        .first(&mut conn)
-        .optional()
-        .map_err(|e| internal(e.to_string()))?
-        .ok_or_else(|| not_found("Account not found"))?;
-
-    let cred_mgr = CredentialManager::new(app_data_dir);
-    let password = cred_mgr
-        .retrieve_password(&id.to_string(), &account.password_encrypted)
-        .map_err(|_| internal("Failed to retrieve credentials"))?;
-
-    let client = XtreamClient::new(&account.server_url, &account.username, &password)
-        .map_err(|e| internal(e.user_message()))?;
-
-    match client.authenticate().await {
-        Ok(info) => {
-            let expiry_date_str = info.expiry_date.map(|d| d.to_rfc3339());
-            let last_check = chrono::Utc::now().to_rfc3339();
-
-            let status_update = AccountStatusUpdate {
-                expiry_date: expiry_date_str.clone(),
-                max_connections_actual: Some(info.max_connections),
-                active_connections: Some(info.active_connections),
-                last_check: Some(last_check),
-                connection_status: Some("connected".to_string()),
-            };
-            let _ = diesel::update(accounts::table.filter(accounts::id.eq(id)))
-                .set(&status_update)
-                .execute(&mut conn);
-
-            Ok(Json(TestConnectionResponse {
-                success: true,
-                status: Some(info.status),
-                expiry_date: expiry_date_str,
-                max_connections: Some(info.max_connections),
-                active_connections: Some(info.active_connections),
-                error_message: None,
-                suggestions: None,
-            }))
-        }
-        Err(e) => {
-            let last_check = chrono::Utc::now().to_rfc3339();
-            let status_update = AccountStatusUpdate {
-                expiry_date: None,
-                max_connections_actual: None,
-                active_connections: None,
-                last_check: Some(last_check),
-                connection_status: Some("failed".to_string()),
-            };
-            let _ = diesel::update(accounts::table.filter(accounts::id.eq(id)))
-                .set(&status_update)
-                .execute(&mut conn);
-
-            Ok(Json(TestConnectionResponse {
-                success: false,
-                status: None,
-                expiry_date: None,
-                max_connections: None,
-                active_connections: None,
-                error_message: Some(e.user_message()),
-                suggestions: Some(e.suggestions()),
-            }))
-        }
-    }
+    let response = services::accounts::test_connection(&mut conn, state.app_data_dir(), id)
+        .await
+        .map_err(account_err)?;
+    Ok(Json(response))
 }
 
 // ===========================================================================
@@ -849,14 +656,9 @@ async fn list_channels(
     Path(account_id): Path<i32>,
 ) -> ApiResult<Vec<ChannelResponse>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let channels: Vec<XtreamChannel> = xtream_channels::table
-        .filter(xtream_channels::account_id.eq(account_id))
-        .order(xtream_channels::name.asc())
-        .load(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    Ok(Json(channels.into_iter().map(ChannelResponse::from).collect()))
+    let channels = services::channels::get_channels(&mut conn, account_id)
+        .map_err(|e| internal(e))?;
+    Ok(Json(channels))
 }
 
 async fn get_channel_count(
@@ -864,13 +666,8 @@ async fn get_channel_count(
     Path(account_id): Path<i32>,
 ) -> ApiResult<serde_json::Value> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let count: i64 = xtream_channels::table
-        .filter(xtream_channels::account_id.eq(account_id))
-        .count()
-        .get_result(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
+    let count = services::channels::get_channel_count(&mut conn, account_id)
+        .map_err(|e| internal(e))?;
     Ok(Json(serde_json::json!({ "count": count })))
 }
 
@@ -878,150 +675,11 @@ async fn scan_channels(
     State(state): State<AppState>,
     Path(account_id): Path<i32>,
 ) -> ApiResult<crate::commands::channels::ScanChannelsResponse> {
-    use crate::commands::channels::ScanChannelsResponse;
-    use crate::db::{NewXtreamChannel, XtreamChannelUpdate};
-    use crate::xtream::{quality, XtreamClient};
-    use std::collections::{HashMap, HashSet};
-    use std::time::Instant;
-
-    let start_time = Instant::now();
-    let app_data_dir = state.app_data_dir().clone();
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-
-    let account: Account = accounts::table
-        .filter(accounts::id.eq(account_id))
-        .first(&mut conn)
-        .optional()
-        .map_err(|e| internal(e.to_string()))?
-        .ok_or_else(|| not_found("Account not found"))?;
-
-    let cred_mgr = CredentialManager::new(app_data_dir);
-    let password = cred_mgr
-        .retrieve_password(&account_id.to_string(), &account.password_encrypted)
-        .map_err(|_| internal("Failed to retrieve credentials"))?;
-
-    let client = XtreamClient::new(&account.server_url, &account.username, &password)
-        .map_err(|e| internal(e.user_message()))?;
-
-    // Refresh account info
-    if let Ok(info) = client.authenticate().await {
-        use crate::db::AccountStatusUpdate;
-        let status = AccountStatusUpdate {
-            expiry_date: info.expiry_date.map(|dt| dt.to_rfc3339()),
-            max_connections_actual: Some(info.max_connections),
-            active_connections: Some(info.active_connections),
-            last_check: Some(chrono::Utc::now().to_rfc3339()),
-            connection_status: Some("Active".to_string()),
-        };
-        let _ = diesel::update(accounts::table.filter(accounts::id.eq(account_id)))
-            .set(&status)
-            .execute(&mut conn);
-    }
-
-    let categories = client.get_live_categories().await
-        .map_err(|e| internal(e.user_message()))?;
-    let category_map: HashMap<String, String> = categories
-        .into_iter()
-        .map(|c| (c.category_id, c.category_name))
-        .collect();
-
-    let streams = client.get_live_streams().await
-        .map_err(|e| internal(e.user_message()))?;
-
-    let total_channels = streams.len() as i32;
-
-    let existing: Vec<XtreamChannel> = xtream_channels::table
-        .filter(xtream_channels::account_id.eq(account_id))
-        .load(&mut conn)
-        .map_err(|e| internal(e.to_string()))?;
-
-    let existing_map: HashMap<i32, XtreamChannel> = existing
-        .into_iter()
-        .filter_map(|c| c.id.map(|_| (c.stream_id, c)))
-        .collect();
-
-    let current_ids: HashSet<i32> = streams.iter().map(|s| s.stream_id).collect();
-    let removed_ids: Vec<i32> = existing_map.keys()
-        .filter(|id| !current_ids.contains(id))
-        .copied()
-        .collect();
-    let removed_channels = removed_ids.len() as i32;
-
-    let mut new_channels = 0i32;
-    let mut updated_channels = 0i32;
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-
-    conn.transaction::<_, diesel::result::Error, _>(|conn| {
-        for stream in &streams {
-            let qualities = quality::detect_qualities(&stream.name);
-            let qualities_json = quality::qualities_to_json(&qualities);
-            let category_name = stream.category_id.as_ref()
-                .and_then(|cid| category_map.get(cid).cloned());
-            let category_id = stream.category_id.as_ref()
-                .and_then(|s| s.parse::<i32>().ok());
-
-            if existing_map.contains_key(&stream.stream_id) {
-                let update = XtreamChannelUpdate {
-                    name: stream.name.clone(),
-                    stream_icon: stream.stream_icon.clone(),
-                    category_id,
-                    category_name,
-                    qualities: qualities_json,
-                    epg_channel_id: stream.epg_channel_id.clone(),
-                    tv_archive: stream.tv_archive.unwrap_or(0),
-                    tv_archive_duration: stream.tv_archive_duration.unwrap_or(0),
-                    updated_at: now.clone(),
-                };
-                diesel::update(
-                    xtream_channels::table
-                        .filter(xtream_channels::account_id.eq(account_id))
-                        .filter(xtream_channels::stream_id.eq(stream.stream_id)),
-                )
-                .set(&update)
-                .execute(conn)?;
-                updated_channels += 1;
-            } else {
-                let new_ch = NewXtreamChannel {
-                    account_id,
-                    stream_id: stream.stream_id,
-                    name: stream.name.clone(),
-                    stream_icon: stream.stream_icon.clone(),
-                    category_id,
-                    category_name,
-                    qualities: qualities_json,
-                    epg_channel_id: stream.epg_channel_id.clone(),
-                    tv_archive: stream.tv_archive.unwrap_or(0),
-                    tv_archive_duration: stream.tv_archive_duration.unwrap_or(0),
-                };
-                diesel::insert_into(xtream_channels::table)
-                    .values(&new_ch)
-                    .execute(conn)?;
-                new_channels += 1;
-            }
-        }
-
-        if !removed_ids.is_empty() {
-            diesel::delete(
-                xtream_channels::table
-                    .filter(xtream_channels::account_id.eq(account_id))
-                    .filter(xtream_channels::stream_id.eq_any(&removed_ids)),
-            )
-            .execute(conn)?;
-        }
-
-        Ok(())
-    })
-    .map_err(|e| internal(e.to_string()))?;
-
-    Ok(Json(ScanChannelsResponse {
-        success: true,
-        total_channels,
-        new_channels,
-        updated_channels,
-        removed_channels,
-        scan_duration_ms: start_time.elapsed().as_millis() as u64,
-        error_message: None,
-    }))
+    let response = services::channels::scan_channels(&mut conn, state.app_data_dir(), account_id)
+        .await
+        .map_err(|e| internal(e))?;
+    Ok(Json(response))
 }
 
 // ===========================================================================
