@@ -21,6 +21,13 @@ use crate::db::{
     XmltvChannelSettings, XmltvSource,
 };
 
+// Re-export types from crate::types so existing consumers still work
+pub use crate::types::{
+    ConfigExport, ExportData, ExportedAccount, ExportedChannelMapping,
+    ExportedSettings, ExportedXmltvChannelSettings, ExportedXmltvSource,
+    ImportPreview, ImportResult,
+};
+
 /// Current configuration export format version
 const CONFIG_VERSION: &str = "1.0";
 
@@ -59,131 +66,6 @@ impl From<ConfigError> for String {
     fn from(err: ConfigError) -> Self {
         err.to_string()
     }
-}
-
-// ============================================================================
-// Export Data Structures (Task 1.1)
-// ============================================================================
-
-/// Exported settings (key-value pairs)
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ExportedSettings {
-    pub server_port: Option<String>,
-    pub autostart_enabled: Option<String>,
-    pub epg_schedule_hour: Option<String>,
-    pub epg_schedule_minute: Option<String>,
-    pub epg_schedule_enabled: Option<String>,
-    pub match_threshold: Option<String>,
-    pub failover_strictness: Option<String>,
-}
-
-/// Exported account (excludes password_encrypted for security)
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ExportedAccount {
-    pub id: i32,
-    pub name: String,
-    pub server_url: String,
-    pub username: String,
-    pub max_connections: i32,
-    pub is_active: bool,
-}
-
-/// Exported XMLTV source
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ExportedXmltvSource {
-    pub id: i32,
-    pub name: String,
-    pub url: String,
-    pub format: String,
-    pub refresh_interval_hours: i32,
-    pub is_active: bool,
-}
-
-/// Exported channel mapping (CR-5: xtream_channel_id is now Option<i32>)
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ExportedChannelMapping {
-    pub xmltv_channel_id: i32,
-    pub xtream_channel_id: Option<i32>,
-    pub match_confidence: Option<f32>,
-    pub is_manual: bool,
-    pub is_primary: bool,
-    pub stream_priority: i32,
-    /// Source type: "xtream", "m3u", or "acestream"
-    #[serde(default = "default_source_type")]
-    pub source_type: String,
-    /// M3U channel ID (if source_type = "m3u")
-    pub m3u_channel_id: Option<i32>,
-    /// Acestream source ID (if source_type = "acestream")
-    pub acestream_source_id: Option<i32>,
-}
-
-fn default_source_type() -> String {
-    "xtream".to_string()
-}
-
-/// Exported XMLTV channel settings
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ExportedXmltvChannelSettings {
-    pub xmltv_channel_id: i32,
-    pub is_enabled: bool,
-    pub plex_display_order: Option<i32>,
-}
-
-/// Data section of the export file
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ExportData {
-    pub settings: ExportedSettings,
-    pub accounts: Vec<ExportedAccount>,
-    pub xmltv_sources: Vec<ExportedXmltvSource>,
-    pub channel_mappings: Vec<ExportedChannelMapping>,
-    pub xmltv_channel_settings: Vec<ExportedXmltvChannelSettings>,
-}
-
-/// Complete configuration export structure
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ConfigExport {
-    pub version: String,
-    pub export_date: String,
-    pub app_version: String,
-    pub data: ExportData,
-}
-
-// ============================================================================
-// Import Preview Structures (Task 2.1)
-// ============================================================================
-
-/// Preview of what will be imported (for user confirmation dialog)
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ImportPreview {
-    pub valid: bool,
-    pub version: String,
-    pub export_date: String,
-    pub account_count: usize,
-    pub xmltv_source_count: usize,
-    pub channel_mapping_count: usize,
-    pub xmltv_channel_settings_count: usize,
-    pub settings_summary: Vec<String>,
-    pub error_message: Option<String>,
-}
-
-/// Result of import operation
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ImportResult {
-    pub success: bool,
-    pub accounts_imported: usize,
-    pub xmltv_sources_imported: usize,
-    pub channel_mappings_imported: usize,
-    pub settings_imported: usize,
-    pub message: String,
 }
 
 // ============================================================================
@@ -365,73 +247,8 @@ pub fn export_configuration(db: State<DbConnection>) -> Result<String, String> {
 /// Parses the JSON content and returns a preview of what will be imported.
 #[tauri::command]
 pub fn validate_import_file(content: String) -> Result<ImportPreview, String> {
-    // Parse JSON (Task 2.4)
-    let config: ConfigExport = match serde_json::from_str(&content) {
-        Ok(c) => c,
-        Err(e) => {
-            return Ok(ImportPreview {
-                valid: false,
-                version: String::new(),
-                export_date: String::new(),
-                account_count: 0,
-                xmltv_source_count: 0,
-                channel_mapping_count: 0,
-                xmltv_channel_settings_count: 0,
-                settings_summary: vec![],
-                error_message: Some(format!("Invalid JSON format: {}", e)),
-            });
-        }
-    };
-
-    // Validate version compatibility (Task 2.4)
-    if !is_version_compatible(&config.version) {
-        return Ok(ImportPreview {
-            valid: false,
-            version: config.version.clone(),
-            export_date: config.export_date,
-            account_count: 0,
-            xmltv_source_count: 0,
-            channel_mapping_count: 0,
-            xmltv_channel_settings_count: 0,
-            settings_summary: vec![],
-            error_message: Some(format!(
-                "Unsupported configuration version: {}. Minimum supported: {}",
-                config.version, MIN_SUPPORTED_VERSION
-            )),
-        });
-    }
-
-    // Build settings summary
-    let mut settings_summary = vec![];
-    if config.data.settings.server_port.is_some() {
-        settings_summary.push(format!(
-            "Server port: {}",
-            config.data.settings.server_port.as_ref().unwrap()
-        ));
-    }
-    if let Some(autostart) = &config.data.settings.autostart_enabled {
-        settings_summary.push(format!(
-            "Autostart: {}",
-            if autostart == "true" { "enabled" } else { "disabled" }
-        ));
-    }
-    if config.data.settings.epg_schedule_enabled.is_some() {
-        let hour = config.data.settings.epg_schedule_hour.as_deref().unwrap_or("4");
-        let minute = config.data.settings.epg_schedule_minute.as_deref().unwrap_or("0");
-        settings_summary.push(format!("EPG refresh: {}:{:0>2}", hour, minute));
-    }
-
-    Ok(ImportPreview {
-        valid: true,
-        version: config.version,
-        export_date: config.export_date,
-        account_count: config.data.accounts.len(),
-        xmltv_source_count: config.data.xmltv_sources.len(),
-        channel_mapping_count: config.data.channel_mappings.len(),
-        xmltv_channel_settings_count: config.data.xmltv_channel_settings.len(),
-        settings_summary,
-        error_message: None,
-    })
+    // Delegate to the shared implementation in crate::types
+    crate::types::validate_import_file(content)
 }
 
 /// Import configuration from JSON content (Task 2.3)

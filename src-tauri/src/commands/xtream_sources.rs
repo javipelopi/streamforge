@@ -14,53 +14,8 @@ use crate::db::schema::{accounts, channel_mappings, xmltv_channels, xtream_chann
 use crate::db::DbConnection;
 use crate::server::stream::build_stream_url;
 
-// ============================================================================
-// Response Types
-// ============================================================================
-
-/// Link status for Xtream streams
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum LinkStatus {
-    /// Stream is linked to at least one XMLTV channel via channel_mappings
-    Linked,
-    /// Stream is not linked to any XMLTV channel (orphan)
-    Orphan,
-    /// Stream is linked to a synthetic XMLTV channel (promoted from orphan)
-    Promoted,
-}
-
-/// Xtream stream with mapping status for display in Sources view
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct XtreamAccountStream {
-    pub id: i32,
-    pub stream_id: i32,
-    pub name: String,
-    pub stream_icon: Option<String>,
-    pub qualities: Vec<String>,
-    pub category_name: Option<String>,
-    /// "linked" | "orphan" | "promoted"
-    pub link_status: LinkStatus,
-    /// XMLTV channel IDs this stream is linked to
-    pub linked_xmltv_ids: Vec<i32>,
-    /// If promoted, the synthetic channel ID
-    pub synthetic_channel_id: Option<i32>,
-}
-
-/// Statistics for an account's streams
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AccountStreamStats {
-    /// Total number of streams for this account
-    pub stream_count: i32,
-    /// Number of streams linked to XMLTV channels
-    pub linked_count: i32,
-    /// Number of orphan streams (not linked)
-    pub orphan_count: i32,
-    /// Number of promoted streams (linked to synthetic channels)
-    pub promoted_count: i32,
-}
+// Re-export types from crate::types so existing consumers still work
+pub use crate::types::{AccountStreamStats, LinkStatus, XtreamAccountStream};
 
 // ============================================================================
 // Helper Functions
