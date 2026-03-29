@@ -10,11 +10,25 @@ function isTauri(): boolean {
 }
 
 /**
- * Unified invoke that routes to Tauri IPC or the REST API adapter
- * depending on the runtime environment.
+ * Commands that REQUIRE Tauri IPC (OS-native, no REST equivalent).
+ * Everything else routes through the REST API for a single unified API surface.
+ */
+const DESKTOP_ONLY_COMMANDS = new Set([
+  'get_autostart_enabled',
+  'set_autostart_enabled',
+  'check_for_update',
+  'download_and_install_update',
+  'get_update_settings',
+  'set_auto_check_updates',
+  'get_current_version',
+]);
+
+/**
+ * Unified invoke: REST API is the default for all business logic.
+ * Tauri IPC is only used for desktop-native commands that have no REST equivalent.
  */
 function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (isTauri()) {
+  if (DESKTOP_ONLY_COMMANDS.has(cmd) && isTauri()) {
     return tauriInvoke<T>(cmd, args);
   }
   return invokeApi<T>(cmd, args);
