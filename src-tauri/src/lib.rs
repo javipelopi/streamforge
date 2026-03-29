@@ -1,4 +1,5 @@
 pub mod acestream;
+#[cfg(feature = "gui")]
 pub mod commands;
 pub mod credentials;
 pub mod db;
@@ -11,18 +12,21 @@ pub mod server;
 pub mod xmltv;
 pub mod xtream;
 
+#[cfg(feature = "gui")]
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager, RunEvent, WindowEvent,
 };
 
-#[cfg(desktop)]
+#[cfg(all(feature = "gui", desktop))]
 use tauri_plugin_autostart::MacosLauncher;
 
 // Constants
+#[cfg(feature = "gui")]
 const MAIN_WINDOW_NAME: &str = "main";
 
+#[cfg(feature = "gui")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default().plugin(tauri_plugin_shell::init());
