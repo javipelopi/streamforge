@@ -2,6 +2,7 @@ pub mod acestream;
 pub mod commands;
 pub mod credentials;
 pub mod db;
+pub mod epg_ops;
 pub mod logging;
 pub mod m3u;
 pub mod matcher;

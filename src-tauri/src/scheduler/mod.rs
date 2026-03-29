@@ -251,7 +251,7 @@ pub fn build_cron_expression(hour: u8, minute: u8) -> String {
 ///
 /// This function is called by the cron job and performs the actual EPG refresh.
 async fn run_scheduled_refresh(db_pool: Arc<RwLock<Option<DbPool>>>) {
-    use crate::commands::epg::{preserve_channel_data, restore_channel_data};
+    use crate::epg_ops::{preserve_channel_data, restore_channel_data};
     use crate::db::schema::{xmltv_channels, xmltv_sources};
     use crate::db::{NewProgram, NewXmltvChannel, XmltvSource};
     use crate::xmltv::{fetch_xmltv, parse_xmltv_data};
