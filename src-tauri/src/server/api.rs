@@ -778,7 +778,7 @@ async fn get_xmltv_channels_for_source(
 async fn get_xtream_streams_for_account(
     State(state): State<AppState>,
     Path(account_id): Path<i32>,
-) -> ApiResult<Vec<crate::commands::xtream_sources::XtreamAccountStream>> {
+) -> ApiResult<Vec<crate::types::XtreamAccountStream>> {
     use crate::db::models::{ChannelMapping, XmltvChannel, XtreamChannel};
     use crate::db::schema::{channel_mappings, xmltv_channels, xtream_channels};
 
@@ -832,7 +832,7 @@ async fn get_xtream_streams_for_account(
         }
     }
 
-    use crate::commands::xtream_sources::{LinkStatus, XtreamAccountStream};
+    use crate::types::{LinkStatus, XtreamAccountStream};
 
     fn parse_qualities_local(qualities: &Option<String>) -> Vec<String> {
         match qualities {
@@ -889,10 +889,10 @@ async fn get_xtream_streams_for_account(
 async fn get_account_stream_stats(
     State(state): State<AppState>,
     Path(account_id): Path<i32>,
-) -> ApiResult<crate::commands::xtream_sources::AccountStreamStats> {
+) -> ApiResult<crate::types::AccountStreamStats> {
     use crate::db::models::ChannelMapping;
     use crate::db::schema::{channel_mappings, xmltv_channels, xtream_channels};
-    use crate::commands::xtream_sources::AccountStreamStats;
+    use crate::types::AccountStreamStats;
 
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
 
@@ -1685,7 +1685,7 @@ async fn export_configuration(
 ) -> ApiResult<serde_json::Value> {
     use crate::db::schema::{channel_mappings, xmltv_channel_settings};
     use crate::db::{ChannelMapping, XmltvChannelSettings};
-    use crate::commands::config::{
+    use crate::types::{
         ConfigExport, ExportData, ExportedAccount, ExportedChannelMapping,
         ExportedSettings, ExportedXmltvChannelSettings, ExportedXmltvSource,
     };
@@ -1815,8 +1815,8 @@ pub struct ImportRequest {
 async fn import_configuration(
     State(state): State<AppState>,
     Json(req): Json<ImportRequest>,
-) -> ApiResult<crate::commands::config::ImportResult> {
-    use crate::commands::config::{ConfigExport, ImportResult};
+) -> ApiResult<crate::types::ImportResult> {
+    use crate::types::{ConfigExport, ImportResult};
     use crate::db::schema::{channel_mappings, xmltv_channel_settings};
     use crate::db::NewAccount;
 
@@ -1944,9 +1944,9 @@ async fn import_configuration(
 
 async fn validate_import_file(
     Json(req): Json<ImportRequest>,
-) -> ApiResult<crate::commands::config::ImportPreview> {
-    // Delegate to the existing pure function
-    let preview = crate::commands::config::validate_import_file(req.content)
+) -> ApiResult<crate::types::ImportPreview> {
+    // Delegate to the shared pure function
+    let preview = crate::types::validate_import_file(req.content)
         .map_err(|e| internal(e))?;
     Ok(Json(preview))
 }

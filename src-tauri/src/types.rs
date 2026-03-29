@@ -789,3 +789,271 @@ pub struct XmltvSourceChannel {
     /// Number of Xtream streams mapped to this channel
     pub match_count: i32,
 }
+
+// ============================================================================
+// Xtream stream types (from commands/xtream_sources.rs)
+// ============================================================================
+
+/// Link status for Xtream streams
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LinkStatus {
+    /// Stream is linked to at least one XMLTV channel via channel_mappings
+    Linked,
+    /// Stream is not linked to any XMLTV channel (orphan)
+    Orphan,
+    /// Stream is linked to a synthetic XMLTV channel (promoted from orphan)
+    Promoted,
+}
+
+/// Xtream stream with mapping status for display in Sources view
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct XtreamAccountStream {
+    pub id: i32,
+    pub stream_id: i32,
+    pub name: String,
+    pub stream_icon: Option<String>,
+    pub qualities: Vec<String>,
+    pub category_name: Option<String>,
+    /// "linked" | "orphan" | "promoted"
+    pub link_status: LinkStatus,
+    /// XMLTV channel IDs this stream is linked to
+    pub linked_xmltv_ids: Vec<i32>,
+    /// If promoted, the synthetic channel ID
+    pub synthetic_channel_id: Option<i32>,
+}
+
+/// Statistics for an account's streams
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountStreamStats {
+    /// Total number of streams for this account
+    pub stream_count: i32,
+    /// Number of streams linked to XMLTV channels
+    pub linked_count: i32,
+    /// Number of orphan streams (not linked)
+    pub orphan_count: i32,
+    /// Number of promoted streams (linked to synthetic channels)
+    pub promoted_count: i32,
+}
+
+// ============================================================================
+// Config export/import types (from commands/config.rs)
+// ============================================================================
+
+/// Exported settings (key-value pairs)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedSettings {
+    pub server_port: Option<String>,
+    pub autostart_enabled: Option<String>,
+    pub epg_schedule_hour: Option<String>,
+    pub epg_schedule_minute: Option<String>,
+    pub epg_schedule_enabled: Option<String>,
+    pub match_threshold: Option<String>,
+    pub failover_strictness: Option<String>,
+}
+
+/// Exported account (excludes password_encrypted for security)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedAccount {
+    pub id: i32,
+    pub name: String,
+    pub server_url: String,
+    pub username: String,
+    pub max_connections: i32,
+    pub is_active: bool,
+}
+
+/// Exported XMLTV source
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedXmltvSource {
+    pub id: i32,
+    pub name: String,
+    pub url: String,
+    pub format: String,
+    pub refresh_interval_hours: i32,
+    pub is_active: bool,
+}
+
+/// Exported channel mapping (CR-5: xtream_channel_id is now Option<i32>)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedChannelMapping {
+    pub xmltv_channel_id: i32,
+    pub xtream_channel_id: Option<i32>,
+    pub match_confidence: Option<f32>,
+    pub is_manual: bool,
+    pub is_primary: bool,
+    pub stream_priority: i32,
+    /// Source type: "xtream", "m3u", or "acestream"
+    #[serde(default = "default_source_type")]
+    pub source_type: String,
+    /// M3U channel ID (if source_type = "m3u")
+    pub m3u_channel_id: Option<i32>,
+    /// Acestream source ID (if source_type = "acestream")
+    pub acestream_source_id: Option<i32>,
+}
+
+fn default_source_type() -> String {
+    "xtream".to_string()
+}
+
+/// Exported XMLTV channel settings
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedXmltvChannelSettings {
+    pub xmltv_channel_id: i32,
+    pub is_enabled: bool,
+    pub plex_display_order: Option<i32>,
+}
+
+/// Data section of the export file
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportData {
+    pub settings: ExportedSettings,
+    pub accounts: Vec<ExportedAccount>,
+    pub xmltv_sources: Vec<ExportedXmltvSource>,
+    pub channel_mappings: Vec<ExportedChannelMapping>,
+    pub xmltv_channel_settings: Vec<ExportedXmltvChannelSettings>,
+}
+
+/// Complete configuration export structure
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigExport {
+    pub version: String,
+    pub export_date: String,
+    pub app_version: String,
+    pub data: ExportData,
+}
+
+/// Preview of what will be imported (for user confirmation dialog)
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportPreview {
+    pub valid: bool,
+    pub version: String,
+    pub export_date: String,
+    pub account_count: usize,
+    pub xmltv_source_count: usize,
+    pub channel_mapping_count: usize,
+    pub xmltv_channel_settings_count: usize,
+    pub settings_summary: Vec<String>,
+    pub error_message: Option<String>,
+}
+
+/// Result of import operation
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportResult {
+    pub success: bool,
+    pub accounts_imported: usize,
+    pub xmltv_sources_imported: usize,
+    pub channel_mappings_imported: usize,
+    pub settings_imported: usize,
+    pub message: String,
+}
+
+/// Minimum supported import version
+const MIN_SUPPORTED_VERSION: &str = "1.0";
+
+/// Validate an import file and return a preview of its contents.
+///
+/// This is a pure function (no DB access) so it lives in types.
+pub fn validate_import_file(content: String) -> Result<ImportPreview, String> {
+    // Parse JSON
+    let config: ConfigExport = match serde_json::from_str(&content) {
+        Ok(c) => c,
+        Err(e) => {
+            return Ok(ImportPreview {
+                valid: false,
+                version: String::new(),
+                export_date: String::new(),
+                account_count: 0,
+                xmltv_source_count: 0,
+                channel_mapping_count: 0,
+                xmltv_channel_settings_count: 0,
+                settings_summary: vec![],
+                error_message: Some(format!("Invalid JSON format: {}", e)),
+            });
+        }
+    };
+
+    // Validate version compatibility
+    if !is_version_compatible(&config.version) {
+        return Ok(ImportPreview {
+            valid: false,
+            version: config.version.clone(),
+            export_date: config.export_date,
+            account_count: 0,
+            xmltv_source_count: 0,
+            channel_mapping_count: 0,
+            xmltv_channel_settings_count: 0,
+            settings_summary: vec![],
+            error_message: Some(format!(
+                "Unsupported configuration version: {}. Minimum supported: {}",
+                config.version, MIN_SUPPORTED_VERSION
+            )),
+        });
+    }
+
+    // Build settings summary
+    let mut settings_summary = vec![];
+    if config.data.settings.server_port.is_some() {
+        settings_summary.push(format!(
+            "Server port: {}",
+            config.data.settings.server_port.as_ref().unwrap()
+        ));
+    }
+    if let Some(autostart) = &config.data.settings.autostart_enabled {
+        settings_summary.push(format!(
+            "Autostart: {}",
+            if autostart == "true" { "enabled" } else { "disabled" }
+        ));
+    }
+    if config.data.settings.epg_schedule_enabled.is_some() {
+        let hour = config.data.settings.epg_schedule_hour.as_deref().unwrap_or("4");
+        let minute = config.data.settings.epg_schedule_minute.as_deref().unwrap_or("0");
+        settings_summary.push(format!("EPG refresh: {}:{:0>2}", hour, minute));
+    }
+
+    Ok(ImportPreview {
+        valid: true,
+        version: config.version,
+        export_date: config.export_date,
+        account_count: config.data.accounts.len(),
+        xmltv_source_count: config.data.xmltv_sources.len(),
+        channel_mapping_count: config.data.channel_mappings.len(),
+        xmltv_channel_settings_count: config.data.xmltv_channel_settings.len(),
+        settings_summary,
+        error_message: None,
+    })
+}
+
+fn is_version_compatible(version: &str) -> bool {
+    let parts: Vec<&str> = version.split('.').collect();
+    let min_parts: Vec<&str> = MIN_SUPPORTED_VERSION.split('.').collect();
+
+    if parts.len() < 2 || min_parts.len() < 2 {
+        return false;
+    }
+
+    let major: u32 = parts[0].parse().unwrap_or(0);
+    let min_major: u32 = min_parts[0].parse().unwrap_or(0);
+    let minor: u32 = parts[1].parse().unwrap_or(0);
+    let min_minor: u32 = min_parts[1].parse().unwrap_or(0);
+
+    if major > min_major {
+        return true;
+    }
+    if major < min_major {
+        return false;
+    }
+
+    minor >= min_minor
+}
