@@ -99,7 +99,7 @@ pub fn add_account(
 
     let account_id = inserted.id.unwrap_or(0);
 
-    let credential_manager = CredentialManager::new(app_data_dir);
+    let credential_manager = CredentialManager::new(app_data_dir.to_path_buf());
     let (_, encrypted_password) = credential_manager
         .store_password(&account_id.to_string(), &request.password)
         .map_err(|_| AccountError::CredentialStorageError)?;
@@ -137,7 +137,7 @@ pub fn delete_account(
         .first(conn)
         .map_err(|_| AccountError::NotFound)?;
 
-    let credential_manager = CredentialManager::new(app_data_dir);
+    let credential_manager = CredentialManager::new(app_data_dir.to_path_buf());
     let _ = credential_manager.delete_password(&id.to_string(), &account.password_encrypted);
 
     diesel::delete(accounts::table.filter(accounts::id.eq(id)))
@@ -181,7 +181,7 @@ pub fn update_account(
         .map_err(|e| AccountError::DatabaseError(e.to_string()))?;
 
     if let Some(password) = &request.password {
-        let credential_manager = CredentialManager::new(app_data_dir);
+        let credential_manager = CredentialManager::new(app_data_dir.to_path_buf());
         let _ =
             credential_manager.delete_password(&id.to_string(), &existing.password_encrypted);
 
@@ -245,7 +245,7 @@ pub async fn test_connection(
         .first(conn)
         .map_err(|_| AccountError::NotFound)?;
 
-    let credential_manager = CredentialManager::new(app_data_dir);
+    let credential_manager = CredentialManager::new(app_data_dir.to_path_buf());
     let password = credential_manager
         .retrieve_password(&account_id.to_string(), &account.password_encrypted)
         .map_err(|_| AccountError::CredentialStorageError)?;

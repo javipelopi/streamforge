@@ -29,7 +29,7 @@ pub async fn scan_channels(
         .first(conn)
         .map_err(|_| "Account not found".to_string())?;
 
-    let credential_manager = CredentialManager::new(app_data_dir);
+    let credential_manager = CredentialManager::new(app_data_dir.to_path_buf());
     let password = credential_manager
         .retrieve_password(&account_id.to_string(), &account.password_encrypted)
         .map_err(|_| "Failed to retrieve credentials".to_string())?;
@@ -232,7 +232,7 @@ pub async fn scan_and_rematch(
         .first(conn)
         .map_err(|_| "Account not found".to_string())?;
 
-    let credential_manager = CredentialManager::new(app_data_dir);
+    let credential_manager = CredentialManager::new(app_data_dir.to_path_buf());
     let password = credential_manager
         .retrieve_password(&account_id.to_string(), &account.password_encrypted)
         .map_err(|_| "Failed to retrieve credentials".to_string())?;

@@ -352,8 +352,8 @@ fn store_epg_data(
     conn: &mut SqliteConnection,
     source_id: i32,
     source_name: &str,
-    parsed_channels: &[crate::xmltv::XmltvChannelData],
-    parsed_programs: &[crate::xmltv::XmltvProgramData],
+    parsed_channels: &[crate::xmltv::ParsedChannel],
+    parsed_programs: &[crate::xmltv::ParsedProgram],
     channel_count: usize,
     program_count: usize,
 ) -> Result<(), String> {
