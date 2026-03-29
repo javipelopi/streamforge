@@ -13,7 +13,7 @@ import {
   addManualStreamMapping,
   addM3uChannelMapping,
   addAcestreamChannelMapping,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { TOAST_DURATION_MS } from '../../lib/constants';
 
 export type SourceType = 'xtream' | 'm3u' | 'acestream';

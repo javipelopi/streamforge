@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { searchEpgPrograms, type EpgSearchResult } from '../lib/tauri';
+import { searchEpgPrograms, type EpgSearchResult } from '../lib/api';
 import { createCenteredTimeWindow, type TimeWindow } from './epgTimeUtils';
 
 /**

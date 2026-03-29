@@ -8,7 +8,7 @@
 
 import { useEffect, useCallback, useState, useRef, forwardRef, useImperativeHandle } from 'react';
 import type { KeyboardEvent } from 'react';
-import type { EpgSearchResult } from '../../../lib/tauri';
+import type { EpgSearchResult } from '../../../lib/api';
 import { useListNavigation } from '../../../hooks/useListNavigation';
 
 /** Maximum number of results to display */

@@ -5,7 +5,7 @@ import {
   promoteAcestreamOrphanToPlex,
   type OrphanAcestreamSource,
   type XmltvChannelWithMappings,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { PromoteOrphanDialog } from './PromoteOrphanDialog';
 
 /**

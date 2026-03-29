@@ -14,7 +14,7 @@ import {
   refreshEpgSource,
   toggleXmltvSource,
   type XmltvSource,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { XmltvSourceChannelRow } from './XmltvSourceChannelRow';
 import {
   PaginationControls,

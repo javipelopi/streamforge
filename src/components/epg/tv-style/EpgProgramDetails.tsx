@@ -10,7 +10,7 @@ import { useRef, useMemo, useCallback, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Clock, Calendar, Play, ExternalLink, Loader2 } from 'lucide-react';
 import { useProgramDetails } from '../../../hooks/useProgramDetails';
-import { getServerPort, buildProxyStreamUrl } from '../../../lib/tauri';
+import { getServerPort, buildProxyStreamUrl } from '../../../lib/api';
 import { useVideoPlayer } from '../../player';
 
 // Constants for styling

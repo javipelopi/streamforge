@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { type XmltvChannelWithMappings } from '../../lib/tauri';
+import { type XmltvChannelWithMappings } from '../../lib/api';
 
 // Validate URL is safe (no javascript: protocol, etc.)
 function isValidIconUrl(url: string): boolean {

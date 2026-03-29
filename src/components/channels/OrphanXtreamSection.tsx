@@ -6,7 +6,7 @@ import {
   type OrphanXtreamStream,
   type XmltvChannelWithMappings,
   getQualityBadgeClasses,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { PromoteToPlexDialog } from './PromoteToPlexDialog';
 
 /**

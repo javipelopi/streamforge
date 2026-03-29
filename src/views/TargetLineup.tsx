@@ -16,7 +16,7 @@ import {
   updateChannelOrder,
   toggleXmltvChannel,
   type TargetLineupChannel,
-} from '../lib/tauri';
+} from '../lib/api';
 import { TargetLineupChannelRow } from '../components/channels/TargetLineupChannelRow';
 
 // Row height for virtualized list

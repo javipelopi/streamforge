@@ -24,7 +24,7 @@ import {
   refreshM3uSource,
   toggleM3uSource,
   type M3uSource,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import {
   PaginationControls,
   PAGE_SIZE_OPTIONS,

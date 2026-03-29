@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type {
   XmltvChannelWithMappings,
   XtreamStreamMatch,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { XmltvChannelRow } from './XmltvChannelRow';
 import { MatchedStreamsList } from './MatchedStreamsList';
 import { AddStreamButton } from './AddStreamButton';

@@ -16,7 +16,7 @@ import {
   checkAcestreamStatus,
   type AcestreamStatus,
   type AcestreamSource,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { SourcesErrorBoundary } from './SourcesErrorBoundary';
 import { AcestreamSourceDialog, type AcestreamSourceFormData } from './AcestreamSourceDialog';
 import { AcestreamSourceRow } from './AcestreamSourceRow';

@@ -7,7 +7,7 @@
 import { memo, useState, useCallback, useEffect, KeyboardEvent } from 'react';
 import { AlertTriangle, FileText, Trash2 } from 'lucide-react';
 import type { VirtualItem } from '@tanstack/react-virtual';
-import { getServerPort, buildProxyStreamUrl, type TargetLineupChannel } from '../../lib/tauri';
+import { getServerPort, buildProxyStreamUrl, type TargetLineupChannel } from '../../lib/api';
 import { PlayButton } from '../player';
 
 interface TargetLineupChannelRowProps {

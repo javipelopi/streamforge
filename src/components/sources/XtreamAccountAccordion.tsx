@@ -15,7 +15,7 @@ import {
   scanChannels,
   toggleAccount,
   type Account,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { XtreamStreamRow } from './XtreamStreamRow';
 import {
   PaginationControls,

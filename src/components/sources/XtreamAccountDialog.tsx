@@ -12,7 +12,7 @@ import { useState, useEffect } from 'react';
 import { EyeOpenIcon, EyeClosedIcon } from '@radix-ui/react-icons';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { Dialog, DialogCancelButton, DialogSubmitButton } from '../common/Dialog';
-import type { Account, TestConnectionResponse } from '../../lib/tauri';
+import type { Account, TestConnectionResponse } from '../../lib/api';
 
 export interface XtreamAccountFormData {
   name: string;

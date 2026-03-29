@@ -25,7 +25,7 @@ import { EpgProgramDetails } from '../components/epg/tv-style/EpgProgramDetails'
 import { EpgTopBar } from '../components/epg/tv-style/EpgTopBar';
 import { useEpgDayNavigation } from '../hooks/useEpgDayNavigation';
 import { useEpgNavigation } from '../hooks/useEpgNavigation';
-import type { EpgSearchResult } from '../lib/tauri';
+import type { EpgSearchResult } from '../lib/api';
 
 export function EpgTv() {
   // State for selected channel (Story 5.5 Task 6.2)

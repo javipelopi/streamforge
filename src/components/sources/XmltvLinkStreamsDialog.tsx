@@ -16,7 +16,7 @@ import {
   getQualityBadgeClasses,
   type XmltvSourceChannel,
   type XtreamStreamSearchResult,
-} from '../../lib/tauri';
+} from '../../lib/api';
 import { MatchedStreamsList } from '../channels/MatchedStreamsList';
 import { TOAST_DURATION_MS } from '../../lib/constants';
 

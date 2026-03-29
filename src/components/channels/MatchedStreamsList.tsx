@@ -1,7 +1,7 @@
 import { memo, useState, useCallback } from 'react';
 import { Trash2, Loader2, AlertTriangle } from 'lucide-react';
-import type { XtreamStreamMatch } from '../../lib/tauri';
-import { formatConfidence, getQualityBadgeClasses } from '../../lib/tauri';
+import type { XtreamStreamMatch } from '../../lib/api';
+import { formatConfidence, getQualityBadgeClasses } from '../../lib/api';
 
 interface MatchedStreamsListProps {
   matches: XtreamStreamMatch[];
