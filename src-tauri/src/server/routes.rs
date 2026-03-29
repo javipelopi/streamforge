@@ -1,5 +1,6 @@
 use axum::{routing::{get, post, delete}, Router};
 
+use super::api;
 use super::browser_stream::{start_hls_stream, serve_hls_playlist, serve_hls_segment, stop_hls_stream, stop_hls_stream_options};
 use super::handlers::{
     device_xml, discover_json, epg_xml, fallback_handler, health_check, lineup_json,
@@ -16,6 +17,8 @@ use super::state::AppState;
 /// * `Router` - Configured Axum router ready for serving
 pub fn create_router(state: AppState) -> Router {
     Router::new()
+        // Management REST API (ip-wps)
+        .nest("/api", api::api_router())
         .route("/health", get(health_check))
         .route("/playlist.m3u", get(playlist_m3u))
         .route("/epg.xml", get(epg_xml))
