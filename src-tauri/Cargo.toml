@@ -6,6 +6,7 @@ authors = ["Javier Sanchez"]
 license = ""
 repository = ""
 edition = "2021"
+default-run = "streamforge"
 
 [features]
 default = ["gui"]
