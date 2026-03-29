@@ -8,7 +8,7 @@ use diesel::prelude::*;
 use std::collections::HashMap;
 use strsim::jaro_winkler;
 
-use crate::commands::xmltv_channels::{
+use crate::types::{
     build_stream_match, parse_qualities, AcestreamMatch, AllChannelMappings, M3uStreamMatch,
     TargetLineupChannel, XmltvChannelWithMappings, XmltvSourceChannel, XtreamStreamMatch,
     XtreamStreamSearchResult,

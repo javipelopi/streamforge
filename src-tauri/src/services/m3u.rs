@@ -6,7 +6,7 @@ use chrono::Utc;
 use diesel::prelude::*;
 use diesel::Connection;
 
-use crate::commands::m3u_sources::{
+use crate::types::{
     AddM3uSourceInput, M3uChannelResponse, M3uSourceWithStats, RefreshM3uResult,
     UpdateM3uSourceInput,
 };

@@ -3,7 +3,6 @@
 //! Tauri commands for channel matching operations.
 //! Business logic is delegated to `services::matcher`.
 
-use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::db::models::{ChannelMapping, XmltvChannelSettings, XtreamChannel};
@@ -12,32 +11,8 @@ use crate::matcher::{ChangedStream, M3uMatchResult, MatchStats, ProviderChanges}
 use crate::services::matcher as svc;
 use crate::services::matcher::MatchProgress;
 
-/// Response type for match operations
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MatchResponse {
-    pub success: bool,
-    pub matched_count: usize,
-    pub unmatched_count: usize,
-    pub total_xmltv: usize,
-    pub total_source_channels: usize,
-    pub duration_ms: u64,
-    pub message: String,
-}
-
-/// Response type for M3U auto-match operations
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct M3uAutoMatchResponse {
-    pub success: bool,
-    pub matched_count: usize,
-    pub unmatched_count: usize,
-    pub total_m3u_channels: usize,
-    pub total_xmltv_channels: usize,
-    pub duration_ms: u64,
-    pub mappings_created: i32,
-    pub message: String,
-}
+// Re-export shared types from crate::types
+pub use crate::types::{M3uAutoMatchResponse, MatchResponse};
 
 /// Run the channel matching algorithm.
 #[tauri::command]

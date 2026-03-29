@@ -4,7 +4,6 @@
 //! and storing them in the database.
 
 use diesel::prelude::*;
-use serde::Serialize;
 use std::collections::HashMap;
 use std::time::Instant;
 use tauri::{AppHandle, Manager, State};
@@ -16,61 +15,8 @@ use crate::db::{
 };
 use crate::xtream::{quality, XtreamClient};
 
-/// Response type for scan_channels command
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ScanChannelsResponse {
-    pub success: bool,
-    pub total_channels: i32,
-    pub new_channels: i32,
-    pub updated_channels: i32,
-    pub removed_channels: i32,
-    pub scan_duration_ms: u64,
-    pub error_message: Option<String>,
-}
-
-/// Response type for channel data
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelResponse {
-    pub id: i32,
-    pub account_id: i32,
-    pub stream_id: i32,
-    pub name: String,
-    pub stream_icon: Option<String>,
-    pub category_id: Option<i32>,
-    pub category_name: Option<String>,
-    pub qualities: Vec<String>,
-    pub epg_channel_id: Option<String>,
-    pub tv_archive: bool,
-    pub tv_archive_duration: i32,
-    pub added_at: Option<String>,
-}
-
-impl From<XtreamChannel> for ChannelResponse {
-    fn from(channel: XtreamChannel) -> Self {
-        let qualities = channel
-            .qualities
-            .as_deref()
-            .map(quality::qualities_from_json)
-            .unwrap_or_else(|| vec!["SD".to_string()]);
-
-        Self {
-            id: channel.id.unwrap_or(0),
-            account_id: channel.account_id,
-            stream_id: channel.stream_id,
-            name: channel.name,
-            stream_icon: channel.stream_icon,
-            category_id: channel.category_id,
-            category_name: channel.category_name,
-            qualities,
-            epg_channel_id: channel.epg_channel_id,
-            tv_archive: channel.tv_archive.unwrap_or(0) != 0,
-            tv_archive_duration: channel.tv_archive_duration.unwrap_or(0),
-            added_at: channel.added_at,
-        }
-    }
-}
+// Re-export shared types from crate::types
+pub use crate::types::{ChannelResponse, ScanAndRematchResponse, ScanChannelsResponse};
 
 /// Scan channels from an Xtream provider
 ///
@@ -333,33 +279,6 @@ pub async fn get_channel_count(
 
 use crate::commands::logs::log_provider_event;
 use crate::matcher::{perform_auto_rematch, MatchConfig, ProviderChanges, RematchResult};
-
-/// Enhanced response type for scan_and_rematch command
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ScanAndRematchResponse {
-    pub success: bool,
-    /// Total channels from provider
-    pub total_channels: i32,
-    /// New channels from provider (not auto-matched yet)
-    pub new_channels: i32,
-    /// Channels with updated metadata
-    pub updated_channels: i32,
-    /// Channels removed from provider
-    pub removed_channels: i32,
-    /// New XMLTV matches created by auto-rematch
-    pub new_matches: i32,
-    /// Mappings removed (due to removed streams)
-    pub removed_matches: i32,
-    /// Mappings with updated confidence
-    pub updated_matches: i32,
-    /// Manual matches preserved (not auto-removed)
-    pub preserved_manual_matches: i32,
-    /// Scan duration in milliseconds
-    pub scan_duration_ms: u64,
-    /// Error message if failed
-    pub error_message: Option<String>,
-}
 
 /// Scan channels from provider and auto-rematch to XMLTV channels
 ///

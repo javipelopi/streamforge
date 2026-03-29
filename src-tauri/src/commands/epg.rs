@@ -8,9 +8,7 @@
 use std::collections::HashMap;
 
 use diesel::prelude::*;
-use serde::Serialize;
 use tauri::State;
-use thiserror::Error;
 
 use crate::commands::logs::log_event_internal;
 use crate::db::{
@@ -19,170 +17,17 @@ use crate::db::{
     NewXmltvSource, Program, XmltvChannel, XmltvChannelSettings,
     XmltvSource, XmltvSourceUpdate,
 };
-use crate::xmltv::{fetch_xmltv, parse_xmltv_data, XmltvError};
+use crate::xmltv::{fetch_xmltv, parse_xmltv_data};
 
-/// Error types for EPG source operations
-#[derive(Debug, Error)]
-pub enum EpgSourceError {
-    #[error("Source name is required")]
-    NameRequired,
-
-    #[error("URL is required")]
-    UrlRequired,
-
-    #[error("Invalid URL format")]
-    InvalidUrl,
-
-    #[error("URL must use http or https")]
-    InvalidUrlScheme,
-
-    #[error("Invalid format. Must be one of: xml, xml_gz, auto")]
-    InvalidFormat,
-
-    #[error("An EPG source with this URL already exists")]
-    DuplicateUrl,
-
-    #[error("EPG source not found")]
-    NotFound,
-
-    #[error("Database error: {0}")]
-    DatabaseError(String),
-
-    #[error("URL not allowed: {0}")]
-    UrlNotAllowed(String),
-
-    #[error("Failed to download EPG: {0}")]
-    DownloadError(String),
-
-    #[error("Failed to parse EPG: {0}")]
-    ParseError(String),
-}
-
-impl From<XmltvError> for EpgSourceError {
-    fn from(err: XmltvError) -> Self {
-        match err {
-            XmltvError::DownloadError(msg) => EpgSourceError::DownloadError(msg),
-            XmltvError::DecompressError(msg) => EpgSourceError::ParseError(msg),
-            XmltvError::ParseError(msg) => EpgSourceError::ParseError(msg),
-            XmltvError::TimestampError(msg) => EpgSourceError::ParseError(msg),
-            XmltvError::DatabaseError(e) => EpgSourceError::DatabaseError(e.to_string()),
-            XmltvError::UrlNotAllowed(msg) => EpgSourceError::UrlNotAllowed(msg),
-        }
-    }
-}
-
-impl From<diesel::result::Error> for EpgSourceError {
-    fn from(err: diesel::result::Error) -> Self {
-        EpgSourceError::DatabaseError(err.to_string())
-    }
-}
-
-impl From<EpgSourceError> for String {
-    fn from(err: EpgSourceError) -> Self {
-        err.to_string()
-    }
-}
+// Re-export shared types from crate::types
+pub use crate::types::{
+    ChannelInfo, ChannelStreamInfo, EpgGridChannel, EpgGridProgram, EpgScheduleResponse,
+    EpgSearchResult, EpgSourceError, EpgStatsResponse, ProgramResponse, ProgramWithChannel,
+    SearchMatchType, SearchResultType, XmltvChannelResponse, XmltvSourceResponse,
+};
 
 // Re-export shared EPG ops so existing in-module callers don't break
 pub(crate) use crate::epg_ops::{preserve_channel_data, restore_channel_data};
-
-/// Response type for XMLTV source data
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct XmltvSourceResponse {
-    pub id: i32,
-    pub name: String,
-    pub url: String,
-    pub format: String,
-    pub refresh_interval_hours: i32,
-    pub last_refresh: Option<String>,
-    pub is_active: bool,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-impl From<XmltvSource> for XmltvSourceResponse {
-    fn from(source: XmltvSource) -> Self {
-        Self {
-            id: source.id.unwrap_or(0),
-            name: source.name,
-            url: source.url,
-            format: source.format,
-            refresh_interval_hours: source.refresh_interval_hours,
-            last_refresh: source.last_refresh,
-            is_active: source.is_active != 0,
-            created_at: source.created_at,
-            updated_at: source.updated_at,
-        }
-    }
-}
-
-/// Response type for EPG statistics
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct EpgStatsResponse {
-    pub channel_count: i64,
-    pub program_count: i64,
-    pub last_refresh: Option<String>,
-}
-
-/// Response type for XMLTV channel data
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct XmltvChannelResponse {
-    pub id: i32,
-    pub source_id: i32,
-    pub channel_id: String,
-    pub display_name: String,
-    pub icon: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-impl From<XmltvChannel> for XmltvChannelResponse {
-    fn from(channel: XmltvChannel) -> Self {
-        Self {
-            id: channel.id.unwrap_or(0),
-            source_id: channel.source_id,
-            channel_id: channel.channel_id,
-            display_name: channel.display_name,
-            icon: channel.icon,
-            created_at: channel.created_at,
-            updated_at: channel.updated_at,
-        }
-    }
-}
-
-/// Response type for Program data
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ProgramResponse {
-    pub id: i32,
-    pub xmltv_channel_id: i32,
-    pub title: String,
-    pub description: Option<String>,
-    pub start_time: String,
-    pub end_time: String,
-    pub category: Option<String>,
-    pub episode_info: Option<String>,
-    pub created_at: String,
-}
-
-impl From<Program> for ProgramResponse {
-    fn from(program: Program) -> Self {
-        Self {
-            id: program.id.unwrap_or(0),
-            xmltv_channel_id: program.xmltv_channel_id,
-            title: program.title,
-            description: program.description,
-            start_time: program.start_time,
-            end_time: program.end_time,
-            category: program.category,
-            episode_info: program.episode_info,
-            created_at: program.created_at,
-        }
-    }
-}
 
 /// Validate URL format and check for SSRF risks
 fn validate_url(url_str: &str) -> Result<(), EpgSourceError> {
@@ -850,16 +695,6 @@ pub async fn get_programs(
 
 use crate::scheduler::{EpgScheduleConfig, EpgScheduler};
 
-/// Response type for EPG schedule
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct EpgScheduleResponse {
-    pub hour: u8,
-    pub minute: u8,
-    pub enabled: bool,
-    pub last_scheduled_refresh: Option<String>,
-}
-
 /// Get the current EPG schedule settings
 #[tauri::command]
 pub async fn get_epg_schedule(
@@ -944,60 +779,8 @@ pub async fn set_epg_schedule(
 }
 
 // ============================================================================
-// EPG Grid Commands (Story 5.1)
-// ============================================================================
-
-/// Program data for EPG grid display
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct EpgGridProgram {
-    pub id: i32,
-    pub title: String,
-    pub start_time: String,
-    pub end_time: String,
-    pub category: Option<String>,
-    pub description: Option<String>,
-    pub episode_info: Option<String>,
-}
-
-// ============================================================================
 // EPG Search Commands (Story 5.2)
 // ============================================================================
-
-/// Match type for search result relevance
-#[derive(Debug, Serialize, Clone, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub enum SearchMatchType {
-    Title,
-    Channel,
-    Description,
-}
-
-/// Result type for search results (program vs channel-only)
-#[derive(Debug, Serialize, Clone, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub enum SearchResultType {
-    Program,
-    Channel,
-}
-
-/// Search result for EPG program search
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct EpgSearchResult {
-    pub result_type: SearchResultType,
-    pub program_id: Option<i32>,
-    pub title: String,
-    pub description: Option<String>,
-    pub start_time: Option<String>,
-    pub end_time: Option<String>,
-    pub category: Option<String>,
-    pub channel_id: i32,
-    pub channel_name: String,
-    pub channel_icon: Option<String>,
-    pub match_type: SearchMatchType,
-    pub relevance_score: f64,
-}
 
 /// Search EPG programs and channels by title, description, or channel name
 ///
@@ -1176,17 +959,6 @@ pub async fn search_epg_programs(
     Ok(all_results)
 }
 
-/// Channel data with programs for EPG grid display
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct EpgGridChannel {
-    pub channel_id: i32,
-    pub channel_name: String,
-    pub channel_icon: Option<String>,
-    pub plex_display_order: i32,
-    pub programs: Vec<EpgGridProgram>,
-}
-
 /// Get all enabled XMLTV channels with their programs in a time range
 ///
 /// Story 5.1: EPG Grid Browser with Time Navigation
@@ -1267,16 +1039,6 @@ pub async fn get_enabled_channels_with_programs(
 
 use crate::db::schema::xtream_channels;
 
-/// Stream info for program details panel
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelStreamInfo {
-    pub stream_name: String,
-    pub quality_tiers: Vec<String>,
-    pub is_primary: bool,
-    pub match_confidence: f64,
-}
-
 /// Get stream info for an XMLTV channel
 ///
 /// Story 5.3: Program Details View
@@ -1324,23 +1086,6 @@ pub async fn get_channel_stream_info(
 // ============================================================================
 // Program Details Commands (Story 5.8)
 // ============================================================================
-
-/// Channel info for program details panel
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelInfo {
-    pub id: i32,
-    pub display_name: String,
-    pub icon: Option<String>,
-}
-
-/// Program with associated channel information
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ProgramWithChannel {
-    pub program: ProgramResponse,
-    pub channel: ChannelInfo,
-}
 
 /// Get program by ID with associated channel information
 ///
