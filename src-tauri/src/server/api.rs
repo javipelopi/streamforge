@@ -71,7 +71,9 @@ fn account_err(e: AccountError) -> (StatusCode, Json<ApiError>) {
         | AccountError::InvalidServerUrl
         | AccountError::UsernameRequired
         | AccountError::PasswordRequired => StatusCode::BAD_REQUEST,
-        AccountError::CredentialStorageError | AccountError::DatabaseError(_) => {
+        AccountError::CredentialStorageError
+        | AccountError::DatabaseError(_)
+        | AccountError::AppDataDirError => {
             StatusCode::INTERNAL_SERVER_ERROR
         }
     };
@@ -264,8 +266,7 @@ async fn create_xmltv_source(
         req.name,
         req.url,
         req.format,
-        req.refresh_interval_hours,
-    );
+    ).with_refresh_interval(req.refresh_interval_hours);
 
     diesel::insert_into(xmltv_sources::table)
         .values(&new_source)
@@ -305,11 +306,12 @@ async fn update_xmltv_source(
 
     let now = chrono::Utc::now().to_rfc3339();
     let update = XmltvSourceUpdate {
-        name: req.name,
-        url: req.url,
-        format: req.format,
-        refresh_interval_hours: req.refresh_interval_hours,
-        updated_at: now,
+        name: Some(req.name),
+        url: Some(req.url),
+        format: Some(req.format),
+        refresh_interval_hours: Some(req.refresh_interval_hours),
+        is_active: None,
+        updated_at: Some(now),
     };
 
     diesel::update(xmltv_sources::table.filter(xmltv_sources::id.eq(id)))
@@ -501,9 +503,10 @@ async fn do_refresh_source(
     for ch in &parsed_channels {
         let new_ch = NewXmltvChannel {
             source_id,
-            channel_id: ch.id.clone(),
+            channel_id: ch.channel_id.clone(),
             display_name: ch.display_name.clone(),
             icon: ch.icon.clone(),
+            is_synthetic: Some(0),
         };
         diesel::insert_into(xmltv_channels::table)
             .values(&new_ch)
@@ -516,7 +519,7 @@ async fn do_refresh_source(
         .get_result(conn)
         .map_err(|e| e.to_string())?;
 
-        channel_id_map.insert(ch.id.clone(), inserted_id);
+        channel_id_map.insert(ch.channel_id.clone(), inserted_id);
     }
 
     // Insert programs
@@ -526,8 +529,8 @@ async fn do_refresh_source(
                 xmltv_channel_id: db_channel_id,
                 title: prog.title.clone(),
                 description: prog.description.clone(),
-                start_time: prog.start.clone(),
-                end_time: prog.stop.clone(),
+                start_time: prog.start_time.clone(),
+                end_time: prog.end_time.clone(),
                 category: prog.category.clone(),
                 episode_info: prog.episode_info.clone(),
             };

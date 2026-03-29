@@ -89,7 +89,7 @@ pub fn set_server_port(conn: &mut SqliteConnection, port: u16) -> Result<(), Str
 
 /// Get the current failover resilience configuration.
 pub fn get_resilience_config(conn: &mut SqliteConnection) -> ResilienceConfig {
-    ResilienceConfig::from_db(conn)
+    load_resilience_config(conn)
 }
 
 /// Set the failover strictness level.
@@ -122,5 +122,58 @@ pub fn set_failover_strictness(
         eprintln!("[WARN] Failed to log config change: {}", e);
     }
 
-    Ok(ResilienceConfig::from_db(conn))
+    Ok(load_resilience_config(conn))
+}
+
+/// Load resilience config from DB using a plain SqliteConnection.
+/// This mirrors `ResilienceConfig::from_db` but accepts `&mut SqliteConnection`
+/// instead of `&mut DbPooledConnection`, since services operate on bare connections.
+fn load_resilience_config(conn: &mut SqliteConnection) -> ResilienceConfig {
+    let strictness_str: Option<String> = settings::table
+        .filter(settings::key.eq("failover_strictness"))
+        .select(settings::value)
+        .first::<String>(conn)
+        .optional()
+        .ok()
+        .flatten();
+
+    let strictness = strictness_str
+        .and_then(|s| s.parse::<FailoverStrictness>().ok())
+        .unwrap_or_default();
+
+    let mut config = ResilienceConfig::from_strictness(strictness);
+
+    // Override max_retries if explicitly set
+    if let Some(val) = read_setting_u32(conn, "failover_max_retries") {
+        config.max_retries = val;
+    }
+
+    // Override recovery_check_secs if explicitly set
+    if let Some(val) = read_setting_u64(conn, "failover_recovery_check_secs") {
+        config.recovery_check_secs = val;
+    }
+
+    config
+}
+
+fn read_setting_u32(conn: &mut SqliteConnection, key: &str) -> Option<u32> {
+    settings::table
+        .filter(settings::key.eq(key))
+        .select(settings::value)
+        .first::<String>(conn)
+        .optional()
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse().ok())
+}
+
+fn read_setting_u64(conn: &mut SqliteConnection, key: &str) -> Option<u64> {
+    settings::table
+        .filter(settings::key.eq(key))
+        .select(settings::value)
+        .first::<String>(conn)
+        .optional()
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse().ok())
 }
