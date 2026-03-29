@@ -56,24 +56,34 @@ jobs:
   test-rust:
     name: Test (Rust)
     runs-on: self-hosted
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_IDLE_TIMEOUT: "0"
     steps:
       - uses: actions/checkout@v4
+
+      - name: Start sccache
+        run: sccache --start-server 2>/dev/null || true
 
       - name: Run Rust tests
         run: |
           cd src-tauri
           cargo test &
           PID=$!
-          # Wait up to 15 minutes for tests, then kill hanging process
-          for i in $(seq 1 900); do
+          # Wait up to 20 minutes for tests, then kill hanging process
+          for i in $(seq 1 1200); do
             if ! kill -0 $PID 2>/dev/null; then
               wait $PID
               exit $?
             fi
             sleep 1
           done
-          echo "Tests completed but process hung — killing"
+          echo "Tests timed out after 20 minutes — killing"
           kill $PID 2>/dev/null
           wait $PID 2>/dev/null
-          exit 0
+          exit 1
+
+      - name: sccache stats
+        if: always()
+        run: sccache --show-stats 2>/dev/null || true
