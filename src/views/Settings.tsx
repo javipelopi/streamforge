@@ -10,8 +10,7 @@
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { save, open } from '@tauri-apps/plugin-dialog';
-import { writeTextFile, readTextFile } from '@tauri-apps/plugin-fs';
+// @tauri-apps/plugin-dialog and plugin-fs are dynamically imported for browser compat
 import {
   getAutostartEnabled,
   setAutostartEnabled,
@@ -390,24 +389,40 @@ export function Settings() {
       const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
       const defaultFilename = `streamforge-config-${timestamp}.json`;
 
-      // Show save dialog
-      const filePath = await save({
-        defaultPath: defaultFilename,
-        filters: [
-          {
-            name: 'JSON Files',
-            extensions: ['json'],
-          },
-        ],
-      });
+      try {
+        // Try Tauri native save dialog + file write
+        const { save } = await import('@tauri-apps/plugin-dialog');
+        const { writeTextFile } = await import('@tauri-apps/plugin-fs');
 
-      if (filePath) {
-        // Write the file
-        await writeTextFile(filePath, configJson);
+        const filePath = await save({
+          defaultPath: defaultFilename,
+          filters: [
+            {
+              name: 'JSON Files',
+              extensions: ['json'],
+            },
+          ],
+        });
+
+        if (filePath) {
+          await writeTextFile(filePath, configJson);
+          setSuccessMessage('Configuration exported successfully');
+          setTimeout(() => setSuccessMessage(null), 5000);
+        }
+      } catch {
+        // Fallback: browser blob download
+        const blob = new Blob([configJson], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = defaultFilename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
         setSuccessMessage('Configuration exported successfully');
         setTimeout(() => setSuccessMessage(null), 5000);
       }
-      // If user cancelled, do nothing
     } catch (err) {
       setError(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -422,21 +437,46 @@ export function Settings() {
       setError(null);
       setSuccessMessage(null);
 
-      // Show open dialog
-      const filePath = await open({
-        multiple: false,
-        filters: [
-          {
-            name: 'JSON Files',
-            extensions: ['json'],
-          },
-        ],
-      });
+      let content: string | null = null;
 
-      if (filePath && typeof filePath === 'string') {
-        // Read the file content
-        const content = await readTextFile(filePath);
+      try {
+        // Try Tauri native open dialog + file read
+        const { open: tauriOpen } = await import('@tauri-apps/plugin-dialog');
+        const { readTextFile } = await import('@tauri-apps/plugin-fs');
 
+        const filePath = await tauriOpen({
+          multiple: false,
+          filters: [
+            {
+              name: 'JSON Files',
+              extensions: ['json'],
+            },
+          ],
+        });
+
+        if (filePath && typeof filePath === 'string') {
+          content = await readTextFile(filePath);
+        }
+      } catch {
+        // Fallback: browser file input + FileReader
+        content = await new Promise<string | null>((resolve, reject) => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.json';
+          input.onchange = () => {
+            const file = input.files?.[0];
+            if (!file) { resolve(null); return; }
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsText(file);
+          };
+          input.oncancel = () => resolve(null);
+          input.click();
+        });
+      }
+
+      if (content !== null) {
         // Validate file was read successfully
         if (!content || content.trim().length === 0) {
           setError('Import failed: The selected file is empty or could not be read.');

@@ -13,7 +13,7 @@
  */
 import { useState, useEffect } from 'react';
 import { Link, FileText, Radio, FolderOpen } from 'lucide-react';
-import { open } from '@tauri-apps/plugin-dialog';
+// @tauri-apps/plugin-dialog is dynamically imported in handleBrowseFile for browser compat
 import { Dialog, DialogCancelButton, DialogSubmitButton } from '../common/Dialog';
 import type { M3uSource } from '../../lib/api';
 
@@ -121,17 +121,39 @@ export function M3uSourceDialog({
 
   const handleBrowseFile = async () => {
     try {
-      const selected = await open({
-        multiple: false,
-        filters: [
-          {
-            name: 'M3U Playlists',
-            extensions: ['m3u', 'm3u8'],
-          },
-        ],
-      });
+      let selected: string | null = null;
 
-      if (selected && typeof selected === 'string') {
+      try {
+        // Try Tauri native file dialog
+        const { open: tauriOpen } = await import('@tauri-apps/plugin-dialog');
+        const result = await tauriOpen({
+          multiple: false,
+          filters: [
+            {
+              name: 'M3U Playlists',
+              extensions: ['m3u', 'm3u8'],
+            },
+          ],
+        });
+        if (result && typeof result === 'string') {
+          selected = result;
+        }
+      } catch {
+        // Fallback: browser file input
+        selected = await new Promise<string | null>((resolve) => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.m3u,.m3u8';
+          input.onchange = () => {
+            const file = input.files?.[0];
+            resolve(file ? file.name : null);
+          };
+          input.oncancel = () => resolve(null);
+          input.click();
+        });
+      }
+
+      if (selected) {
         setUrl(selected);
         clearErrors();
 

@@ -6,8 +6,17 @@
  * Supports both built-in HLS.js player and external player (VLC/mpv) option.
  */
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
-import { open } from '@tauri-apps/plugin-shell';
 import { VideoPlayer } from './VideoPlayer';
+
+/** Dynamically open a URL via Tauri shell plugin, falling back to window.open in browsers */
+async function shellOpen(url: string): Promise<void> {
+  try {
+    const { open } = await import('@tauri-apps/plugin-shell');
+    await open(url);
+  } catch {
+    window.open(url, '_blank');
+  }
+}
 
 interface PlayStreamOptions {
   /** Stream URL to play */
@@ -47,6 +56,12 @@ export function VideoPlayerProvider({ children }: VideoPlayerProviderProps) {
   }, []);
 
   const openInExternalPlayer = useCallback(async (url: string) => {
+    // In browser mode, external player URL schemes are not available
+    if (!(window as Record<string, unknown>).__TAURI__) {
+      alert('External player is only available in the desktop app. Use the built-in player or copy the stream URL.');
+      return;
+    }
+
     // Open the stream URL with IINA using its URL scheme
     // IINA is the recommended player for macOS as it handles URL schemes well
     // Format: iina://open?url=<encoded-url>
@@ -60,21 +75,21 @@ export function VideoPlayerProvider({ children }: VideoPlayerProviderProps) {
       // IINA URL scheme: iina://open?url=<encoded-url>
       const iinaUrl = `iina://open?url=${encodeURIComponent(url)}`;
       console.log('[VideoPlayer] Trying IINA URL scheme:', iinaUrl);
-      await open(iinaUrl);
+      await shellOpen(iinaUrl);
     } catch (iinaError) {
       console.log('[VideoPlayer] IINA failed, trying VLC URL scheme...', iinaError);
       try {
         // Try VLC URL scheme: vlc://<url>
         // Note: VLC URL scheme may not work with all URL types
         const vlcUrl = `vlc://${url}`;
-        await open(vlcUrl);
+        await shellOpen(vlcUrl);
       } catch (vlcError) {
         console.log('[VideoPlayer] VLC URL scheme failed, opening URL directly...', vlcError);
         // Fallback: Open the URL directly
         // The OS will use whatever app is configured for the file type/protocol
         // This may open in browser, but user can copy URL and paste into player
         try {
-          await open(url);
+          await shellOpen(url);
         } catch (directError) {
           console.error('[VideoPlayer] All methods failed:', directError);
           throw new Error(
