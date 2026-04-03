@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  # Build Tauri desktop app (macOS, Windows, Linux)
+  # Build Tauri desktop app (macOS, Windows, Linux) — all in parallel
   desktop:
     strategy:
       fail-fast: false
@@ -66,7 +66,6 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          echo "Updating version to $VERSION"
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             sed -i'' -e "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
             sed -i'' -e "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
@@ -76,10 +75,6 @@ jobs:
             sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
             sed -i "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
           fi
-          echo "Updated versions:"
-          grep '"version"' src-tauri/tauri.conf.json
-          grep '"version"' package.json
-          grep '^version = ' src-tauri/Cargo.toml | head -1
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -91,21 +86,13 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'StreamForge ${{ github.ref_name }}'
           releaseBody: 'See the assets below to download and install StreamForge.'
-          releaseDraft: ${{ contains(github.ref_name, 'beta') }}
+          releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
 
-  # Build headless server binary (no GUI, for Ubuntu Server / Docker)
-  # Runs after desktop so the GitHub release exists for artifact upload
+  # Build headless server binary — runs in parallel with desktop
   server:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: ubuntu-22.04
-            name: server-Linux-x64
-
-    runs-on: ${{ matrix.platform }}
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -118,15 +105,10 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Install dependencies (Ubuntu)
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libsqlite3-dev pkg-config libssl-dev libdbus-1-dev libglib2.0-dev
-
-      - name: Get version from tag
-        id: version
-        shell: bash
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -145,7 +127,9 @@ jobs:
         run: pnpm build:vite
 
       - name: Update Cargo.toml version
-        run: sed -i "0,/^version = /s/^version = \".*\"/version = \"${{ steps.version.outputs.version }}\"/" src-tauri/Cargo.toml
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
 
       - name: Build streamforge-server
         working-directory: src-tauri
@@ -153,23 +137,40 @@ jobs:
 
       - name: Package binary
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${GITHUB_REF_NAME#v}"
           cp src-tauri/target/release/streamforge-server .
           tar czf "streamforge-server-${VERSION}-linux-x64.tar.gz" streamforge-server
-          echo "ARCHIVE=streamforge-server-${VERSION}-linux-x64.tar.gz" >> "$GITHUB_ENV"
 
-      - name: Upload to release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-linux-x64
+          path: streamforge-server-*.tar.gz
+          retention-days: 1
+
+  # Create/finalize release after all builds complete
+  publish:
+    needs: [desktop, server]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download server artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: server-linux-x64
+
+      - name: Upload server binary to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Wait for release to be created by the desktop job
-          for i in $(seq 1 30); do
-            if gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-              break
-            fi
-            echo "Waiting for release to be created... ($i/30)"
-            sleep 10
-          done
-          gh release upload "${{ github.ref_name }}" "${ARCHIVE}" \
+          gh release upload "${{ github.ref_name }}" streamforge-server-*.tar.gz \
             --repo "${{ github.repository }}" \
             --clobber
+
+      - name: Publish release (if not beta)
+        if: ${{ !contains(github.ref_name, 'beta') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --draft=false
