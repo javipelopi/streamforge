@@ -79,10 +79,9 @@ pub fn run() {
                 }
             }
 
-            // Get app data directory for credential retrieval in stream proxy
-            let app_data_dir = app.path()
-                .app_data_dir()
-                .map_err(|_| "Failed to get app data directory".to_string())?;
+            // Use the canonical credential directory so desktop and headless
+            // modes share the same encryption salt / key derivation path.
+            let app_data_dir = credentials::get_credential_dir();
 
             // Create HTTP server state with database pool and app data dir
             let server_state = server::create_app_state_with_dir(

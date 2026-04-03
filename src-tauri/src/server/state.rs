@@ -51,11 +51,8 @@ impl AppState {
         let max_connections = Self::get_total_max_connections(&pool)
             .unwrap_or(DEFAULT_MAX_CONNECTIONS);
 
-        // Use a default app_data_dir for backward compatibility
-        // Stream proxy will fail to decrypt passwords without proper app_data_dir
-        let app_data_dir = dirs::data_dir()
-            .map(|d| d.join("streamforge"))
-            .unwrap_or_else(|| PathBuf::from("."));
+        // Use the canonical credential directory for consistent key derivation
+        let app_data_dir = crate::credentials::get_credential_dir();
 
         Self {
             pool,

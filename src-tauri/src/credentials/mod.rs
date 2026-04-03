@@ -314,6 +314,19 @@ pub fn delete_password(
     manager.delete_password(account_id, encrypted_data)
 }
 
+/// Returns the canonical credential storage directory, consistent across desktop
+/// and headless modes.
+///
+/// This resolves the Tauri vs `dirs` path mismatch: Tauri uses an app-identifier
+/// based path (e.g. `com.streamforge.app`) while `dirs` uses a plain name. By
+/// always using `dirs::data_dir()/streamforge`, credentials encrypted in one
+/// mode can be decrypted in the other.
+pub fn get_credential_dir() -> PathBuf {
+    dirs::data_dir()
+        .map(|d| d.join("streamforge"))
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

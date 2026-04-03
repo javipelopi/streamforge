@@ -56,14 +56,12 @@ pub async fn run_headless(config: HeadlessConfig) -> Result<(), Box<dyn std::err
         .map_err(|e| format!("Failed to create connection pool: {}", e))?;
 
     // --- App data dir (for credential retrieval) ----------------------------
+    // Use explicit override if provided, otherwise the canonical credential
+    // directory shared with desktop mode.
     let app_data_dir = config
         .data_dir
         .clone()
-        .unwrap_or_else(|| {
-            dirs::data_dir()
-                .map(|d| d.join("streamforge"))
-                .unwrap_or_else(|| PathBuf::from("."))
-        });
+        .unwrap_or_else(crate::credentials::get_credential_dir);
 
     // --- HTTP server --------------------------------------------------------
     let pool = db_connection.clone_pool();

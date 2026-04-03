@@ -6,7 +6,7 @@
 //! Story 6-3: Connection event logging for Xtream authentication
 
 use diesel::prelude::*;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use crate::commands::logs::log_event_internal;
 use crate::credentials::CredentialManager;
@@ -82,7 +82,7 @@ fn validate_account_input(
 /// Stores the password securely using OS keychain (preferred) or AES-256-GCM encryption (fallback).
 #[tauri::command]
 pub async fn add_account(
-    app: AppHandle,
+    _app: AppHandle,
     db: State<'_, DbConnection>,
     request: AddAccountRequest,
 ) -> Result<AccountResponse, String> {
@@ -97,11 +97,8 @@ pub async fn add_account(
     // Normalize server URL
     let normalized_server_url = normalize_url(&request.server_url);
 
-    // Get app data directory for credential storage
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|_| AccountError::AppDataDirError)?;
+    // Use the canonical credential directory (shared with headless mode)
+    let app_data_dir = crate::credentials::get_credential_dir();
 
     // Get database connection
     let mut conn = db
@@ -167,15 +164,12 @@ pub async fn get_accounts(db: State<'_, DbConnection>) -> Result<Vec<AccountResp
 /// Delete an account
 #[tauri::command]
 pub async fn delete_account(
-    app: AppHandle,
+    _app: AppHandle,
     db: State<'_, DbConnection>,
     id: i32,
 ) -> Result<(), String> {
-    // Get app data directory for credential storage
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|_| AccountError::AppDataDirError)?;
+    // Use the canonical credential directory (shared with headless mode)
+    let app_data_dir = crate::credentials::get_credential_dir();
 
     let mut conn = db
         .get_connection()
@@ -202,7 +196,7 @@ pub async fn delete_account(
 /// Update an existing account
 #[tauri::command]
 pub async fn update_account(
-    app: AppHandle,
+    _app: AppHandle,
     db: State<'_, DbConnection>,
     id: i32,
     request: UpdateAccountRequest,
@@ -218,11 +212,8 @@ pub async fn update_account(
     // Normalize server URL
     let normalized_server_url = normalize_url(&request.server_url);
 
-    // Get app data directory for credential storage
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|_| AccountError::AppDataDirError)?;
+    // Use the canonical credential directory (shared with headless mode)
+    let app_data_dir = crate::credentials::get_credential_dir();
 
     let mut conn = db
         .get_connection()
@@ -320,15 +311,12 @@ pub async fn toggle_account(
 /// the account status in the database.
 #[tauri::command]
 pub async fn test_connection(
-    app: AppHandle,
+    _app: AppHandle,
     db: State<'_, DbConnection>,
     account_id: i32,
 ) -> Result<TestConnectionResponse, String> {
-    // Get app data directory for credential retrieval
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|_| AccountError::AppDataDirError)?;
+    // Use the canonical credential directory (shared with headless mode)
+    let app_data_dir = crate::credentials::get_credential_dir();
 
     // Get database connection
     let mut conn = db
