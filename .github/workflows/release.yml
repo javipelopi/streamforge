@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: self-hosted
+          - platform: macos-latest
             args: --target aarch64-apple-darwin
             name: macOS-arm64
           - platform: macos-latest
@@ -29,19 +29,19 @@ jobs:
             name: Linux-x64
 
     runs-on: ${{ matrix.platform }}
-    timeout-minutes: 30
-    env:
-      RUSTC_WRAPPER: ${{ matrix.platform == 'self-hosted' && 'sccache' || '' }}
-      SCCACHE_IDLE_TIMEOUT: "0"
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Rust stable
-        if: matrix.platform != 'self-hosted'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
 
       - name: Install dependencies (Ubuntu)
         if: matrix.platform == 'ubuntu-22.04'
@@ -81,10 +81,6 @@ jobs:
           grep '"version"' package.json
           grep '^version = ' src-tauri/Cargo.toml | head -1
 
-      - name: Start sccache (self-hosted)
-        if: matrix.platform == 'self-hosted'
-        run: sccache --start-server 2>/dev/null || true
-
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -99,10 +95,6 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
 
-      - name: sccache stats (self-hosted)
-        if: always() && matrix.platform == 'self-hosted'
-        run: sccache --show-stats 2>/dev/null || true
-
   # Build headless server binary (no GUI, for Ubuntu Server / Docker)
   # Runs after desktop so the GitHub release exists for artifact upload
   server:
@@ -112,35 +104,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: self-hosted
-            target: aarch64-apple-darwin
-            name: server-macOS-arm64
           - platform: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
             name: server-Linux-x64
 
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 30
-    env:
-      RUSTC_WRAPPER: ${{ matrix.platform == 'self-hosted' && 'sccache' || '' }}
-      SCCACHE_IDLE_TIMEOUT: "0"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Rust stable
-        if: matrix.platform != 'self-hosted'
         uses: dtolnay/rust-toolchain@stable
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
       - name: Install dependencies (Ubuntu)
-        if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y libsqlite3-dev pkg-config libssl-dev libdbus-1-dev
-
-      - name: Start sccache (self-hosted)
-        if: matrix.platform == 'self-hosted'
-        run: sccache --start-server 2>/dev/null || true
 
       - name: Get version from tag
         id: version
@@ -148,35 +131,20 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Update Cargo.toml version
-        shell: bash
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          if [[ "$RUNNER_OS" == "macOS" ]]; then
-            sed -i'' -e "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-          else
-            sed -i "0,/^version = /s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-          fi
+        run: sed -i "0,/^version = /s/^version = \".*\"/version = \"${{ steps.version.outputs.version }}\"/" src-tauri/Cargo.toml
 
       - name: Build streamforge-server
         working-directory: src-tauri
         run: cargo build --release --bin streamforge-server --no-default-features
 
       - name: Package binary
-        shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          BINARY="streamforge-server"
-          if [[ "$RUNNER_OS" == "macOS" ]]; then
-            ARCHIVE="streamforge-server-${VERSION}-darwin-arm64.tar.gz"
-          else
-            ARCHIVE="streamforge-server-${VERSION}-linux-x64.tar.gz"
-          fi
-          cp "src-tauri/target/release/${BINARY}" .
-          tar czf "${ARCHIVE}" "${BINARY}"
-          echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
+          cp src-tauri/target/release/streamforge-server .
+          tar czf "streamforge-server-${VERSION}-linux-x64.tar.gz" streamforge-server
+          echo "ARCHIVE=streamforge-server-${VERSION}-linux-x64.tar.gz" >> "$GITHUB_ENV"
 
       - name: Upload to release
-        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -191,7 +159,3 @@ jobs:
           gh release upload "${{ github.ref_name }}" "${ARCHIVE}" \
             --repo "${{ github.repository }}" \
             --clobber
-
-      - name: sccache stats (self-hosted)
-        if: always() && matrix.platform == 'self-hosted'
-        run: sccache --show-stats 2>/dev/null || true

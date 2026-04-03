@@ -14,7 +14,7 @@ concurrency:
 jobs:
   lint:
     name: Lint
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +34,7 @@ jobs:
 
   build:
     name: Build (Vite)
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: lint
     steps:
@@ -55,16 +55,16 @@ jobs:
 
   test-rust:
     name: Test (Rust)
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      RUSTC_WRAPPER: sccache
-      SCCACHE_IDLE_TIMEOUT: "0"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Start sccache
-        run: sccache --start-server 2>/dev/null || true
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
 
       - name: Run Rust tests
         run: |
@@ -84,7 +84,3 @@ jobs:
           kill $PID 2>/dev/null
           wait $PID 2>/dev/null
           exit 1
-
-      - name: sccache stats
-        if: always()
-        run: sccache --show-stats 2>/dev/null || true
