@@ -98,8 +98,6 @@ jobs:
   # Build headless server binary (no GUI, for Ubuntu Server / Docker)
   # Runs after desktop so the GitHub release exists for artifact upload
   server:
-    needs: desktop
-    if: always()
     strategy:
       fail-fast: false
       matrix:
