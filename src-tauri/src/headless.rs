@@ -78,6 +78,12 @@ pub async fn run_headless(config: HeadlessConfig) -> Result<(), Box<dyn std::err
         let app = server::routes::create_router(server_state);
         let listener = tokio::net::TcpListener::bind(addr).await?;
         println!("HTTP server listening on http://{}", addr);
+
+        // Fire-and-forget version check
+        tokio::spawn(async {
+            check_for_updates().await;
+        });
+
         axum::serve(listener, app).await.map_err(|e| {
             Box::<dyn std::error::Error + Send + Sync>::from(e.to_string())
         })
@@ -127,4 +133,60 @@ pub async fn run_headless(config: HeadlessConfig) -> Result<(), Box<dyn std::err
 
     server_handle.abort();
     Ok(())
+}
+
+/// Check GitHub for a newer StreamForge release. Prints a notice if one exists;
+/// silently returns on any error (network, parse, etc.).
+async fn check_for_updates() {
+    let url = "https://github.com/javipelopi/streamforge/releases/latest/download/latest.json";
+    let current = env!("CARGO_PKG_VERSION");
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    let resp = match client.get(url).send().await {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+
+    let body: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let remote_version = match body.get("version").and_then(|v| v.as_str()) {
+        Some(v) => v.trim_start_matches('v'),
+        None => return,
+    };
+
+    if is_newer(remote_version, current) {
+        println!(
+            "Update available: StreamForge v{} (running v{}). \
+             Download: https://github.com/javipelopi/streamforge/releases/latest",
+            remote_version, current,
+        );
+    }
+}
+
+/// Returns `true` when `remote` is strictly newer than `current` using
+/// simple semver numeric comparison (major.minor.patch).
+fn is_newer(remote: &str, current: &str) -> bool {
+    let parse = |s: &str| -> Option<(u64, u64, u64)> {
+        let mut parts = s.split('.');
+        Some((
+            parts.next()?.parse().ok()?,
+            parts.next()?.parse().ok()?,
+            parts.next()?.parse().ok()?,
+        ))
+    };
+
+    match (parse(remote), parse(current)) {
+        (Some(r), Some(c)) => r > c,
+        _ => false,
+    }
 }
