@@ -243,11 +243,12 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
                   video.play().catch(() => {});
                 }
               }
-              // Reset media recovery counter on successful playback
-              if (data.details === 'fragBuffered') {
-                mediaRecoveryAttempts = 0;
-              }
             }
+          });
+
+          // Reset media recovery counter on successful fragment buffering
+          hls.on(Hls.Events.FRAG_BUFFERED, () => {
+            mediaRecoveryAttempts = 0;
           });
 
           // Also listen for successful fragment loading to reset counters

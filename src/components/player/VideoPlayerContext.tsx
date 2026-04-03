@@ -57,7 +57,7 @@ export function VideoPlayerProvider({ children }: VideoPlayerProviderProps) {
 
   const openInExternalPlayer = useCallback(async (url: string) => {
     // In browser mode, external player URL schemes are not available
-    if (!(window as Record<string, unknown>).__TAURI__) {
+    if (!(window as unknown as Record<string, unknown>).__TAURI__) {
       alert('External player is only available in the desktop app. Use the built-in player or copy the stream URL.');
       return;
     }
