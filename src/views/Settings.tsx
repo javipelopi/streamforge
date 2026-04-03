@@ -162,10 +162,14 @@ export function Settings() {
         setServerPortState(portStr);
         setSavedServerPort(portStr);
 
-        // Load autostart status
-        const status = await getAutostartEnabled();
-        setAutostartEnabledState(status.enabled);
-        setSavedAutostartEnabled(status.enabled);
+        // Load autostart status (desktop-only, fails gracefully in browser)
+        try {
+          const status = await getAutostartEnabled();
+          setAutostartEnabledState(status.enabled);
+          setSavedAutostartEnabled(status.enabled);
+        } catch {
+          // Autostart not available in browser/headless mode
+        }
         setIsAutostartLoading(false);
 
         // Load EPG schedule
