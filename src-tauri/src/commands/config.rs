@@ -10,7 +10,6 @@
 //! and users must re-enter credentials after import.
 
 use diesel::prelude::*;
-use serde::{Deserialize, Serialize};
 use tauri::State;
 use thiserror::Error;
 

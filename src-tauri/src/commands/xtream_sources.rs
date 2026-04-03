@@ -5,7 +5,6 @@
 //! Story 3-11: Implement Sources View Xtream Tab
 
 use diesel::prelude::*;
-use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use crate::credentials::CredentialManager;
