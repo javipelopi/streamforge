@@ -2043,6 +2043,8 @@ async fn import_configuration(
                 format: source.format.clone(),
                 refresh_interval_hours: source.refresh_interval_hours,
                 is_active: if source.is_active { 1 } else { 0 },
+                created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                updated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             };
             diesel::insert_into(xmltv_sources::table)
                 .values(&new_source)

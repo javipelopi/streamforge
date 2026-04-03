@@ -317,12 +317,15 @@ pub fn import_configuration_standalone(
                 return Err(diesel::result::Error::RollbackTransaction);
             }
 
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
             let new_source = NewXmltvSource {
                 name: source.name.clone(),
                 url: source.url.clone(),
                 format: source.format.clone(),
                 refresh_interval_hours: source.refresh_interval_hours,
                 is_active: if source.is_active { 1 } else { 0 },
+                created_at: now.clone(),
+                updated_at: now,
             };
             diesel::insert_into(xmltv_sources::table)
                 .values(&new_source)

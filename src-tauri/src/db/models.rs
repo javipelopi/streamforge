@@ -175,6 +175,14 @@ pub struct NewXmltvSource {
     pub refresh_interval_hours: i32,
     #[serde(default = "default_is_active")]
     pub is_active: i32,
+    #[serde(default = "default_now")]
+    pub created_at: String,
+    #[serde(default = "default_now")]
+    pub updated_at: String,
+}
+
+fn default_now() -> String {
+    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
 fn default_xmltv_refresh_interval() -> i32 {
@@ -187,12 +195,15 @@ fn default_is_active() -> i32 {
 
 impl NewXmltvSource {
     pub fn new(name: impl Into<String>, url: impl Into<String>, format: impl Into<String>) -> Self {
+        let now = default_now();
         Self {
             name: name.into(),
             url: url.into(),
             format: format.into(),
             refresh_interval_hours: default_xmltv_refresh_interval(),
             is_active: default_is_active(),
+            created_at: now.clone(),
+            updated_at: now,
         }
     }
 
