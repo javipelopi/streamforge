@@ -9,6 +9,7 @@ pub mod health;
 pub mod m3u;
 pub mod routes;
 pub mod state;
+pub mod static_files;
 pub mod stream;
 
 use std::net::SocketAddr;
