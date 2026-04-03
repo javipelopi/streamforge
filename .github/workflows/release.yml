@@ -47,7 +47,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libglib2.0-dev libdbus-1-dev libsqlite3-dev pkg-config libssl-dev
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -123,7 +123,7 @@ jobs:
       - name: Install dependencies (Ubuntu)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsqlite3-dev pkg-config libssl-dev libdbus-1-dev
+          sudo apt-get install -y libsqlite3-dev pkg-config libssl-dev libdbus-1-dev libglib2.0-dev
 
       - name: Get version from tag
         id: version
