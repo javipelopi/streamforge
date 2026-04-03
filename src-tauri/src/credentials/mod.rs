@@ -96,8 +96,12 @@ impl CredentialManager {
                 let placeholder = self.create_keychain_placeholder(account_id);
                 Ok((StorageBackend::Keychain, placeholder))
             }
-            Err(_) => {
-                // Keychain failed, use AES encryption fallback
+            Err(e) => {
+                // Keychain failed, log and use AES encryption fallback
+                eprintln!(
+                    "Keychain unavailable for account '{}': {}. Falling back to AES-256-GCM encryption.",
+                    account_id, e
+                );
                 let encrypted = self.encrypt_password(password)?;
                 Ok((StorageBackend::Encrypted, encrypted))
             }
@@ -248,12 +252,24 @@ impl CredentialManager {
         let salt_path = self.app_data_dir.join(SALT_FILENAME);
 
         if salt_path.exists() {
-            let salt_data = fs::read(&salt_path)?;
+            let salt_data = fs::read(&salt_path).map_err(|e| {
+                CredentialError::IoError(std::io::Error::new(
+                    e.kind(),
+                    format!("Failed to read salt file '{}': {}", salt_path.display(), e),
+                ))
+            })?;
             if salt_data.len() == SALT_LENGTH {
                 let mut salt = [0u8; SALT_LENGTH];
                 salt.copy_from_slice(&salt_data);
                 return Ok(salt);
             }
+            // Salt file exists but has wrong length — regenerate it
+            eprintln!(
+                "Salt file '{}' has invalid length {} (expected {}), regenerating",
+                salt_path.display(),
+                salt_data.len(),
+                SALT_LENGTH,
+            );
         }
 
         // Create new salt
@@ -262,11 +278,25 @@ impl CredentialManager {
 
         // Ensure directory exists
         if let Some(parent) = salt_path.parent() {
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(parent).map_err(|e| {
+                CredentialError::IoError(std::io::Error::new(
+                    e.kind(),
+                    format!(
+                        "Failed to create salt directory '{}': {}",
+                        parent.display(),
+                        e
+                    ),
+                ))
+            })?;
         }
 
         // Save salt
-        fs::write(&salt_path, salt)?;
+        fs::write(&salt_path, salt).map_err(|e| {
+            CredentialError::IoError(std::io::Error::new(
+                e.kind(),
+                format!("Failed to write salt file '{}': {}", salt_path.display(), e),
+            ))
+        })?;
 
         Ok(salt)
     }

@@ -97,6 +97,16 @@ pub async fn run_headless(config: HeadlessConfig) -> Result<(), Box<dyn std::err
         .clone()
         .unwrap_or_else(crate::credentials::get_credential_dir);
 
+    // Ensure the data directory exists so credential storage (salt file) works
+    // in Docker or other environments where it may not be pre-created.
+    std::fs::create_dir_all(&app_data_dir).map_err(|e| {
+        format!(
+            "Failed to create app data directory '{}': {}",
+            app_data_dir.display(),
+            e
+        )
+    })?;
+
     // --- HTTP server --------------------------------------------------------
     let pool = db_connection.clone_pool();
     let server_state = server::create_app_state_with_dir(pool, app_data_dir);
