@@ -110,6 +110,17 @@ pub fn run() {
             let db_connection = db::DbConnection::new(database_url)
                 .map_err(|e| format!("Failed to create connection pool: {}", e))?;
 
+            // Check for ffmpeg
+            match std::process::Command::new("ffmpeg").arg("-version").output() {
+                Ok(output) if output.status.success() => {
+                    println!("ffmpeg: available");
+                }
+                _ => {
+                    eprintln!("WARNING: ffmpeg not found — built-in video player will not work.");
+                    eprintln!("Install: brew install ffmpeg (macOS) / choco install ffmpeg (Windows)");
+                }
+            }
+
             // Story 6-3: Log application startup event (AC #1)
             {
                 use logging::log_event_internal;
