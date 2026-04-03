@@ -17,5 +17,6 @@ pub mod epg;
 pub mod logs;
 pub mod m3u;
 pub mod matcher;
+pub mod matching_profiles;
 pub mod settings;
 pub mod xmltv_channels;

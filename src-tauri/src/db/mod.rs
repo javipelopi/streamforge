@@ -11,7 +11,8 @@ pub use connection::get_db_path;
 pub use connection::get_db_path_standalone;
 pub use models::{
     Account, AccountStatusUpdate, ChannelMapping, EventCategory, EventLevel, EventLog,
-    NewAccount, NewChannelMapping, NewEventLog, NewProgram, NewXmltvChannel,
-    NewXmltvChannelSettings, NewXmltvSource, NewXtreamChannel, Program, Setting, XmltvChannel,
-    XmltvChannelSettings, XmltvSource, XmltvSourceUpdate, XtreamChannel, XtreamChannelUpdate,
+    MatchingProfile, MatchingProfileUpdate, NewAccount, NewChannelMapping, NewEventLog,
+    NewMatchingProfile, NewProgram, NewXmltvChannel, NewXmltvChannelSettings, NewXmltvSource,
+    NewXtreamChannel, NormalizationRule, Program, Setting, XmltvChannel, XmltvChannelSettings,
+    XmltvSource, XmltvSourceUpdate, XtreamChannel, XtreamChannelUpdate,
 };

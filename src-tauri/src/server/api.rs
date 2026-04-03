@@ -202,6 +202,11 @@ pub fn api_router() -> Router<AppState> {
         .route("/config/export", get(export_configuration))
         .route("/config/import", post(import_configuration))
         .route("/config/validate-import", post(validate_import_file))
+        // Matching Profiles
+        .route("/matching-profiles", get(list_matching_profiles).post(create_matching_profile))
+        .route("/matching-profiles/{id}", get(get_matching_profile).put(update_matching_profile).delete(delete_matching_profile))
+        .route("/matching-profiles/reorder", post(reorder_matching_profiles))
+        .route("/matching-profiles/preview", post(preview_matching_normalization))
         // Updates
         .route("/updates/version", get(get_current_version))
         .route("/updates/settings", get(get_update_settings_handler))
@@ -2148,4 +2153,107 @@ async fn check_for_update_handler() -> ApiResult<serde_json::Value> {
         "notes": body.get("notes").and_then(|v| v.as_str()),
         "date": body.get("pub_date").and_then(|v| v.as_str()),
     })))
+}
+
+// ===========================================================================
+// Matching Profiles
+// ===========================================================================
+
+use crate::db::models::{MatchingProfile, MatchingProfileUpdate, NewMatchingProfile, NormalizationRule};
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MatchingProfileQuery {
+    xmltv_source_id: Option<i32>,
+}
+
+async fn list_matching_profiles(
+    State(state): State<AppState>,
+    Query(params): Query<MatchingProfileQuery>,
+) -> ApiResult<Vec<MatchingProfile>> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    let profiles = services::matching_profiles::list_profiles(&mut conn, params.xmltv_source_id)
+        .map_err(|e| internal(e))?;
+    Ok(Json(profiles))
+}
+
+async fn get_matching_profile(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+) -> ApiResult<MatchingProfile> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    let profile = services::matching_profiles::get_profile(&mut conn, id)
+        .map_err(|e| not_found(e))?;
+    Ok(Json(profile))
+}
+
+async fn create_matching_profile(
+    State(state): State<AppState>,
+    Json(new_profile): Json<NewMatchingProfile>,
+) -> ApiResult<MatchingProfile> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    let profile = services::matching_profiles::create_profile(&mut conn, new_profile)
+        .map_err(|e| bad_request(e))?;
+    Ok(Json(profile))
+}
+
+async fn update_matching_profile(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+    Json(updates): Json<MatchingProfileUpdate>,
+) -> ApiResult<MatchingProfile> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    let profile = services::matching_profiles::update_profile(&mut conn, id, updates)
+        .map_err(|e| internal(e))?;
+    Ok(Json(profile))
+}
+
+async fn delete_matching_profile(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    services::matching_profiles::delete_profile(&mut conn, id)
+        .map_err(|e| not_found(e))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReorderRequest {
+    profile_ids: Vec<i32>,
+}
+
+async fn reorder_matching_profiles(
+    State(state): State<AppState>,
+    Json(body): Json<ReorderRequest>,
+) -> ApiResult<Vec<MatchingProfile>> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    let profiles = services::matching_profiles::reorder_profiles(&mut conn, &body.profile_ids)
+        .map_err(|e| internal(e))?;
+    Ok(Json(profiles))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PreviewRequest {
+    name: String,
+    rules: Vec<NormalizationRule>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PreviewResponse {
+    original: String,
+    normalized: String,
+}
+
+async fn preview_matching_normalization(
+    Json(body): Json<PreviewRequest>,
+) -> ApiResult<PreviewResponse> {
+    let normalized = services::matching_profiles::preview_normalization(&body.name, &body.rules);
+    Ok(Json(PreviewResponse {
+        original: body.name,
+        normalized,
+    }))
 }
