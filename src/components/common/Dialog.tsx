@@ -140,12 +140,12 @@ export function Dialog({
       <div
         ref={dialogRef}
         data-testid={testId}
-        className={`bg-white rounded-lg shadow-xl ${maxWidth} w-full mx-4`}
+        className={`bg-white rounded-lg shadow-xl ${maxWidth} w-full mx-4 max-h-[90vh] flex flex-col`}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <div>
             <h2 id="dialog-title" className="text-lg font-semibold text-gray-900">
               {title}
@@ -165,7 +165,7 @@ export function Dialog({
         </div>
 
         {/* Content */}
-        <div className="px-6 py-4">
+        <div className="px-6 py-4 overflow-y-auto min-h-0">
           {/* Error display */}
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
@@ -179,7 +179,7 @@ export function Dialog({
 
         {/* Footer */}
         {footer && (
-          <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+          <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3 flex-shrink-0">
             {footer}
           </div>
         )}
