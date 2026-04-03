@@ -589,21 +589,27 @@ const ROUTES: Record<string, RouteSpec> = {
 // Core fetch invoker
 // ---------------------------------------------------------------------------
 
+/** Built request ready to execute */
+export interface ApiRequest {
+  method: string;
+  /** Path with query string (e.g., /api/accounts?limit=10) */
+  url: string;
+  body?: unknown;
+}
+
 /**
- * Invoke a Tauri command via the REST API.
- *
- * @throws Error if the command has no REST mapping or the request fails.
+ * Build an API request from a command name and args.
+ * Used by both browser fetch (invokeApi) and Tauri proxy (api_proxy).
  */
-export async function invokeApi<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+export function buildApiRequest(cmd: string, args?: Record<string, unknown>): ApiRequest {
   const route = ROUTES[cmd];
   if (!route) {
     throw new Error(
-      `Command "${cmd}" is not available in browser mode (no REST API mapping).`,
+      `Command "${cmd}" is not available (no REST API mapping).`,
     );
   }
 
   const safeArgs = args ?? {};
-  const baseUrl = getBaseUrl();
 
   // Build path with substituted params
   let path = route.path;
@@ -633,17 +639,33 @@ export async function invokeApi<T>(cmd: string, args?: Record<string, unknown>):
     }
   }
 
-  const url = `${baseUrl}${path}${queryString}`;
+  const url = `${path}${queryString}`;
 
-  // Build fetch options
-  const init: RequestInit = { method: route.method };
-
+  let body: unknown | undefined;
   if (route.mapBody && (route.method === 'POST' || route.method === 'PUT')) {
-    init.headers = { 'Content-Type': 'application/json' };
-    init.body = JSON.stringify(route.mapBody(safeArgs));
+    body = route.mapBody(safeArgs);
   }
 
-  const response = await fetch(url, init);
+  return { method: route.method, url, body };
+}
+
+/**
+ * Invoke a Tauri command via the REST API (browser mode).
+ */
+export async function invokeApi<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const req = buildApiRequest(cmd, args);
+  const baseUrl = getBaseUrl();
+  const fullUrl = `${baseUrl}${req.url}`;
+
+  // Build fetch options
+  const init: RequestInit = { method: req.method };
+
+  if (req.body !== undefined) {
+    init.headers = { 'Content-Type': 'application/json' };
+    init.body = JSON.stringify(req.body);
+  }
+
+  const response = await fetch(fullUrl, init);
 
   // 204 No Content (e.g. DELETE)
   if (response.status === 204) {
@@ -667,7 +689,7 @@ export async function invokeApi<T>(cmd: string, args?: Record<string, unknown>):
   // Some endpoints return a value wrapper for settings — unwrap if needed
   const data = await response.json();
   // Settings endpoints return { key, value } — unwrap to just the value
-  if (path.startsWith('/api/settings/') && route.method === 'GET' && data && 'value' in data) {
+  if (req.url.startsWith('/api/settings/') && req.method === 'GET' && data && 'value' in data) {
     return data.value as T;
   }
   return data as T;

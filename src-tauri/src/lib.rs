@@ -25,6 +25,54 @@ use tauri::{
 #[cfg(all(feature = "gui", desktop))]
 use tauri_plugin_autostart::MacosLauncher;
 
+/// HTTP proxy: forwards a pre-built REST API request from the frontend.
+/// The TypeScript adapter computes the URL/method/body, this just executes it
+/// from inside Tauri (bypassing CORS restrictions on the webview).
+#[cfg(feature = "gui")]
+#[tauri::command]
+async fn api_proxy(
+    method: String,
+    url: String,
+    body: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let full_url = format!("http://127.0.0.1:5004{}", url);
+
+    let mut req = match method.as_str() {
+        "GET" => client.get(&full_url),
+        "POST" => client.post(&full_url),
+        "PUT" => client.put(&full_url),
+        "DELETE" => client.delete(&full_url),
+        _ => return Err(format!("Unsupported method: {}", method)),
+    };
+
+    if let Some(b) = body {
+        req = req.header("Content-Type", "application/json").json(&b);
+    }
+
+    let response = req.send().await
+        .map_err(|e| format!("API request failed: {}", e))?;
+
+    let status = response.status();
+    if status.as_u16() == 204 {
+        return Ok(serde_json::Value::Null);
+    }
+
+    let text = response.text().await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!("{}: {}", status, text));
+    }
+
+    serde_json::from_str(&text)
+        .map_err(|_| text) // If not JSON, return raw text as error
+}
+
 // Constants
 #[cfg(feature = "gui")]
 const MAIN_WINDOW_NAME: &str = "main";
@@ -312,14 +360,13 @@ pub fn run() {
                 }
             }
         })
-        // Desktop-only commands: OS-native features that require Tauri AppHandle.
-        // All business logic routes through the REST API (server/api.rs).
+        // Invoke proxy: forwards any command to the local REST API server.
+        // Desktop-only commands use native Tauri APIs directly.
         .invoke_handler(tauri::generate_handler![
+            api_proxy,
             commands::greet,
-            // Autostart (requires tauri_plugin_autostart)
             commands::get_autostart_enabled,
             commands::set_autostart_enabled,
-            // Auto-updater (requires tauri_plugin_updater)
             commands::update::check_for_update,
             commands::update::get_update_settings,
             commands::update::set_auto_check_updates,
