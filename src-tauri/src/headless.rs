@@ -93,10 +93,23 @@ pub async fn run_headless(config: HeadlessConfig) -> Result<(), Box<dyn std::err
     let bind_addr: IpAddr = config.bind_address.unwrap_or_else(|| [0, 0, 0, 0].into());
     let addr = std::net::SocketAddr::new(bind_addr, port);
 
+    // Detect LAN IP for user-friendly URLs
+    let local_ip = server::hdhr::get_local_ip();
+    let base_url = format!("http://{}:{}", local_ip, port);
+
     let server_handle = tokio::spawn(async move {
         let app = server::routes::create_router(server_state);
         let listener = tokio::net::TcpListener::bind(addr).await?;
-        println!("HTTP server listening on http://{}", addr);
+
+        println!();
+        println!("  StreamForge v{} — headless mode", env!("CARGO_PKG_VERSION"));
+        println!();
+        println!("  Web UI:       {}/", base_url);
+        println!("  M3U Playlist: {}/playlist.m3u", base_url);
+        println!("  EPG Guide:    {}/epg.xml", base_url);
+        println!("  REST API:     {}/api/", base_url);
+        println!("  Health:       {}/health", base_url);
+        println!();
 
         // Fire-and-forget version check
         tokio::spawn(async {
@@ -120,7 +133,6 @@ pub async fn run_headless(config: HeadlessConfig) -> Result<(), Box<dyn std::err
             eprintln!("Failed to start EPG scheduler: {}", e);
             return;
         }
-        println!("EPG scheduler started");
 
         if let Some(mut conn) = sched.get_db_connection().await {
             let schedule = scheduler::get_epg_schedule(&mut conn);
@@ -133,10 +145,7 @@ pub async fn run_headless(config: HeadlessConfig) -> Result<(), Box<dyn std::err
                 if let Err(e) = sched.update_schedule(schedule.hour, schedule.minute).await {
                     eprintln!("Failed to update EPG schedule: {}", e);
                 } else {
-                    println!(
-                        "EPG scheduler configured: refresh at {:02}:{:02} daily",
-                        schedule.hour, schedule.minute
-                    );
+                    println!("  EPG refresh: {:02}:{:02} daily", schedule.hour, schedule.minute);
                 }
             }
 
@@ -146,7 +155,8 @@ pub async fn run_headless(config: HeadlessConfig) -> Result<(), Box<dyn std::err
     });
 
     // --- Shutdown -----------------------------------------------------------
-    println!("StreamForge headless mode running. Press Ctrl-C to stop.");
+    println!("  Press Ctrl-C to stop.");
+    println!();
     tokio::signal::ctrl_c().await?;
     println!("Shutting down...");
 
