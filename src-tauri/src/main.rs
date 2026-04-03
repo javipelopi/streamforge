@@ -86,7 +86,7 @@ fn main() {
 /// Initialises the database (with migrations), runs the requested operation,
 /// writes/reads the file, then returns so the process can exit.
 fn run_config_cli(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
-    use streamforge_lib::commands::config::{
+    use streamforge_lib::services::config::{
         export_configuration_standalone, import_configuration_standalone,
     };
     use streamforge_lib::db;

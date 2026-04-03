@@ -56,7 +56,7 @@ async fn main() {
 
 /// Handle --export-config and --import-config CLI flags.
 fn run_config_cli(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
-    use streamforge_lib::commands::config::{
+    use streamforge_lib::services::config::{
         export_configuration_standalone, import_configuration_standalone,
     };
     use streamforge_lib::db;
