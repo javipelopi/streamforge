@@ -436,6 +436,7 @@ const ROUTES: Record<string, RouteSpec> = {
   get_enabled_channels_with_programs: {
     method: 'GET',
     path: '/api/epg/grid',
+    queryParams: ['startTime', 'endTime'],
   },
   search_epg_programs: {
     method: 'GET',
