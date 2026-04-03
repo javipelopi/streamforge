@@ -13,3 +13,4 @@ export { PromoteToPlexDialog } from './PromoteToPlexDialog';
 export { PromoteOrphanDialog } from './PromoteOrphanDialog';
 export { EditSyntheticChannelDialog } from './EditSyntheticChannelDialog';
 export { TargetLineupChannelRow } from './TargetLineupChannelRow';
+export { DisabledChannelRow } from './DisabledChannelRow';

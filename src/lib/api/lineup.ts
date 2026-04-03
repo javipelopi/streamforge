@@ -1,5 +1,6 @@
 import { invoke } from './invoke';
 import type { XmltvChannelWithMappings } from './matcher';
+import { getXmltvChannelsWithMappings } from './matcher';
 import type { LinkStatus } from './sources';
 
 // ============================================================================
@@ -298,6 +299,30 @@ export interface TargetLineupChannel {
  */
 export async function getTargetLineupChannels(): Promise<TargetLineupChannel[]> {
   return invoke<TargetLineupChannel[]>('get_target_lineup_channels');
+}
+
+/**
+ * Get all DISABLED (matched but not enabled) channels for the Target Lineup view.
+ *
+ * Uses the existing getXmltvChannelsWithMappings endpoint and filters client-side
+ * for channels where isEnabled=false and matchCount>0 (matched but disabled).
+ *
+ * @returns List of disabled channels, sorted alphabetically by display name
+ */
+export async function getDisabledLineupChannels(): Promise<TargetLineupChannel[]> {
+  const allChannels = await getXmltvChannelsWithMappings();
+  return allChannels
+    .filter((ch) => !ch.isEnabled && ch.matchCount > 0)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName))
+    .map((ch) => ({
+      id: ch.id,
+      displayName: ch.displayName,
+      icon: ch.icon,
+      isEnabled: false,
+      isSynthetic: ch.isSynthetic,
+      streamCount: ch.matchCount,
+      plexDisplayOrder: ch.plexDisplayOrder,
+    }));
 }
 
 // ============================================================================

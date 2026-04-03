@@ -2,8 +2,9 @@
  * Target Lineup View
  * Story 3-9: Implement Target Lineup View
  *
- * Displays the list of ENABLED channels for the Plex lineup.
- * Users can reorder channels via position input and toggle enabled state.
+ * Displays the list of channels for the Plex lineup in two tabs:
+ * - Enabled: channels in the lineup with ordering (drag to reorder)
+ * - Disabled: matched but disabled channels with enable toggle
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -13,19 +14,24 @@ import { useNavigate } from 'react-router-dom';
 import { ROUTES } from '../lib/routes';
 import {
   getTargetLineupChannels,
+  getDisabledLineupChannels,
   updateChannelOrder,
   toggleXmltvChannel,
   type TargetLineupChannel,
 } from '../lib/api';
 import { TargetLineupChannelRow } from '../components/channels/TargetLineupChannelRow';
+import { DisabledChannelRow } from '../components/channels/DisabledChannelRow';
 
 // Row height for virtualized list
 const ROW_HEIGHT = 72;
+
+type LineupTab = 'enabled' | 'disabled';
 
 export function TargetLineup() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const parentRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<LineupTab>('enabled');
 
   // State for undo toast
   const [undoToast, setUndoToast] = useState<{
@@ -54,8 +60,22 @@ export function TargetLineup() {
     queryFn: getTargetLineupChannels,
   });
 
+  // Fetch disabled channels
+  const {
+    data: disabledChannels = [],
+    isLoading: isLoadingDisabled,
+    error: errorDisabled,
+    refetch: refetchDisabled,
+  } = useQuery({
+    queryKey: ['disabledLineupChannels'],
+    queryFn: getDisabledLineupChannels,
+  });
+
   // Filter out temporarily removed channels for display
   const displayChannels = channels.filter((c) => !removedChannels.has(c.id));
+
+  // Determine which list to use for virtualizer
+  const activeList = activeTab === 'enabled' ? displayChannels : disabledChannels;
 
   // Mutation for updating channel order with optimistic update
   const updateOrderMutation = useMutation({
@@ -96,18 +116,20 @@ export function TargetLineup() {
     mutationFn: (channelId: number) => toggleXmltvChannel(channelId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['targetLineupChannels'] });
+      queryClient.invalidateQueries({ queryKey: ['disabledLineupChannels'] });
       queryClient.invalidateQueries({ queryKey: ['xmltvChannels'] });
     },
     onError: (error) => {
       console.error('Failed to toggle channel:', error);
       // Revert optimistic update by refetching
       queryClient.invalidateQueries({ queryKey: ['targetLineupChannels'] });
+      queryClient.invalidateQueries({ queryKey: ['disabledLineupChannels'] });
     },
   });
 
   // Virtual list setup
   const virtualizer = useVirtualizer({
-    count: displayChannels.length,
+    count: activeList.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 5,
@@ -153,7 +175,7 @@ export function TargetLineup() {
     [displayChannels, updateOrderMutation]
   );
 
-  // Toggle handler with optimistic UI and undo
+  // Toggle handler with optimistic UI and undo (for Enabled tab - removing)
   const handleToggleEnabled = useCallback(
     (channel: TargetLineupChannel) => {
       // If channel is enabled, we're disabling it
@@ -205,6 +227,14 @@ export function TargetLineup() {
     [toggleMutation, undoToast.timeoutId, undoToast.channelId]
   );
 
+  // Enable handler for Disabled tab
+  const handleEnableChannel = useCallback(
+    (channel: TargetLineupChannel) => {
+      toggleMutation.mutate(channel.id);
+    },
+    [toggleMutation]
+  );
+
   // Undo handler
   const handleUndo = useCallback(() => {
     if (undoToast.timeoutId) {
@@ -229,8 +259,14 @@ export function TargetLineup() {
     };
   }, [undoToast.timeoutId]);
 
+  // Reset virtualizer scroll when switching tabs
+  useEffect(() => {
+    virtualizer.scrollToIndex(0);
+  }, [activeTab, virtualizer]);
+
   // Loading state
-  if (isLoading) {
+  const isActiveLoading = activeTab === 'enabled' ? isLoading : isLoadingDisabled;
+  if (isActiveLoading) {
     return (
       <div data-testid="target-lineup-loading" className="p-6">
         <div className="animate-pulse space-y-4">
@@ -244,7 +280,9 @@ export function TargetLineup() {
   }
 
   // Error state
-  if (error) {
+  const activeError = activeTab === 'enabled' ? error : errorDisabled;
+  const activeRefetch = activeTab === 'enabled' ? refetch : refetchDisabled;
+  if (activeError) {
     return (
       <div data-testid="target-lineup-error" className="p-6">
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -253,7 +291,7 @@ export function TargetLineup() {
             <span className="text-red-700">Failed to load channels</span>
           </div>
           <button
-            onClick={() => refetch()}
+            onClick={() => activeRefetch()}
             className="mt-2 px-4 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200"
           >
             Retry
@@ -263,53 +301,182 @@ export function TargetLineup() {
     );
   }
 
-  // Empty state (but still show undo toast if one is active)
-  if (displayChannels.length === 0 && !undoToast.show) {
-    return (
-      <div data-testid="target-lineup-empty-state" className="p-6">
-        <div className="text-center py-12">
-          <Tv className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-          <div data-testid="empty-state-message">
-            <h2 className="text-xl font-semibold text-gray-700 mb-2">No channels in lineup</h2>
-            <p className="text-gray-500 mb-6">
-              Add channels from Sources to build your Plex lineup.
-            </p>
-          </div>
-          <button
-            data-testid="browse-sources-button"
-            onClick={() => navigate(ROUTES.SOURCES)}
-            aria-label="Browse Sources"
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Browse Sources
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Tab header with counts
+  const enabledCount = displayChannels.length;
+  const disabledCount = disabledChannels.length;
 
-  // Empty state with pending undo (show both empty UI and toast)
-  if (displayChannels.length === 0 && undoToast.show) {
-    return (
-      <div data-testid="target-lineup-empty-state" className="p-6">
-        <div className="text-center py-12">
-          <Tv className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-          <div data-testid="empty-state-message">
-            <h2 className="text-xl font-semibold text-gray-700 mb-2">No channels in lineup</h2>
-            <p className="text-gray-500 mb-6">
-              Add channels from Sources to build your Plex lineup.
+  // Empty state for Enabled tab
+  const showEnabledEmpty = activeTab === 'enabled' && displayChannels.length === 0 && !undoToast.show;
+  // Empty state for Disabled tab
+  const showDisabledEmpty = activeTab === 'disabled' && disabledChannels.length === 0;
+
+  return (
+    <div data-testid="target-lineup-view" className="p-6 h-full flex flex-col">
+      {/* Header */}
+      <div className="mb-4">
+        <h1 className="text-2xl font-bold text-gray-900">Target Lineup</h1>
+        <p className="text-gray-500 mt-1">
+          Manage your Plex lineup channels
+        </p>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex border-b border-gray-200 mb-4" role="tablist" aria-label="Lineup tabs">
+        <button
+          data-testid="enabled-tab"
+          role="tab"
+          aria-selected={activeTab === 'enabled'}
+          aria-controls="enabled-tab-panel"
+          className={`px-4 py-2 font-medium text-sm ${
+            activeTab === 'enabled'
+              ? 'border-b-2 border-blue-500 text-blue-600'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+          onClick={() => setActiveTab('enabled')}
+        >
+          Enabled{enabledCount > 0 && ` (${enabledCount})`}
+        </button>
+        <button
+          data-testid="disabled-tab"
+          role="tab"
+          aria-selected={activeTab === 'disabled'}
+          aria-controls="disabled-tab-panel"
+          className={`px-4 py-2 font-medium text-sm ${
+            activeTab === 'disabled'
+              ? 'border-b-2 border-blue-500 text-blue-600'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+          onClick={() => setActiveTab('disabled')}
+        >
+          Disabled{disabledCount > 0 && ` (${disabledCount})`}
+        </button>
+      </div>
+
+      {/* Empty states */}
+      {showEnabledEmpty && (
+        <div data-testid="target-lineup-empty-state" className="flex-1 flex items-center justify-center">
+          <div className="text-center py-12">
+            <Tv className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+            <div data-testid="empty-state-message">
+              <h2 className="text-xl font-semibold text-gray-700 mb-2">No channels in lineup</h2>
+              <p className="text-gray-500 mb-6">
+                Add channels from Sources to build your Plex lineup.
+              </p>
+            </div>
+            <button
+              data-testid="browse-sources-button"
+              onClick={() => navigate(ROUTES.SOURCES)}
+              aria-label="Browse Sources"
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Browse Sources
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showDisabledEmpty && (
+        <div data-testid="disabled-empty-state" className="flex-1 flex items-center justify-center">
+          <div className="text-center py-12">
+            <Tv className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+            <h2 className="text-xl font-semibold text-gray-700 mb-2">No disabled channels</h2>
+            <p className="text-gray-500">
+              All matched channels are currently enabled.
             </p>
           </div>
-          <button
-            data-testid="browse-sources-button"
-            onClick={() => navigate(ROUTES.SOURCES)}
-            aria-label="Browse Sources"
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Browse Sources
-          </button>
         </div>
-        {/* Undo Toast */}
+      )}
+
+      {/* Enabled tab - empty with pending undo */}
+      {activeTab === 'enabled' && displayChannels.length === 0 && undoToast.show && (
+        <div data-testid="target-lineup-empty-state" className="flex-1 flex items-center justify-center">
+          <div className="text-center py-12">
+            <Tv className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+            <div data-testid="empty-state-message">
+              <h2 className="text-xl font-semibold text-gray-700 mb-2">No channels in lineup</h2>
+              <p className="text-gray-500 mb-6">
+                Add channels from Sources to build your Plex lineup.
+              </p>
+            </div>
+            <button
+              data-testid="browse-sources-button"
+              onClick={() => navigate(ROUTES.SOURCES)}
+              aria-label="Browse Sources"
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Browse Sources
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Channel list (virtualized) */}
+      {activeList.length > 0 && (
+        <>
+          <div
+            ref={parentRef}
+            data-testid={activeTab === 'enabled' ? 'target-lineup-list' : 'disabled-lineup-list'}
+            id={`${activeTab}-tab-panel`}
+            role="tabpanel"
+            aria-labelledby={`${activeTab}-tab`}
+            className="flex-1 overflow-auto border border-gray-200 rounded-lg bg-white"
+          >
+            <div
+              role="listbox"
+              aria-label={activeTab === 'enabled' ? 'Target lineup channels' : 'Disabled channels'}
+              style={{
+                height: `${virtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative',
+              }}
+            >
+              {virtualizer.getVirtualItems().map((virtualItem) => {
+                const channel = activeList[virtualItem.index];
+                if (!channel) return null;
+
+                if (activeTab === 'enabled') {
+                  return (
+                    <TargetLineupChannelRow
+                      key={channel.id}
+                      channel={channel}
+                      virtualItem={virtualItem}
+                      totalChannels={displayChannels.length}
+                      onMoveToPosition={handleMoveToPosition}
+                      onToggleEnabled={() => handleToggleEnabled(channel)}
+                    />
+                  );
+                }
+
+                return (
+                  <DisabledChannelRow
+                    key={channel.id}
+                    channel={channel}
+                    virtualItem={virtualItem}
+                    onEnable={() => handleEnableChannel(channel)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Helper text (only on enabled tab) */}
+          {activeTab === 'enabled' && (
+            <div className="mt-3 text-center text-sm text-gray-500">
+              Looking to add more channels?{' '}
+              <button
+                type="button"
+                onClick={() => navigate(ROUTES.SOURCES)}
+                className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+              >
+                Browse Sources
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Undo Toast */}
+      {undoToast.show && (
         <div
           data-testid="undo-toast"
           className="fixed bottom-4 right-4 z-50 bg-gray-800 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-4"
@@ -328,86 +495,7 @@ export function TargetLineup() {
             Undo
           </button>
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div data-testid="target-lineup-view" className="p-6 h-full flex flex-col">
-        {/* Header */}
-        <div className="mb-4">
-          <h1 className="text-2xl font-bold text-gray-900">Target Lineup</h1>
-          <p className="text-gray-500 mt-1">
-            {displayChannels.length} channel{displayChannels.length !== 1 ? 's' : ''} in your Plex lineup
-          </p>
-        </div>
-
-        {/* Channel list */}
-        <div
-          ref={parentRef}
-          data-testid="target-lineup-list"
-          className="flex-1 overflow-auto border border-gray-200 rounded-lg bg-white"
-          role="listbox"
-          aria-label="Target lineup channels"
-        >
-          <div
-            style={{
-              height: `${virtualizer.getTotalSize()}px`,
-              width: '100%',
-              position: 'relative',
-            }}
-          >
-            {virtualizer.getVirtualItems().map((virtualItem) => {
-              const channel = displayChannels[virtualItem.index];
-              if (!channel) return null;
-
-              return (
-                <TargetLineupChannelRow
-                  key={channel.id}
-                  channel={channel}
-                  virtualItem={virtualItem}
-                  totalChannels={displayChannels.length}
-                  onMoveToPosition={handleMoveToPosition}
-                  onToggleEnabled={() => handleToggleEnabled(channel)}
-                />
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Helper text */}
-        <div className="mt-3 text-center text-sm text-gray-500">
-          Looking to add more channels?{' '}
-          <button
-            type="button"
-            onClick={() => navigate(ROUTES.SOURCES)}
-            className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-          >
-            Browse Sources
-          </button>
-        </div>
-
-        {/* Undo Toast */}
-        {undoToast.show && (
-          <div
-            data-testid="undo-toast"
-            className="fixed bottom-4 right-4 z-50 bg-gray-800 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-4"
-            role="alert"
-            aria-live="polite"
-          >
-            <span>
-              Channel <strong>{undoToast.channelName}</strong> removed from lineup
-            </span>
-            <button
-              data-testid="undo-button"
-              onClick={handleUndo}
-              className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded font-medium transition-colors"
-              aria-label="Undo"
-            >
-              Undo
-            </button>
-          </div>
-        )}
-      </div>
+      )}
+    </div>
   );
 }
