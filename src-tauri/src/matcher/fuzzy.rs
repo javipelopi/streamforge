@@ -8,7 +8,8 @@ use regex::Regex;
 use std::sync::LazyLock;
 
 use super::{scorer::calculate_match_score, MatchConfig, MatchResult, MatchStats, MatchType};
-use crate::db::models::{M3uChannel, XmltvChannel, XtreamChannel};
+use crate::db::models::{M3uChannel, NormalizationRule, XmltvChannel, XtreamChannel};
+use crate::services::matching_profiles::apply_normalization_rules;
 
 /// Result of matching M3U channels to XMLTV channels
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -103,6 +104,19 @@ pub fn normalize_channel_name(name: &str) -> String {
     collapsed.trim().to_string()
 }
 
+/// Normalize a channel name with optional per-profile rules applied first.
+///
+/// If rules are provided, they are applied to the raw name before the standard
+/// normalization pipeline (lowercase, strip quality suffixes, etc.).
+pub fn normalize_with_rules(name: &str, rules: &[NormalizationRule]) -> String {
+    if rules.is_empty() {
+        normalize_channel_name(name)
+    } else {
+        let after_rules = apply_normalization_rules(name, rules);
+        normalize_channel_name(&after_rules)
+    }
+}
+
 /// Match XMLTV channels to Xtream streams using fuzzy matching.
 ///
 /// For each XMLTV channel, this function finds all Xtream streams that match
@@ -123,6 +137,20 @@ pub fn match_channels(
     xtream_channels: &[XtreamChannel],
     config: &MatchConfig,
 ) -> (Vec<MatchResult>, MatchStats) {
+    match_channels_with_rules(xmltv_channels, xtream_channels, config, &[], &[])
+}
+
+/// Match XMLTV channels to Xtream streams with optional per-profile normalization rules.
+///
+/// `xmltv_rules` are applied to XMLTV channel names before standard normalization.
+/// `stream_rules` are applied to Xtream stream names before standard normalization.
+pub fn match_channels_with_rules(
+    xmltv_channels: &[XmltvChannel],
+    xtream_channels: &[XtreamChannel],
+    config: &MatchConfig,
+    xmltv_rules: &[NormalizationRule],
+    stream_rules: &[NormalizationRule],
+) -> (Vec<MatchResult>, MatchStats) {
     let start = std::time::Instant::now();
     let mut all_matches: Vec<MatchResult> = Vec::new();
     let mut stats = MatchStats {
@@ -138,7 +166,7 @@ pub fn match_channels(
             c.id.map(|id| {
                 (
                     id,
-                    normalize_channel_name(&c.name),
+                    normalize_with_rules(&c.name, stream_rules),
                     c.epg_channel_id.as_deref(),
                 )
             })
@@ -151,7 +179,7 @@ pub fn match_channels(
             None => continue,
         };
 
-        let xmltv_normalized = normalize_channel_name(&xmltv.display_name);
+        let xmltv_normalized = normalize_with_rules(&xmltv.display_name, xmltv_rules);
         let xmltv_channel_id = &xmltv.channel_id;
 
         let mut channel_matches: Vec<MatchResult> = Vec::new();
@@ -243,6 +271,17 @@ pub fn match_m3u_channels(
     m3u_channels: &[M3uChannel],
     config: &MatchConfig,
 ) -> (Vec<M3uMatchResult>, MatchStats) {
+    match_m3u_channels_with_rules(xmltv_channels, m3u_channels, config, &[], &[])
+}
+
+/// Match M3U channels to XMLTV channels with optional per-profile normalization rules.
+pub fn match_m3u_channels_with_rules(
+    xmltv_channels: &[XmltvChannel],
+    m3u_channels: &[M3uChannel],
+    config: &MatchConfig,
+    xmltv_rules: &[NormalizationRule],
+    stream_rules: &[NormalizationRule],
+) -> (Vec<M3uMatchResult>, MatchStats) {
     let start = std::time::Instant::now();
     let mut all_matches: Vec<M3uMatchResult> = Vec::new();
     let mut stats = MatchStats {
@@ -260,7 +299,7 @@ pub fn match_m3u_channels(
                 let name_to_match = c.tvg_name.as_deref().unwrap_or(&c.name);
                 (
                     id,
-                    normalize_channel_name(name_to_match),
+                    normalize_with_rules(name_to_match, stream_rules),
                     c.tvg_id.as_deref(),
                 )
             })
@@ -273,7 +312,7 @@ pub fn match_m3u_channels(
             None => continue,
         };
 
-        let xmltv_normalized = normalize_channel_name(&xmltv.display_name);
+        let xmltv_normalized = normalize_with_rules(&xmltv.display_name, xmltv_rules);
         let xmltv_channel_id = &xmltv.channel_id;
 
         let mut channel_matches: Vec<M3uMatchResult> = Vec::new();

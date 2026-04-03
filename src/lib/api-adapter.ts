@@ -545,6 +545,44 @@ const ROUTES: Record<string, RouteSpec> = {
     method: 'POST',
     path: '/api/updates/check',
   },
+
+  // -- Matching Profiles ----------------------------------------------------
+  get_matching_profiles: {
+    method: 'GET',
+    path: '/api/matching-profiles',
+    queryParams: ['xmltvSourceId'],
+  },
+  get_matching_profile: {
+    method: 'GET',
+    path: '/api/matching-profiles/{id}',
+    pathParams: ['id'],
+  },
+  create_matching_profile: {
+    method: 'POST',
+    path: '/api/matching-profiles',
+    mapBody: bodyKey('profile'),
+  },
+  update_matching_profile: {
+    method: 'PUT',
+    path: '/api/matching-profiles/{id}',
+    pathParams: ['id'],
+    mapBody: bodyKey('updates'),
+  },
+  delete_matching_profile: {
+    method: 'DELETE',
+    path: '/api/matching-profiles/{id}',
+    pathParams: ['id'],
+  },
+  reorder_matching_profiles: {
+    method: 'POST',
+    path: '/api/matching-profiles/reorder',
+    mapBody: (args) => ({ profileIds: args.profileIds }),
+  },
+  preview_matching_normalization: {
+    method: 'POST',
+    path: '/api/matching-profiles/preview',
+    mapBody: bodyAll,
+  },
 };
 
 // ---------------------------------------------------------------------------

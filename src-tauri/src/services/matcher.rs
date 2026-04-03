@@ -19,9 +19,11 @@ use crate::logging::log_event_internal;
 use crate::matcher::{
     get_channel_mappings as db_get_channel_mappings,
     get_xmltv_channel_settings as db_get_xmltv_channel_settings, match_channels,
-    match_m3u_channels, save_channel_mappings, ChangedStream, M3uMatchResult, MatchConfig,
-    MatchStats, MatchType, ProviderChanges,
+    match_channels_with_rules, match_m3u_channels, match_m3u_channels_with_rules,
+    save_channel_mappings, ChangedStream, M3uMatchResult, MatchConfig, MatchStats, MatchType,
+    ProviderChanges,
 };
+use crate::services::matching_profiles;
 
 /// Default match threshold
 const DEFAULT_MATCH_THRESHOLD: f64 = 0.85;

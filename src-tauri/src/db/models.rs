@@ -2,8 +2,9 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::db::schema::{
-    accounts, acestream_sources, channel_mappings, event_log, m3u_channels, m3u_sources, programs,
-    settings, xmltv_channel_settings, xmltv_channels, xmltv_sources, xtream_channels,
+    accounts, acestream_sources, channel_mappings, event_log, m3u_channels, m3u_sources,
+    matching_profiles, programs, settings, xmltv_channel_settings, xmltv_channels, xmltv_sources,
+    xtream_channels,
 };
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone)]
@@ -1064,4 +1065,70 @@ impl NewAcestreamChannelMapping {
         self.is_primary = 1;
         self
     }
+}
+
+// ============================================================================
+// Matching Profile Models (per-source-pair normalization rules)
+// ============================================================================
+
+/// A normalization rule applied to channel names before matching
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum NormalizationRule {
+    /// Remove a prefix from the channel name
+    StripPrefix { value: String },
+    /// Remove a suffix from the channel name
+    StripSuffix { value: String },
+    /// Apply a regex replacement
+    RegexReplace { pattern: String, replacement: String },
+}
+
+/// Matching profile for querying existing profiles
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize)]
+#[diesel(table_name = matching_profiles)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[serde(rename_all = "camelCase")]
+pub struct MatchingProfile {
+    pub id: Option<i32>,
+    pub xmltv_source_id: i32,
+    pub stream_source_type: String,
+    pub stream_source_id: i32,
+    pub priority_order: i32,
+    pub rules: String,
+    pub is_active: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl MatchingProfile {
+    /// Parse the JSON rules column into structured normalization rules
+    pub fn parsed_rules(&self) -> Vec<NormalizationRule> {
+        serde_json::from_str(&self.rules).unwrap_or_default()
+    }
+}
+
+/// New matching profile for insertion
+#[derive(Insertable, Debug, Clone, Deserialize)]
+#[diesel(table_name = matching_profiles)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[serde(rename_all = "camelCase")]
+pub struct NewMatchingProfile {
+    pub xmltv_source_id: i32,
+    pub stream_source_type: String,
+    pub stream_source_id: i32,
+    pub priority_order: i32,
+    pub rules: String,
+    #[serde(default = "default_is_active")]
+    pub is_active: i32,
+}
+
+/// Changeset for updating a matching profile
+#[derive(AsChangeset, Debug, Clone, Deserialize)]
+#[diesel(table_name = matching_profiles)]
+#[serde(rename_all = "camelCase")]
+pub struct MatchingProfileUpdate {
+    pub priority_order: Option<i32>,
+    pub rules: Option<String>,
+    pub is_active: Option<i32>,
+    pub updated_at: Option<String>,
 }

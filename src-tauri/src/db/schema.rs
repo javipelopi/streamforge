@@ -88,6 +88,20 @@ diesel::table! {
 }
 
 diesel::table! {
+    matching_profiles (id) {
+        id -> Nullable<Integer>,
+        xmltv_source_id -> Integer,
+        stream_source_type -> Text,
+        stream_source_id -> Integer,
+        priority_order -> Integer,
+        rules -> Text,
+        is_active -> Integer,
+        created_at -> Text,
+        updated_at -> Text,
+    }
+}
+
+diesel::table! {
     programs (id) {
         id -> Nullable<Integer>,
         xmltv_channel_id -> Integer,
@@ -169,6 +183,7 @@ diesel::joinable!(channel_mappings -> m3u_channels (m3u_channel_id));
 diesel::joinable!(channel_mappings -> xmltv_channels (xmltv_channel_id));
 diesel::joinable!(channel_mappings -> xtream_channels (xtream_channel_id));
 diesel::joinable!(m3u_channels -> m3u_sources (source_id));
+diesel::joinable!(matching_profiles -> xmltv_sources (xmltv_source_id));
 diesel::joinable!(programs -> xmltv_channels (xmltv_channel_id));
 diesel::joinable!(xmltv_channel_settings -> xmltv_channels (xmltv_channel_id));
 diesel::joinable!(xmltv_channels -> xmltv_sources (source_id));
@@ -181,6 +196,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     event_log,
     m3u_channels,
     m3u_sources,
+    matching_profiles,
     programs,
     settings,
     xmltv_channel_settings,
