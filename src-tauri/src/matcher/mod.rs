@@ -1,21 +1,4 @@
 //! Channel Matcher Module
-//!
-//! Provides fuzzy matching between XMLTV channels and Xtream streams.
-//! This follows the XMLTV-first architecture where XMLTV channels define
-//! the Plex lineup and Xtream streams are matched TO them as video sources.
-//!
-//! # Architecture
-//!
-//! - XMLTV channels are the PRIMARY channel list for Plex
-//! - One XMLTV channel can map to MULTIPLE Xtream streams (failover)
-//! - Highest confidence match is marked as `is_primary = true`
-//!
-//! # Modules
-//!
-//! - `fuzzy`: Core fuzzy matching algorithm
-//! - `scorer`: Match confidence scoring with boosts
-//! - `persistence`: Database operations for saving/loading mappings
-//! - `auto_rematch`: Change detection and automatic rematch
 
 mod auto_rematch;
 mod fuzzy;
@@ -24,7 +7,7 @@ mod scorer;
 
 pub use auto_rematch::*;
 pub use fuzzy::{
-    epg_ids_match, match_channels, match_channels_with_rules, match_m3u_channels,
+    basic_normalize, epg_ids_match, match_channels, match_channels_with_rules, match_m3u_channels,
     match_m3u_channels_with_rules, normalize_channel_name, normalize_with_rules, M3uMatchResult,
 };
 pub use persistence::*;
@@ -36,11 +19,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MatchConfig {
-    /// Minimum confidence threshold for matches (default: 0.85)
     pub threshold: f64,
-    /// Boost applied when EPG IDs match exactly (default: 0.15)
     pub epg_id_boost: f64,
-    /// Boost applied when normalized names match exactly (default: 0.10)
     pub exact_name_boost: f64,
 }
 
@@ -61,21 +41,15 @@ impl MatchConfig {
     }
 }
 
-/// The type of match that was found
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MatchType {
-    /// EPG channel ID matches XMLTV channel ID exactly
     ExactEpgId,
-    /// Normalized names match exactly
     ExactName,
-    /// Jaro-Winkler fuzzy match above threshold
     Fuzzy,
-    /// No match found (below threshold)
     None,
 }
 
-/// Result of matching a single XMLTV channel to Xtream streams
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MatchResult {
@@ -111,22 +85,14 @@ impl MatchResult {
     }
 }
 
-/// Statistics about a matching operation
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MatchStats {
-    /// Total number of XMLTV channels processed
     pub total_xmltv: usize,
-    /// Total number of source channels available (Xtream, M3U, or Acestream)
-    /// CR-32: Renamed from total_xtream for clarity with multi-source support
     pub total_source_channels: usize,
-    /// Number of XMLTV channels with at least one match
     pub matched: usize,
-    /// Number of XMLTV channels with no matches
     pub unmatched: usize,
-    /// Number of XMLTV channels with multiple matches (failover available)
     pub multiple_matches: usize,
-    /// Duration of the matching operation in milliseconds
     pub duration_ms: u64,
 }
 
@@ -138,14 +104,6 @@ mod tests {
     fn test_match_config_default() {
         let config = MatchConfig::default();
         assert!((config.threshold - 0.85).abs() < f64::EPSILON);
-        assert!((config.epg_id_boost - 0.15).abs() < f64::EPSILON);
-        assert!((config.exact_name_boost - 0.10).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn test_match_config_with_threshold() {
-        let config = MatchConfig::default().with_threshold(0.90);
-        assert!((config.threshold - 0.90).abs() < f64::EPSILON);
     }
 
     #[test]

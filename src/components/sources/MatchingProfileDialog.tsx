@@ -3,7 +3,7 @@
  *
  * Dialog for creating or editing a matching profile.
  * Allows selecting an XMLTV source, a stream source (Xtream/M3U),
- * setting priority order, and configuring normalization rules.
+ * setting priority order, and configuring prefix/suffix for name augmentation.
  */
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -44,15 +44,13 @@ export function MatchingProfileDialog({
 }: MatchingProfileDialogProps) {
   const isEditMode = !!profile;
 
-  // Form state
   const [xmltvSourceId, setXmltvSourceId] = useState<number>(0);
   const [streamSourceType, setStreamSourceType] = useState<StreamSourceType>('xtream');
   const [streamSourceId, setStreamSourceId] = useState<number>(0);
   const [priorityOrder, setPriorityOrder] = useState<number>(0);
-  const [rules, setRules] = useState<NormalizationRule[]>([]);
+  const [rule, setRule] = useState<NormalizationRule>({ prefix: '', suffix: '' });
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch available sources
   const { data: xmltvSources = [] } = useQuery<XmltvSource[]>({
     queryKey: ['xmltv-sources'],
     queryFn: getXmltvSources,
@@ -71,7 +69,6 @@ export function MatchingProfileDialog({
     enabled: open,
   });
 
-  // Reset form when dialog opens or profile changes
   useEffect(() => {
     if (open) {
       if (profile) {
@@ -80,22 +77,22 @@ export function MatchingProfileDialog({
         setStreamSourceId(profile.streamSourceId);
         setPriorityOrder(profile.priorityOrder);
         try {
-          setRules(JSON.parse(profile.rules) as NormalizationRule[]);
+          const parsed = JSON.parse(profile.rules) as NormalizationRule[];
+          setRule(parsed[0] ?? { prefix: '', suffix: '' });
         } catch {
-          setRules([]);
+          setRule({ prefix: '', suffix: '' });
         }
       } else {
         setXmltvSourceId(xmltvSources[0]?.id ?? 0);
         setStreamSourceType('xtream');
         setStreamSourceId(accounts[0]?.id ?? 0);
         setPriorityOrder(existingCount);
-        setRules([]);
+        setRule({ prefix: '', suffix: '' });
       }
       setError(null);
     }
   }, [open, profile, xmltvSources, accounts, existingCount]);
 
-  // Update stream source id when type changes
   useEffect(() => {
     if (!isEditMode) {
       if (streamSourceType === 'xtream') {
@@ -108,15 +105,8 @@ export function MatchingProfileDialog({
 
   const handleSubmit = async () => {
     setError(null);
-
-    if (!xmltvSourceId) {
-      setError('Please select an XMLTV source.');
-      return;
-    }
-    if (!streamSourceId) {
-      setError('Please select a stream source.');
-      return;
-    }
+    if (!xmltvSourceId) { setError('Please select an XMLTV source.'); return; }
+    if (!streamSourceId) { setError('Please select a stream source.'); return; }
 
     try {
       await onSubmit({
@@ -124,7 +114,7 @@ export function MatchingProfileDialog({
         streamSourceType,
         streamSourceId,
         priorityOrder,
-        rules: JSON.stringify(rules),
+        rules: JSON.stringify([rule]),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save profile');
@@ -135,6 +125,8 @@ export function MatchingProfileDialog({
     streamSourceType === 'xtream'
       ? accounts.map((a) => ({ id: a.id, name: a.name }))
       : m3uSources.map((s) => ({ id: s.id, name: s.name }));
+
+  const rulesForPreview: NormalizationRule[] = (rule.prefix || rule.suffix) ? [rule] : [];
 
   return (
     <Dialog
@@ -147,28 +139,17 @@ export function MatchingProfileDialog({
       maxWidth="max-w-2xl"
       footer={
         <>
-          <DialogCancelButton
-            onClick={() => onOpenChange(false)}
-            disabled={isLoading}
-          />
-          <DialogSubmitButton
-            onClick={handleSubmit}
-            isLoading={isLoading}
-            loadingText="Saving..."
-          >
+          <DialogCancelButton onClick={() => onOpenChange(false)} disabled={isLoading} />
+          <DialogSubmitButton onClick={handleSubmit} isLoading={isLoading} loadingText="Saving...">
             {isEditMode ? 'Update Profile' : 'Create Profile'}
           </DialogSubmitButton>
         </>
       }
     >
       <div className="space-y-5">
-        {/* Source selection */}
         <div className="grid grid-cols-2 gap-4">
-          {/* XMLTV Source */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              XMLTV Source (EPG)
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">XMLTV Source (EPG)</label>
             <select
               value={xmltvSourceId}
               onChange={(e) => setXmltvSourceId(Number(e.target.value))}
@@ -177,24 +158,17 @@ export function MatchingProfileDialog({
             >
               <option value={0}>Select source...</option>
               {xmltvSources.map((src) => (
-                <option key={src.id} value={src.id}>
-                  {src.name}
-                </option>
+                <option key={src.id} value={src.id}>{src.name}</option>
               ))}
             </select>
           </div>
 
-          {/* Stream Source Type + ID */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Stream Source
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Stream Source</label>
             <div className="flex gap-2">
               <select
                 value={streamSourceType}
-                onChange={(e) =>
-                  setStreamSourceType(e.target.value as StreamSourceType)
-                }
+                onChange={(e) => setStreamSourceType(e.target.value as StreamSourceType)}
                 disabled={isEditMode}
                 className="w-28 px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm disabled:bg-gray-100"
               >
@@ -209,20 +183,15 @@ export function MatchingProfileDialog({
               >
                 <option value={0}>Select...</option>
                 {streamSourceOptions.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.name}
-                  </option>
+                  <option key={opt.id} value={opt.id}>{opt.name}</option>
                 ))}
               </select>
             </div>
           </div>
         </div>
 
-        {/* Priority */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Priority Order
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Priority Order</label>
           <p className="text-xs text-gray-500 mb-1">
             Lower number = higher priority. First matching profile provides the primary stream.
           </p>
@@ -235,18 +204,19 @@ export function MatchingProfileDialog({
           />
         </div>
 
-        {/* Divider */}
         <hr className="border-gray-200" />
 
-        {/* Normalization rules */}
-        <MatchingRuleEditor rules={rules} onChange={setRules} />
+        <MatchingRuleEditor rule={rule} onChange={setRule} />
 
-        {/* Divider */}
         <hr className="border-gray-200" />
 
-        {/* Preview */}
-        {xmltvSourceId > 0 && (
-          <MatchPreview xmltvSourceId={xmltvSourceId} rules={rules} />
+        {xmltvSourceId > 0 && streamSourceId > 0 && (
+          <MatchPreview
+            xmltvSourceId={xmltvSourceId}
+            streamSourceType={streamSourceType}
+            streamSourceId={streamSourceId}
+            rules={rulesForPreview}
+          />
         )}
       </div>
     </Dialog>

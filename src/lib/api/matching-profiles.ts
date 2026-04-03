@@ -6,11 +6,20 @@ import { invoke } from './invoke';
 
 export type StreamSourceType = 'xtream' | 'm3u' | 'acestream';
 
+/**
+ * A matching rule: prefix and suffix added to XMLTV names to match provider names.
+ *
+ * XMLTV names are the reference (e.g. "La 1"). Provider names are messy
+ * (e.g. "Spain La 1 FHD"). Rules augment the XMLTV name so it looks like
+ * the provider naming for comparison.
+ *
+ * Example: prefix="Spain " suffix=" FHD" -> "La 1" becomes "Spain La 1 FHD"
+ */
 export interface NormalizationRule {
-  type: 'strip_prefix' | 'strip_suffix' | 'regex_replace';
-  value?: string;
-  pattern?: string;
-  replacement?: string;
+  /** Text prepended to the XMLTV name for matching */
+  prefix: string;
+  /** Text appended to the XMLTV name for matching */
+  suffix: string;
 }
 
 export interface MatchingProfile {
@@ -19,7 +28,7 @@ export interface MatchingProfile {
   streamSourceType: StreamSourceType;
   streamSourceId: number;
   priorityOrder: number;
-  rules: string; // JSON string of NormalizationRule[]
+  rules: string;
   isActive: number;
   createdAt: string;
   updatedAt: string;
@@ -50,25 +59,18 @@ export interface PreviewResult {
 // ============================================================================
 
 export async function getMatchingProfiles(xmltvSourceId?: number): Promise<MatchingProfile[]> {
-  return invoke<MatchingProfile[]>('get_matching_profiles', {
-    xmltvSourceId,
-  });
+  return invoke<MatchingProfile[]>('get_matching_profiles', { xmltvSourceId });
 }
 
 export async function getMatchingProfile(id: number): Promise<MatchingProfile> {
   return invoke<MatchingProfile>('get_matching_profile', { id });
 }
 
-export async function createMatchingProfile(
-  profile: NewMatchingProfile
-): Promise<MatchingProfile> {
+export async function createMatchingProfile(profile: NewMatchingProfile): Promise<MatchingProfile> {
   return invoke<MatchingProfile>('create_matching_profile', { profile });
 }
 
-export async function updateMatchingProfile(
-  id: number,
-  updates: MatchingProfileUpdate
-): Promise<MatchingProfile> {
+export async function updateMatchingProfile(id: number, updates: MatchingProfileUpdate): Promise<MatchingProfile> {
   return invoke<MatchingProfile>('update_matching_profile', { id, updates });
 }
 
@@ -80,10 +82,7 @@ export async function reorderMatchingProfiles(profileIds: number[]): Promise<Mat
   return invoke<MatchingProfile[]>('reorder_matching_profiles', { profileIds });
 }
 
-export async function previewNormalization(
-  name: string,
-  rules: NormalizationRule[]
-): Promise<PreviewResult> {
+export async function previewNormalization(name: string, rules: NormalizationRule[]): Promise<PreviewResult> {
   return invoke<PreviewResult>('preview_matching_normalization', { name, rules });
 }
 
@@ -91,17 +90,21 @@ export async function previewNormalization(
 // Preset Rules
 // ============================================================================
 
-export const PRESET_RULES: Record<string, { label: string; rules: NormalizationRule[] }> = {
-  strip_country_prefix: {
-    label: 'Strip country prefix (e.g. "ES: ", "UK: ")',
-    rules: [{ type: 'regex_replace', pattern: '^[A-Z]{2}:\\s*', replacement: '' }],
+export const PRESET_RULES: Record<string, { label: string; rule: NormalizationRule }> = {
+  spain_fhd: {
+    label: 'Spain FHD (prefix "Spain ", suffix " FHD")',
+    rule: { prefix: 'Spain ', suffix: ' FHD' },
   },
-  strip_quality_suffix: {
-    label: 'Strip quality suffix (HD/FHD/4K/SD)',
-    rules: [{ type: 'regex_replace', pattern: '\\s*[-]?\\s*(HD|FHD|SD|4K|UHD)\\s*$', replacement: '' }],
+  spain_hd: {
+    label: 'Spain HD (prefix "Spain ", suffix " HD")',
+    rule: { prefix: 'Spain ', suffix: ' HD' },
   },
-  strip_parenthetical: {
-    label: 'Strip parenthetical (e.g. "(ES)", "(UK)")',
-    rules: [{ type: 'regex_replace', pattern: '\\s*\\([^)]+\\)\\s*', replacement: ' ' }],
+  uk_prefix: {
+    label: 'UK prefix (prefix "UK: ")',
+    rule: { prefix: 'UK: ', suffix: '' },
+  },
+  us_prefix: {
+    label: 'US prefix (prefix "US: ")',
+    rule: { prefix: 'US: ', suffix: '' },
   },
 };

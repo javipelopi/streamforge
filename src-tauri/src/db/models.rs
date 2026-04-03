@@ -1082,16 +1082,14 @@ impl NewAcestreamChannelMapping {
 // Matching Profile Models (per-source-pair normalization rules)
 // ============================================================================
 
-/// A normalization rule applied to channel names before matching
+/// A matching rule: prefix and suffix added to XMLTV names to match provider names.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum NormalizationRule {
-    /// Remove a prefix from the channel name
-    StripPrefix { value: String },
-    /// Remove a suffix from the channel name
-    StripSuffix { value: String },
-    /// Apply a regex replacement
-    RegexReplace { pattern: String, replacement: String },
+#[serde(rename_all = "camelCase")]
+pub struct NormalizationRule {
+    #[serde(default)]
+    pub prefix: String,
+    #[serde(default)]
+    pub suffix: String,
 }
 
 /// Matching profile for querying existing profiles

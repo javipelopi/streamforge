@@ -112,52 +112,23 @@ pub fn reorder_profiles(
     }
 }
 
-/// Preview normalization: apply a set of rules to a channel name and return the result.
+/// Preview: augment an XMLTV name with the first rule prefix/suffix.
 pub fn preview_normalization(name: &str, rules: &[NormalizationRule]) -> String {
-    apply_normalization_rules(name, rules)
+    augment_xmltv_name(name, rules)
 }
 
-/// Apply normalization rules to a channel name.
-/// This is the core function used by both preview and the matcher integration.
-pub fn apply_normalization_rules(name: &str, rules: &[NormalizationRule]) -> String {
-    let mut result = name.to_string();
-
-    for rule in rules {
-        match rule {
-            NormalizationRule::StripPrefix { value } => {
-                if let Some(stripped) = result.strip_prefix(value.as_str()) {
-                    result = stripped.to_string();
-                }
-                // Also try case-insensitive
-                let lower = result.to_lowercase();
-                let prefix_lower = value.to_lowercase();
-                if lower.starts_with(&prefix_lower) {
-                    result = result[value.len()..].to_string();
-                }
-            }
-            NormalizationRule::StripSuffix { value } => {
-                if let Some(stripped) = result.strip_suffix(value.as_str()) {
-                    result = stripped.to_string();
-                }
-                // Also try case-insensitive
-                let lower = result.to_lowercase();
-                let suffix_lower = value.to_lowercase();
-                if lower.ends_with(&suffix_lower) {
-                    result = result[..result.len() - value.len()].to_string();
-                }
-            }
-            NormalizationRule::RegexReplace {
-                pattern,
-                replacement,
-            } => {
-                if let Ok(re) = regex::Regex::new(pattern) {
-                    result = re.replace_all(&result, replacement.as_str()).to_string();
-                }
-            }
-        }
+/// Augment an XMLTV name by prepending prefix and appending suffix from the first rule.
+pub fn augment_xmltv_name(name: &str, rules: &[NormalizationRule]) -> String {
+    if let Some(rule) = rules.first() {
+        format!("{}{}{}", rule.prefix, name, rule.suffix)
+    } else {
+        name.to_string()
     }
+}
 
-    result.trim().to_string()
+/// Legacy alias.
+pub fn apply_normalization_rules(name: &str, rules: &[NormalizationRule]) -> String {
+    augment_xmltv_name(name, rules)
 }
 
 /// Load active profiles for a specific XMLTV source, keyed by (stream_source_type, stream_source_id).

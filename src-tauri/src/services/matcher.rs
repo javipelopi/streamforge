@@ -19,7 +19,7 @@ use crate::logging::log_event_internal;
 use crate::matcher::{
     get_channel_mappings as db_get_channel_mappings,
     get_xmltv_channel_settings as db_get_xmltv_channel_settings, match_channels,
-    match_channels_with_rules, match_m3u_channels, match_m3u_channels_with_rules,
+    match_channels_with_rules, match_m3u_channels,
     save_channel_mappings, ChangedStream, M3uMatchResult, MatchConfig, MatchStats, MatchType,
     ProviderChanges,
 };
@@ -97,8 +97,96 @@ pub fn run_channel_matching(
         ),
     });
 
-    // Run matching algorithm
-    let (matches, stats) = match_channels(&xmltv_data, &xtream_data, &config);
+    // Load matching profiles and group XMLTV channels by source_id.
+    // For each XMLTV source that has an active profile targeting an Xtream account,
+    // use the profile's prefix/suffix rules when matching.
+    use std::collections::HashMap;
+
+    // Group XMLTV channels by source_id
+    let mut xmltv_by_source: HashMap<i32, Vec<&XmltvChannel>> = HashMap::new();
+    for ch in &xmltv_data {
+        xmltv_by_source.entry(ch.source_id).or_default().push(ch);
+    }
+
+    // Group Xtream channels by account_id
+    let mut xtream_by_account: HashMap<i32, Vec<&XtreamChannel>> = HashMap::new();
+    for ch in &xtream_data {
+        xtream_by_account.entry(ch.account_id).or_default().push(ch);
+    }
+
+    // Collect all unique XMLTV source IDs
+    let xmltv_source_ids: Vec<i32> = xmltv_by_source.keys().copied().collect();
+
+    // Load active profiles for each XMLTV source
+    let mut all_matches: Vec<crate::matcher::MatchResult> = Vec::new();
+    let mut combined_stats = MatchStats::default();
+    let mut matched_xmltv_sources: std::collections::HashSet<i32> = std::collections::HashSet::new();
+
+    for xmltv_sid in &xmltv_source_ids {
+        let profiles = matching_profiles::get_active_profiles_for_xmltv_source(conn, *xmltv_sid)
+            .unwrap_or_default();
+
+        for profile in &profiles {
+            if profile.stream_source_type != "xtream" {
+                continue;
+            }
+
+            let xmltv_subset: Vec<XmltvChannel> = xmltv_by_source
+                .get(xmltv_sid)
+                .map(|chs| chs.iter().map(|c| (*c).clone()).collect())
+                .unwrap_or_default();
+
+            let xtream_subset: Vec<XtreamChannel> = xtream_by_account
+                .get(&profile.stream_source_id)
+                .map(|chs| chs.iter().map(|c| (*c).clone()).collect())
+                .unwrap_or_default();
+
+            if xmltv_subset.is_empty() || xtream_subset.is_empty() {
+                continue;
+            }
+
+            let rules = profile.parsed_rules();
+            let (matches_for_pair, stats_for_pair) =
+                match_channels_with_rules(&xmltv_subset, &xtream_subset, &config, &rules);
+
+            all_matches.extend(matches_for_pair);
+            combined_stats.matched += stats_for_pair.matched;
+            combined_stats.unmatched += stats_for_pair.unmatched;
+            combined_stats.multiple_matches += stats_for_pair.multiple_matches;
+            combined_stats.total_xmltv += stats_for_pair.total_xmltv;
+            combined_stats.total_source_channels += stats_for_pair.total_source_channels;
+            matched_xmltv_sources.insert(*xmltv_sid);
+        }
+    }
+
+    // For any XMLTV source without a profile, run matching without rules against all Xtream channels
+    for xmltv_sid in &xmltv_source_ids {
+        if matched_xmltv_sources.contains(xmltv_sid) {
+            continue;
+        }
+
+        let xmltv_subset: Vec<XmltvChannel> = xmltv_by_source
+            .get(xmltv_sid)
+            .map(|chs| chs.iter().map(|c| (*c).clone()).collect())
+            .unwrap_or_default();
+
+        if xmltv_subset.is_empty() {
+            continue;
+        }
+
+        let (matches_for_source, stats_for_source) =
+            match_channels(&xmltv_subset, &xtream_data, &config);
+
+        all_matches.extend(matches_for_source);
+        combined_stats.matched += stats_for_source.matched;
+        combined_stats.unmatched += stats_for_source.unmatched;
+        combined_stats.multiple_matches += stats_for_source.multiple_matches;
+        combined_stats.total_xmltv += stats_for_source.total_xmltv;
+        combined_stats.total_source_channels += stats_for_source.total_source_channels;
+    }
+
+    let matches = all_matches;
+    let stats = combined_stats;
 
     on_progress(MatchProgress::Saving {
         message: format!("Saving {} matches to database", matches.len()),

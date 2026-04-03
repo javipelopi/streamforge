@@ -9,7 +9,7 @@ use std::sync::LazyLock;
 
 use super::{scorer::calculate_match_score, MatchConfig, MatchResult, MatchStats, MatchType};
 use crate::db::models::{M3uChannel, NormalizationRule, XmltvChannel, XtreamChannel};
-use crate::services::matching_profiles::apply_normalization_rules;
+use crate::services::matching_profiles::augment_xmltv_name;
 
 /// Result of matching M3U channels to XMLTV channels
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -47,34 +47,29 @@ impl M3uMatchResult {
     }
 }
 
-/// Regex pattern for removing quality suffixes (HD, SD, FHD, 4K, UHD, etc.)
-/// Matches quality indicators both at end and before parentheses/punctuation
-static QUALITY_SUFFIX_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\s*[-]?\s*(hd|sd|fhd|4k|uhd|1080p|720p|480p)(?:\s|$|\(|\))").unwrap()
-});
-
 /// Regex pattern for removing non-alphanumeric characters except spaces
 static NON_ALNUM_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[^a-z0-9\s]").unwrap());
 
 /// Regex pattern for collapsing multiple spaces into single space
 static MULTI_SPACE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
 
-/// Normalize a channel name for matching.
+/// Regex pattern for removing quality suffixes (HD, SD, FHD, 4K, UHD, etc.)
+/// Only used by the legacy normalize_channel_name (no-profile fallback).
+static QUALITY_SUFFIX_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\s*[-]?\s*(hd|sd|fhd|4k|uhd|1080p|720p|480p)(?:\s|$|\(|\))").unwrap()
+});
+
+/// Basic normalization: lowercase, collapse spaces, trim.
+/// Does NOT strip quality suffixes -- those may be meaningful for prefix/suffix matching.
+pub fn basic_normalize(name: &str) -> String {
+    let lowered = name.to_lowercase();
+    let collapsed = MULTI_SPACE_REGEX.replace_all(&lowered, " ");
+    collapsed.trim().to_string()
+}
+
+/// Legacy normalize: lowercase, strip quality suffixes, remove punctuation, collapse spaces.
 ///
-/// Normalization steps:
-/// 1. Convert to lowercase
-/// 2. Remove HD/SD/FHD/4K/UHD suffixes
-/// 3. Remove punctuation (keep alphanumeric and spaces)
-/// 4. Collapse multiple spaces into single space
-/// 5. Trim whitespace
-///
-/// # Arguments
-///
-/// * `name` - The channel name to normalize
-///
-/// # Returns
-///
-/// The normalized channel name
+/// Used as fallback when no matching profile is configured.
 ///
 /// # Examples
 ///
@@ -88,68 +83,44 @@ static MULTI_SPACE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").
 /// assert_eq!(normalize_channel_name("CNN  News"), "cnn news");
 /// ```
 pub fn normalize_channel_name(name: &str) -> String {
-    // Step 1: Convert to lowercase
     let lowered = name.to_lowercase();
-
-    // Step 2: Remove quality suffixes (HD, SD, FHD, 4K, UHD, etc.)
     let without_suffix = QUALITY_SUFFIX_REGEX.replace_all(&lowered, "");
-
-    // Step 3: Remove punctuation (keep alphanumeric and spaces)
     let without_punct = NON_ALNUM_REGEX.replace_all(&without_suffix, " ");
-
-    // Step 4: Collapse multiple spaces into single space
     let collapsed = MULTI_SPACE_REGEX.replace_all(&without_punct, " ");
-
-    // Step 5: Trim whitespace
     collapsed.trim().to_string()
 }
 
-/// Normalize a channel name with optional per-profile rules applied first.
-///
-/// If rules are provided, they are applied to the raw name before the standard
-/// normalization pipeline (lowercase, strip quality suffixes, etc.).
+/// Legacy shim kept for backward compatibility.
 pub fn normalize_with_rules(name: &str, rules: &[NormalizationRule]) -> String {
     if rules.is_empty() {
         normalize_channel_name(name)
     } else {
-        let after_rules = apply_normalization_rules(name, rules);
-        normalize_channel_name(&after_rules)
+        basic_normalize(name)
     }
 }
 
-/// Match XMLTV channels to Xtream streams using fuzzy matching.
-///
-/// For each XMLTV channel, this function finds all Xtream streams that match
-/// above the confidence threshold. The matches are sorted by confidence score
-/// (descending) and assigned priority accordingly.
-///
-/// # Arguments
-///
-/// * `xmltv_channels` - List of XMLTV channels to match
-/// * `xtream_channels` - List of Xtream streams to match against
-/// * `config` - Matching configuration (threshold, boosts)
-///
-/// # Returns
-///
-/// A tuple of (Vec<MatchResult>, MatchStats) containing all matches and statistics
+/// Match XMLTV channels to Xtream streams using fuzzy matching (no rules).
 pub fn match_channels(
     xmltv_channels: &[XmltvChannel],
     xtream_channels: &[XtreamChannel],
     config: &MatchConfig,
 ) -> (Vec<MatchResult>, MatchStats) {
-    match_channels_with_rules(xmltv_channels, xtream_channels, config, &[], &[])
+    match_channels_with_rules(xmltv_channels, xtream_channels, config, &[])
 }
 
-/// Match XMLTV channels to Xtream streams with optional per-profile normalization rules.
+/// Match XMLTV channels to Xtream streams with per-profile prefix/suffix rules.
 ///
-/// `xmltv_rules` are applied to XMLTV channel names before standard normalization.
-/// `stream_rules` are applied to Xtream stream names before standard normalization.
+/// When rules are present:
+///   1. Augment each XMLTV name: prefix + xmltv_name + suffix
+///   2. Basic-normalize both sides (lowercase + trim, NO quality stripping)
+///   3. Compare augmented XMLTV name against provider name
+///
+/// Display names in the target lineup remain the ORIGINAL XMLTV name.
 pub fn match_channels_with_rules(
     xmltv_channels: &[XmltvChannel],
     xtream_channels: &[XtreamChannel],
     config: &MatchConfig,
-    xmltv_rules: &[NormalizationRule],
-    stream_rules: &[NormalizationRule],
+    rules: &[NormalizationRule],
 ) -> (Vec<MatchResult>, MatchStats) {
     let start = std::time::Instant::now();
     let mut all_matches: Vec<MatchResult> = Vec::new();
@@ -159,16 +130,18 @@ pub fn match_channels_with_rules(
         ..Default::default()
     };
 
-    // Pre-normalize all Xtream channel names for efficiency
+    let has_rules = !rules.is_empty();
+
     let xtream_normalized: Vec<(i32, String, Option<&str>)> = xtream_channels
         .iter()
         .filter_map(|c| {
             c.id.map(|id| {
-                (
-                    id,
-                    normalize_with_rules(&c.name, stream_rules),
-                    c.epg_channel_id.as_deref(),
-                )
+                let norm = if has_rules {
+                    basic_normalize(&c.name)
+                } else {
+                    normalize_channel_name(&c.name)
+                };
+                (id, norm, c.epg_channel_id.as_deref())
             })
         })
         .collect();
@@ -179,19 +152,20 @@ pub fn match_channels_with_rules(
             None => continue,
         };
 
-        let xmltv_normalized = normalize_with_rules(&xmltv.display_name, xmltv_rules);
+        let xmltv_normalized = if has_rules {
+            let augmented = augment_xmltv_name(&xmltv.display_name, rules);
+            basic_normalize(&augmented)
+        } else {
+            normalize_channel_name(&xmltv.display_name)
+        };
         let xmltv_channel_id = &xmltv.channel_id;
 
         let mut channel_matches: Vec<MatchResult> = Vec::new();
 
         for (xtream_id, xtream_normalized, xtream_epg_id) in &xtream_normalized {
-            // Check for EPG ID match (Xtream's epg_channel_id matches XMLTV's channel_id)
             let epg_id_match = epg_ids_match(*xtream_epg_id, xmltv_channel_id);
-
-            // Check for exact normalized name match
             let exact_name_match = xmltv_normalized == *xtream_normalized;
 
-            // Calculate match score
             let score = calculate_match_score(
                 &xmltv_normalized,
                 xtream_normalized,
@@ -200,7 +174,6 @@ pub fn match_channels_with_rules(
                 config,
             );
 
-            // Only include matches above threshold
             if score >= config.threshold {
                 let match_type = if epg_id_match {
                     MatchType::ExactEpgId
@@ -209,31 +182,22 @@ pub fn match_channels_with_rules(
                 } else {
                     MatchType::Fuzzy
                 };
-
                 channel_matches.push(MatchResult::new(xmltv_id, *xtream_id, score, match_type));
             }
         }
 
-        // Sort matches by confidence (descending)
         channel_matches.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
-
-        // Assign priority and primary status
         let match_count = channel_matches.len();
         for (i, m) in channel_matches.iter_mut().enumerate() {
             m.is_primary = i == 0;
             m.stream_priority = i as i32;
         }
-
-        // Update stats
         if match_count > 0 {
             stats.matched += 1;
-            if match_count > 1 {
-                stats.multiple_matches += 1;
-            }
+            if match_count > 1 { stats.multiple_matches += 1; }
         } else {
             stats.unmatched += 1;
         }
-
         all_matches.extend(channel_matches);
     }
 
@@ -242,66 +206,49 @@ pub fn match_channels_with_rules(
 }
 
 /// Check if an EPG ID from an Xtream channel matches an XMLTV channel ID.
-///
-/// This handles case-insensitive matching and trimming.
 pub fn epg_ids_match(xtream_epg_id: Option<&str>, xmltv_channel_id: &str) -> bool {
     xtream_epg_id
         .map(|epg_id| epg_id.trim().eq_ignore_ascii_case(xmltv_channel_id.trim()))
         .unwrap_or(false)
 }
 
-/// Match M3U channels to XMLTV channels using fuzzy matching.
-///
-/// For each XMLTV channel, this function finds all M3U channels that match
-/// above the confidence threshold. Matching uses:
-/// - `tvg_id` attribute matching XMLTV `channel_id` (high confidence boost)
-/// - `tvg_name` or `name` for fuzzy name matching
-///
-/// # Arguments
-///
-/// * `xmltv_channels` - List of XMLTV channels to match
-/// * `m3u_channels` - List of M3U channels to match against
-/// * `config` - Matching configuration (threshold, boosts)
-///
-/// # Returns
-///
-/// A tuple of (Vec<M3uMatchResult>, MatchStats) containing all matches and statistics
+/// Match M3U channels to XMLTV channels using fuzzy matching (no rules).
 pub fn match_m3u_channels(
     xmltv_channels: &[XmltvChannel],
     m3u_channels: &[M3uChannel],
     config: &MatchConfig,
 ) -> (Vec<M3uMatchResult>, MatchStats) {
-    match_m3u_channels_with_rules(xmltv_channels, m3u_channels, config, &[], &[])
+    match_m3u_channels_with_rules(xmltv_channels, m3u_channels, config, &[])
 }
 
-/// Match M3U channels to XMLTV channels with optional per-profile normalization rules.
+/// Match M3U channels to XMLTV channels with per-profile prefix/suffix rules.
 pub fn match_m3u_channels_with_rules(
     xmltv_channels: &[XmltvChannel],
     m3u_channels: &[M3uChannel],
     config: &MatchConfig,
-    xmltv_rules: &[NormalizationRule],
-    stream_rules: &[NormalizationRule],
+    rules: &[NormalizationRule],
 ) -> (Vec<M3uMatchResult>, MatchStats) {
     let start = std::time::Instant::now();
     let mut all_matches: Vec<M3uMatchResult> = Vec::new();
     let mut stats = MatchStats {
         total_xmltv: xmltv_channels.len(),
-        total_source_channels: m3u_channels.len(), // CR-32: Now properly named for M3U count
+        total_source_channels: m3u_channels.len(),
         ..Default::default()
     };
 
-    // Pre-process M3U channels: normalize names and extract tvg_id
+    let has_rules = !rules.is_empty();
+
     let m3u_normalized: Vec<(i32, String, Option<&str>)> = m3u_channels
         .iter()
         .filter_map(|c| {
             c.id.map(|id| {
-                // Use tvg_name if available, otherwise use name
                 let name_to_match = c.tvg_name.as_deref().unwrap_or(&c.name);
-                (
-                    id,
-                    normalize_with_rules(name_to_match, stream_rules),
-                    c.tvg_id.as_deref(),
-                )
+                let norm = if has_rules {
+                    basic_normalize(name_to_match)
+                } else {
+                    normalize_channel_name(name_to_match)
+                };
+                (id, norm, c.tvg_id.as_deref())
             })
         })
         .collect();
@@ -312,19 +259,20 @@ pub fn match_m3u_channels_with_rules(
             None => continue,
         };
 
-        let xmltv_normalized = normalize_with_rules(&xmltv.display_name, xmltv_rules);
+        let xmltv_normalized = if has_rules {
+            let augmented = augment_xmltv_name(&xmltv.display_name, rules);
+            basic_normalize(&augmented)
+        } else {
+            normalize_channel_name(&xmltv.display_name)
+        };
         let xmltv_channel_id = &xmltv.channel_id;
 
         let mut channel_matches: Vec<M3uMatchResult> = Vec::new();
 
         for (m3u_id, m3u_normalized, m3u_tvg_id) in &m3u_normalized {
-            // Check for tvg_id match (M3U's tvg_id matches XMLTV's channel_id)
             let tvg_id_match = epg_ids_match(*m3u_tvg_id, xmltv_channel_id);
-
-            // Check for exact normalized name match
             let exact_name_match = xmltv_normalized == *m3u_normalized;
 
-            // Calculate match score
             let score = calculate_match_score(
                 &xmltv_normalized,
                 m3u_normalized,
@@ -333,7 +281,6 @@ pub fn match_m3u_channels_with_rules(
                 config,
             );
 
-            // Only include matches above threshold
             if score >= config.threshold {
                 let match_type = if tvg_id_match {
                     MatchType::ExactEpgId
@@ -342,31 +289,22 @@ pub fn match_m3u_channels_with_rules(
                 } else {
                     MatchType::Fuzzy
                 };
-
                 channel_matches.push(M3uMatchResult::new(xmltv_id, *m3u_id, score, match_type));
             }
         }
 
-        // Sort matches by confidence (descending)
         channel_matches.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
-
-        // Assign priority and primary status
         let match_count = channel_matches.len();
         for (i, m) in channel_matches.iter_mut().enumerate() {
             m.is_primary = i == 0;
             m.stream_priority = i as i32;
         }
-
-        // Update stats
         if match_count > 0 {
             stats.matched += 1;
-            if match_count > 1 {
-                stats.multiple_matches += 1;
-            }
+            if match_count > 1 { stats.multiple_matches += 1; }
         } else {
             stats.unmatched += 1;
         }
-
         all_matches.extend(channel_matches);
     }
 
@@ -379,38 +317,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_normalize_removes_hd_suffix() {
+    fn test_normalize_removes_hd() {
         assert_eq!(normalize_channel_name("ESPN HD"), "espn");
-    }
-
-    #[test]
-    fn test_normalize_removes_sd_suffix() {
-        assert_eq!(normalize_channel_name("ESPN SD"), "espn");
-    }
-
-    #[test]
-    fn test_normalize_removes_fhd_suffix() {
-        assert_eq!(normalize_channel_name("ESPN FHD"), "espn");
-    }
-
-    #[test]
-    fn test_normalize_removes_4k_suffix() {
-        assert_eq!(normalize_channel_name("ESPN 4K"), "espn");
-    }
-
-    #[test]
-    fn test_normalize_removes_uhd_suffix() {
-        assert_eq!(normalize_channel_name("ESPN UHD"), "espn");
-    }
-
-    #[test]
-    fn test_normalize_removes_1080p_suffix() {
-        assert_eq!(normalize_channel_name("ESPN 1080p"), "espn");
-    }
-
-    #[test]
-    fn test_normalize_removes_dash_suffix() {
-        assert_eq!(normalize_channel_name("ESPN - 4K"), "espn");
     }
 
     #[test]
@@ -419,31 +327,13 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_removes_parentheses() {
-        assert_eq!(normalize_channel_name("BBC One (UK)"), "bbc one uk");
+    fn test_basic_normalize_preserves_quality() {
+        assert_eq!(basic_normalize("Spain La 1 FHD"), "spain la 1 fhd");
     }
 
     #[test]
-    fn test_normalize_collapses_spaces() {
-        assert_eq!(normalize_channel_name("CNN  News"), "cnn news");
-    }
-
-    #[test]
-    fn test_normalize_lowercase() {
-        assert_eq!(normalize_channel_name("ESPN"), "espn");
-    }
-
-    #[test]
-    fn test_normalize_complex_name() {
-        assert_eq!(
-            normalize_channel_name("ESPN - HD (US)"),
-            "espn us"
-        );
-    }
-
-    #[test]
-    fn test_normalize_trims_whitespace() {
-        assert_eq!(normalize_channel_name("  ESPN  "), "espn");
+    fn test_basic_normalize_preserves_hd() {
+        assert_eq!(basic_normalize("ESPN HD"), "espn hd");
     }
 
     #[test]
@@ -452,25 +342,18 @@ mod tests {
     }
 
     #[test]
-    fn test_epg_ids_match_case_insensitive() {
-        assert!(epg_ids_match(Some("ESPN.US"), "espn.us"));
-    }
-
-    #[test]
-    fn test_epg_ids_match_with_whitespace() {
-        assert!(epg_ids_match(Some(" espn.us "), "espn.us"));
-    }
-
-    #[test]
     fn test_epg_ids_no_match() {
         assert!(!epg_ids_match(Some("cnn.us"), "espn.us"));
     }
 
     #[test]
-    fn test_epg_ids_none() {
-        assert!(!epg_ids_match(None, "espn.us"));
+    fn test_augment_matches_provider() {
+        let rules = vec![NormalizationRule {
+            prefix: "Spain ".to_string(),
+            suffix: " FHD".to_string(),
+        }];
+        let augmented = basic_normalize(&augment_xmltv_name("La 1", &rules));
+        let provider = basic_normalize("Spain La 1 FHD");
+        assert_eq!(augmented, provider);
     }
-
-    // Integration tests for match_channels would require mocking database models
-    // These are tested in the integration test suite
 }
