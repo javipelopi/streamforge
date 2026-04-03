@@ -1,13 +1,14 @@
 /**
  * Matching Rule Editor Component
  *
- * Simple editor for prefix/suffix matching rules. Each profile has one rule
- * that defines a prefix and suffix to augment XMLTV names for matching against
- * provider stream names.
+ * Editor for prefix/suffix regex patterns that are stripped from provider
+ * stream names before matching against XMLTV channel names.
  *
- * Example: XMLTV "La 1" + prefix "Spain " + suffix " FHD" = "Spain La 1 FHD"
+ * Example: Provider "ES| ANTENA 3 FHD" with prefix="ES\\| " suffix=" FHD$| HD$| SD$"
+ *   → strip prefix → "ANTENA 3 FHD" → strip suffix → "ANTENA 3"
+ *   → case-insensitive match against XMLTV "Antena 3" ✓
  */
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { ChevronDown, Wand2 } from 'lucide-react';
 import type { NormalizationRule } from '../../lib/api/matching-profiles';
 import { PRESET_RULES } from '../../lib/api/matching-profiles';
@@ -15,6 +16,36 @@ import { PRESET_RULES } from '../../lib/api/matching-profiles';
 export interface MatchingRuleEditorProps {
   rule: NormalizationRule;
   onChange: (rule: NormalizationRule) => void;
+}
+
+/** Try to strip prefix and suffix regex from a sample name, client-side. */
+function tryStrip(name: string, rule: NormalizationRule): { stripped: string; matches: boolean } {
+  let result = name;
+  let matches = true;
+
+  if (rule.prefix) {
+    try {
+      const re = new RegExp(`^(?:${rule.prefix})`);
+      if (re.test(result)) {
+        result = result.replace(re, '');
+      } else {
+        matches = false;
+      }
+    } catch {
+      // invalid regex — show as-is
+    }
+  }
+
+  if (rule.suffix) {
+    try {
+      const re = new RegExp(`(?:${rule.suffix})$`);
+      result = result.replace(re, '');
+    } catch {
+      // invalid regex
+    }
+  }
+
+  return { stripped: result.trim(), matches };
 }
 
 export function MatchingRuleEditor({ rule, onChange }: MatchingRuleEditorProps) {
@@ -28,15 +59,19 @@ export function MatchingRuleEditor({ rule, onChange }: MatchingRuleEditorProps) 
     setShowPresets(false);
   };
 
-  const exampleXmltv = 'La 1';
-  const augmented = rule.prefix + exampleXmltv + rule.suffix;
   const hasRule = rule.prefix || rule.suffix;
+
+  const example = useMemo(() => {
+    if (!hasRule) return null;
+    const sample = 'ES| ANTENA 3 FHD';
+    return tryStrip(sample, rule);
+  }, [rule, hasRule]);
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <label className="block text-sm font-medium text-gray-700">
-          Name Augmentation (Prefix / Suffix)
+          Provider Name Stripping (Regex)
         </label>
         <div className="relative">
           <button
@@ -66,43 +101,47 @@ export function MatchingRuleEditor({ rule, onChange }: MatchingRuleEditorProps) 
       </div>
 
       <p className="text-xs text-gray-500">
-        Add a prefix and/or suffix to XMLTV names to match provider naming.
-        The display name in the lineup is always the original XMLTV name.
+        Regex patterns stripped from provider stream names before matching.
+        The prefix also filters: only streams matching the prefix are candidates.
+        XMLTV names are never modified.
       </p>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
-            Prefix
+            Prefix pattern (strip from start)
           </label>
           <input
             type="text"
             value={rule.prefix}
             onChange={(e) => onChange({ ...rule, prefix: e.target.value })}
-            placeholder='e.g. "Spain "'
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder='e.g. ES\\| '
+            className="w-full px-3 py-2 text-sm font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
-            Suffix
+            Suffix pattern (strip from end)
           </label>
           <input
             type="text"
             value={rule.suffix}
             onChange={(e) => onChange({ ...rule, suffix: e.target.value })}
-            placeholder='e.g. " FHD"'
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder='e.g.  FHD$| HD$| SD$'
+            className="w-full px-3 py-2 text-sm font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
       </div>
 
-      {hasRule && (
+      {example && (
         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
           <span className="text-blue-600 font-medium">Example:</span>{' '}
-          <span className="text-gray-600">&quot;{exampleXmltv}&quot;</span>
-          {' -> '}
-          <span className="text-blue-800 font-mono">&quot;{augmented}&quot;</span>
+          <span className="text-gray-600 font-mono">&quot;ES| ANTENA 3 FHD&quot;</span>
+          {' → '}
+          <span className="text-blue-800 font-mono">&quot;{example.stripped}&quot;</span>
+          {!example.matches && rule.prefix && (
+            <span className="text-amber-600 ml-2">(prefix did not match sample)</span>
+          )}
         </div>
       )}
     </div>

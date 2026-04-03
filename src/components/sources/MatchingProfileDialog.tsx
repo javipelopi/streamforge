@@ -3,7 +3,7 @@
  *
  * Dialog for creating or editing a matching profile.
  * Allows selecting an XMLTV source, a stream source (Xtream/M3U),
- * setting priority order, and configuring prefix/suffix for name augmentation.
+ * setting priority order, and configuring prefix/suffix regex for provider name stripping.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
