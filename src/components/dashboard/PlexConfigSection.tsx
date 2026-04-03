@@ -126,7 +126,19 @@ export function PlexConfigSection() {
   const handleCopy = useCallback(
     async (url: string) => {
       try {
-        await navigator.clipboard.writeText(url);
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(url);
+        } else {
+          // Fallback for non-HTTPS contexts (e.g., headless over HTTP)
+          const textarea = document.createElement('textarea');
+          textarea.value = url;
+          textarea.style.position = 'fixed';
+          textarea.style.opacity = '0';
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+        }
         setCopySuccess(url);
         showToast('URL copied to clipboard');
         setTimeout(() => setCopySuccess(null), 2000);
