@@ -5,8 +5,8 @@
  * Allows selecting an XMLTV source, a stream source (Xtream/M3U),
  * setting priority order, and configuring prefix/suffix for name augmentation.
  */
-import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogCancelButton, DialogSubmitButton } from '../common/Dialog';
 import { MatchingRuleEditor } from './MatchingRuleEditor';
 import { MatchPreview } from './MatchPreview';
@@ -24,6 +24,8 @@ import {
   type Account,
   type M3uSource,
 } from '../../lib/api';
+import { runChannelMatching, type MatchResponse } from '../../lib/api/matcher';
+import { Play, Loader2, CheckCircle2 } from 'lucide-react';
 
 export interface MatchingProfileDialogProps {
   open: boolean;
@@ -43,6 +45,7 @@ export function MatchingProfileDialog({
   existingCount,
 }: MatchingProfileDialogProps) {
   const isEditMode = !!profile;
+  const queryClient = useQueryClient();
 
   const [xmltvSourceId, setXmltvSourceId] = useState<number>(0);
   const [streamSourceType, setStreamSourceType] = useState<StreamSourceType>('xtream');
@@ -50,6 +53,21 @@ export function MatchingProfileDialog({
   const [priorityOrder, setPriorityOrder] = useState<number>(0);
   const [rule, setRule] = useState<NormalizationRule>({ prefix: '', suffix: '' });
   const [error, setError] = useState<string | null>(null);
+  const [savedState, setSavedState] = useState<'idle' | 'saved' | 'matching' | 'done'>('idle');
+  const [matchResult, setMatchResult] = useState<MatchResponse | null>(null);
+
+  const rematchMutation = useMutation({
+    mutationFn: () => runChannelMatching(),
+    onSuccess: (result) => {
+      setMatchResult(result);
+      setSavedState('done');
+      queryClient.invalidateQueries({ queryKey: ['xmltv-channels-with-mappings'] });
+      queryClient.invalidateQueries({ queryKey: ['match-stats'] });
+    },
+    onError: () => {
+      setSavedState('saved');
+    },
+  });
 
   const { data: xmltvSources = [] } = useQuery<XmltvSource[]>({
     queryKey: ['xmltv-sources'],
@@ -90,6 +108,8 @@ export function MatchingProfileDialog({
         setRule({ prefix: '', suffix: '' });
       }
       setError(null);
+      setSavedState('idle');
+      setMatchResult(null);
     }
   }, [open, profile, xmltvSources, accounts, existingCount]);
 
@@ -116,10 +136,16 @@ export function MatchingProfileDialog({
         priorityOrder,
         rules: JSON.stringify([rule]),
       });
+      setSavedState('saved');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save profile');
     }
   };
+
+  const handleRunMatching = useCallback(() => {
+    setSavedState('matching');
+    rematchMutation.mutate();
+  }, [rematchMutation]);
 
   const streamSourceOptions =
     streamSourceType === 'xtream'
@@ -138,12 +164,46 @@ export function MatchingProfileDialog({
       error={error ?? undefined}
       maxWidth="max-w-2xl"
       footer={
-        <>
-          <DialogCancelButton onClick={() => onOpenChange(false)} disabled={isLoading} />
-          <DialogSubmitButton onClick={handleSubmit} isLoading={isLoading} loadingText="Saving...">
-            {isEditMode ? 'Update Profile' : 'Create Profile'}
-          </DialogSubmitButton>
-        </>
+        savedState === 'idle' ? (
+          <>
+            <DialogCancelButton onClick={() => onOpenChange(false)} disabled={isLoading} />
+            <DialogSubmitButton onClick={handleSubmit} isLoading={isLoading} loadingText="Saving...">
+              {isEditMode ? 'Update Profile' : 'Create Profile'}
+            </DialogSubmitButton>
+          </>
+        ) : savedState === 'saved' ? (
+          <>
+            <button
+              onClick={() => onOpenChange(false)}
+              className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              Close
+            </button>
+            <button
+              data-testid="run-matching-now-button"
+              onClick={handleRunMatching}
+              className="px-4 py-2 text-sm text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors inline-flex items-center gap-2"
+            >
+              <Play className="w-4 h-4" />
+              Run Matching Now
+            </button>
+          </>
+        ) : savedState === 'matching' ? (
+          <button
+            disabled
+            className="px-4 py-2 text-sm text-white bg-green-600 rounded-lg opacity-75 inline-flex items-center gap-2"
+          >
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Matching...
+          </button>
+        ) : (
+          <button
+            onClick={() => onOpenChange(false)}
+            className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Done
+          </button>
+        )
       }
     >
       <div className="space-y-5">
@@ -210,13 +270,54 @@ export function MatchingProfileDialog({
 
         <hr className="border-gray-200" />
 
-        {xmltvSourceId > 0 && streamSourceId > 0 && (
+        {xmltvSourceId > 0 && streamSourceId > 0 && savedState === 'idle' && (
           <MatchPreview
             xmltvSourceId={xmltvSourceId}
             streamSourceType={streamSourceType}
             streamSourceId={streamSourceId}
             rules={rulesForPreview}
           />
+        )}
+
+        {/* Post-save: prompt to run matching */}
+        {savedState === 'saved' && (
+          <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <CheckCircle2 className="w-5 h-5 text-blue-600 flex-shrink-0" />
+            <div className="text-sm text-blue-800">
+              <p className="font-medium">Profile saved. Run matching now?</p>
+              <p className="text-blue-600 text-xs mt-0.5">
+                This will re-run the matching algorithm across all active profiles.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Matching result */}
+        {savedState === 'done' && matchResult && (
+          <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+            <div className="text-sm text-green-800">
+              <p className="font-medium">
+                Matched {matchResult.matchedCount}/{matchResult.totalXmltv} channels.{' '}
+                {matchResult.unmatchedCount > 0 && (
+                  <span className="text-green-600">{matchResult.unmatchedCount} unmatched.</span>
+                )}
+              </p>
+              <p className="text-green-600 text-xs mt-0.5">
+                Completed in {(matchResult.durationMs / 1000).toFixed(1)}s
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Matching error */}
+        {rematchMutation.isError && (
+          <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <div className="text-sm text-red-800">
+              <p className="font-medium">Matching failed</p>
+              <p>{rematchMutation.error instanceof Error ? rematchMutation.error.message : 'Unknown error'}</p>
+            </div>
+          </div>
         )}
       </div>
     </Dialog>

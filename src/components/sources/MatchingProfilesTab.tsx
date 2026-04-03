@@ -17,6 +17,9 @@ import {
   ToggleLeft,
   ToggleRight,
   Info,
+  Play,
+  Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   getMatchingProfiles,
@@ -36,6 +39,7 @@ import {
   type Account,
   type M3uSource,
 } from '../../lib/api';
+import { runChannelMatching, type MatchResponse } from '../../lib/api/matcher';
 import { MatchingProfileDialog } from './MatchingProfileDialog';
 import { DeleteConfirmDialog } from './shared';
 
@@ -94,8 +98,6 @@ export function MatchingProfilesTab() {
     mutationFn: (data: NewMatchingProfile) => createMatchingProfile(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matching-profiles'] });
-      setShowDialog(false);
-      setEditingProfile(undefined);
     },
   });
 
@@ -110,8 +112,6 @@ export function MatchingProfilesTab() {
     }) => updateMatchingProfile(id, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matching-profiles'] });
-      setShowDialog(false);
-      setEditingProfile(undefined);
     },
   });
 
@@ -138,6 +138,19 @@ export function MatchingProfilesTab() {
       updateMatchingProfile(id, { isActive }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matching-profiles'] });
+    },
+  });
+
+  // Rematch state
+  const [matchResult, setMatchResult] = useState<MatchResponse | null>(null);
+
+  // Rematch mutation
+  const rematchMutation = useMutation({
+    mutationFn: () => runChannelMatching(),
+    onSuccess: (result) => {
+      setMatchResult(result);
+      queryClient.invalidateQueries({ queryKey: ['xmltv-channels-with-mappings'] });
+      queryClient.invalidateQueries({ queryKey: ['match-stats'] });
     },
   });
 
@@ -243,8 +256,24 @@ export function MatchingProfilesTab() {
         </div>
       </div>
 
-      {/* Add button */}
-      <div className="flex justify-end">
+      {/* Action buttons */}
+      <div className="flex justify-end gap-2">
+        <button
+          data-testid="apply-rematch-button"
+          onClick={() => {
+            setMatchResult(null);
+            rematchMutation.mutate();
+          }}
+          disabled={rematchMutation.isPending || sortedProfiles.length === 0}
+          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2 text-sm"
+        >
+          {rematchMutation.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Play className="w-4 h-4" />
+          )}
+          {rematchMutation.isPending ? 'Matching...' : 'Apply & Rematch'}
+        </button>
         <button
           data-testid="add-matching-profile-button"
           onClick={handleAdd}
@@ -254,6 +283,46 @@ export function MatchingProfilesTab() {
           New Profile
         </button>
       </div>
+
+      {/* Match result banner */}
+      {matchResult && (
+        <div
+          data-testid="match-result-banner"
+          className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg"
+        >
+          <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+          <div className="text-sm text-green-800">
+            <p className="font-medium">
+              Matched {matchResult.matchedCount}/{matchResult.totalXmltv} channels.{' '}
+              {matchResult.unmatchedCount > 0 && (
+                <span className="text-green-600">
+                  {matchResult.unmatchedCount} unmatched.
+                </span>
+              )}
+            </p>
+            <p className="text-green-600 text-xs mt-0.5">
+              Completed in {(matchResult.durationMs / 1000).toFixed(1)}s
+            </p>
+          </div>
+          <button
+            onClick={() => setMatchResult(null)}
+            className="ml-auto text-green-400 hover:text-green-600 text-sm"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Rematch error banner */}
+      {rematchMutation.isError && (
+        <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <Info className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-red-800">
+            <p className="font-medium">Matching failed</p>
+            <p>{rematchMutation.error instanceof Error ? rematchMutation.error.message : 'Unknown error'}</p>
+          </div>
+        </div>
+      )}
 
       {/* Empty state */}
       {sortedProfiles.length === 0 && (
