@@ -168,6 +168,9 @@ export async function setLogVerbosity(verbosity: LogVerbosity): Promise<void> {
  * @returns The proxy stream URL
  */
 export function buildProxyStreamUrl(xmltvChannelId: number, serverPort: number): string {
+  if (typeof window !== 'undefined' && !('__TAURI__' in window)) {
+    return `${window.location.origin}/stream/${xmltvChannelId}`;
+  }
   return `http://127.0.0.1:${serverPort}/stream/${xmltvChannelId}`;
 }
 

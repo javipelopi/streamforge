@@ -7,8 +7,29 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { X, Volume2, VolumeX, Maximize, Minimize, Play, Pause, Loader2, AlertCircle, Tv, ExternalLink } from 'lucide-react';
 import Hls from 'hls.js';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getServerPort } from '../../lib/api';
+
+/** Toggle fullscreen — uses Tauri window API in desktop, browser Fullscreen API otherwise */
+async function toggleFullscreen(value: boolean): Promise<void> {
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().setFullscreen(value);
+  } catch {
+    if (value) {
+      await document.documentElement.requestFullscreen?.();
+    } else {
+      await document.exitFullscreen?.();
+    }
+  }
+}
+
+/** Get the server base URL — uses window.location in browser, 127.0.0.1 in Tauri */
+function getServerBaseUrl(port: number): string {
+  if (typeof window !== 'undefined' && !('__TAURI__' in window)) {
+    return window.location.origin;
+  }
+  return `http://127.0.0.1:${port}`;
+}
 
 interface VideoPlayerProps {
   /** Whether the player modal is open */
@@ -61,7 +82,7 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
 
     if (sessionId) {
       // Fire and forget - don't await, and ignore errors (component is unmounting)
-      fetch(`http://127.0.0.1:${serverPortRef.current}/hls/${sessionId}/stop`, {
+      fetch(`${getServerBaseUrl(serverPortRef.current)}/hls/${sessionId}/stop`, {
         method: 'DELETE',
       }).catch(() => {
         // Ignore errors during cleanup
@@ -88,7 +109,7 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
         // Start HLS session
         console.log('[VideoPlayer] Starting HLS session...');
         const startResponse = await fetch(
-          `http://127.0.0.1:${serverPort}/hls/start?url=${encodeURIComponent(url)}`
+          `${getServerBaseUrl(serverPort)}/hls/start?url=${encodeURIComponent(url)}`
         );
 
         if (!startResponse.ok) {
@@ -101,7 +122,7 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
         console.log('[VideoPlayer] HLS session started:', session_id);
 
         // Build the HLS playlist URL
-        const hlsUrl = `http://127.0.0.1:${serverPort}/hls/${session_id}/stream.m3u8`;
+        const hlsUrl = `${getServerBaseUrl(serverPort)}/hls/${session_id}/stream.m3u8`;
         console.log('[VideoPlayer] HLS URL:', hlsUrl);
 
         // Use HLS.js to play the local HLS stream
@@ -310,7 +331,7 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
   useEffect(() => {
     if (!isOpen && isFullscreen) {
       setIsFullscreen(false);
-      getCurrentWindow().setFullscreen(false).catch(() => {
+      toggleFullscreen(false).catch(() => {
         // Ignore errors during cleanup
       });
     }
@@ -339,7 +360,7 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
           if (isFullscreen) {
             setIsFullscreen(false);
             try {
-              await getCurrentWindow().setFullscreen(false);
+              await toggleFullscreen(false);
             } catch (err) {
               console.error('[VideoPlayer] Failed to exit fullscreen:', err);
             }
@@ -395,7 +416,7 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
     const newFullscreen = !isFullscreen;
     setIsFullscreen(newFullscreen);
     try {
-      await getCurrentWindow().setFullscreen(newFullscreen);
+      await toggleFullscreen(newFullscreen);
     } catch (e) {
       console.error('[VideoPlayer] Fullscreen error:', e);
     }
