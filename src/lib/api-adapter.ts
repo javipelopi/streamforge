@@ -123,7 +123,7 @@ const ROUTES: Record<string, RouteSpec> = {
     method: 'POST',
     path: '/api/xmltv-sources/{sourceId}/toggle',
     pathParams: ['sourceId'],
-    mapBody: (args) => ({ active: args.active }),
+    mapBody: (args) => ({ isActive: args.active }),
   },
 
   // -- EPG ------------------------------------------------------------------
@@ -214,7 +214,7 @@ const ROUTES: Record<string, RouteSpec> = {
   calculate_match_score: {
     method: 'GET',
     path: '/api/matcher/score',
-    queryParams: ['name1', 'name2'],
+    queryParams: ['xmltvName', 'xtreamName', 'epgIdMatch', 'exactNameMatch'],
   },
   scan_and_rematch: {
     method: 'POST',
@@ -224,7 +224,7 @@ const ROUTES: Record<string, RouteSpec> = {
   auto_match_m3u_channels: {
     method: 'POST',
     path: '/api/matcher/auto-match-m3u',
-    mapBody: (args) => ({ sourceId: args.sourceId }),
+    mapBody: (args) => ({ sourceId: args.sourceId, threshold: args.threshold }),
   },
   get_m3u_auto_match_results: {
     method: 'GET',
@@ -236,7 +236,7 @@ const ROUTES: Record<string, RouteSpec> = {
   add_m3u_source: {
     method: 'POST',
     path: '/api/m3u-sources',
-    mapBody: bodyAll,
+    mapBody: bodyKey('input'),
   },
   get_m3u_sources: {
     method: 'GET',
@@ -261,13 +261,13 @@ const ROUTES: Record<string, RouteSpec> = {
     method: 'POST',
     path: '/api/m3u-sources/{sourceId}/toggle',
     pathParams: ['sourceId'],
-    mapBody: (args) => ({ active: args.active }),
+    mapBody: (args) => ({ isActive: args.isActive }),
   },
   update_m3u_source: {
     method: 'PUT',
     path: '/api/m3u-sources/{sourceId}',
     pathParams: ['sourceId'],
-    mapBody: bodyKey('updates'),
+    mapBody: bodyKey('input'),
   },
 
   // -- Acestream Sources ----------------------------------------------------
@@ -278,7 +278,7 @@ const ROUTES: Record<string, RouteSpec> = {
   add_acestream_source: {
     method: 'POST',
     path: '/api/acestream-sources',
-    mapBody: bodyAll,
+    mapBody: bodyKey('input'),
   },
   get_acestream_sources: {
     method: 'GET',
@@ -293,20 +293,19 @@ const ROUTES: Record<string, RouteSpec> = {
     method: 'POST',
     path: '/api/acestream-sources/{sourceId}/toggle',
     pathParams: ['sourceId'],
-    mapBody: (args) => ({ active: args.active }),
+    mapBody: (args) => ({ isActive: args.isActive }),
   },
   update_acestream_source: {
     method: 'PUT',
     path: '/api/acestream-sources/{sourceId}',
     pathParams: ['sourceId'],
-    mapBody: bodyKey('updates'),
+    mapBody: bodyKey('input'),
   },
 
   // -- XMLTV Channels -------------------------------------------------------
   get_xmltv_channels_with_mappings: {
     method: 'GET',
     path: '/api/xmltv-channels/with-mappings',
-    queryParams: ['sourceId'],
   },
   set_primary_stream: {
     method: 'POST',
@@ -318,12 +317,11 @@ const ROUTES: Record<string, RouteSpec> = {
     method: 'POST',
     path: '/api/xmltv-channels/{channelId}/toggle',
     pathParams: ['channelId'],
-    mapBody: (args) => ({ enabled: args.enabled }),
   },
   update_channel_order: {
     method: 'PUT',
     path: '/api/xmltv-channels/order',
-    mapBody: (args) => ({ channelIds: args.channelIds }),
+    mapBody: bodyAll,
   },
   get_all_xtream_streams: {
     method: 'GET',
@@ -338,7 +336,7 @@ const ROUTES: Record<string, RouteSpec> = {
     method: 'POST',
     path: '/api/xmltv-channels/{xmltvChannelId}/mappings/xtream',
     pathParams: ['xmltvChannelId'],
-    mapBody: (args) => ({ xtreamChannelId: args.xtreamChannelId, isPrimary: args.isPrimary }),
+    mapBody: (args) => ({ xtreamChannelId: args.xtreamChannelId, setAsPrimary: args.setAsPrimary }),
   },
   remove_stream_mapping: {
     method: 'DELETE',
@@ -349,13 +347,13 @@ const ROUTES: Record<string, RouteSpec> = {
     method: 'POST',
     path: '/api/xmltv-channels/{xmltvChannelId}/mappings/m3u',
     pathParams: ['xmltvChannelId'],
-    mapBody: (args) => ({ m3uChannelId: args.m3uChannelId }),
+    mapBody: (args) => ({ m3uChannelId: args.m3uChannelId, setAsPrimary: args.setAsPrimary }),
   },
   add_acestream_channel_mapping: {
     method: 'POST',
     path: '/api/xmltv-channels/{xmltvChannelId}/mappings/acestream',
     pathParams: ['xmltvChannelId'],
-    mapBody: (args) => ({ acestreamSourceId: args.acestreamSourceId }),
+    mapBody: (args) => ({ acestreamSourceId: args.acestreamSourceId, setAsPrimary: args.setAsPrimary }),
   },
   get_all_channel_mappings: {
     method: 'GET',
@@ -378,6 +376,30 @@ const ROUTES: Record<string, RouteSpec> = {
   get_orphan_acestream_sources: {
     method: 'GET',
     path: '/api/orphans/acestream',
+  },
+  promote_orphan_to_plex: {
+    method: 'POST',
+    path: '/api/xmltv-channels/orphans/xtream/{xtreamChannelId}/promote',
+    pathParams: ['xtreamChannelId'],
+    mapBody: (args) => ({ displayName: args.displayName, iconUrl: args.iconUrl }),
+  },
+  promote_m3u_orphan_to_plex: {
+    method: 'POST',
+    path: '/api/xmltv-channels/orphans/m3u/{m3uChannelId}/promote',
+    pathParams: ['m3uChannelId'],
+    mapBody: (args) => ({ displayName: args.displayName, iconUrl: args.iconUrl }),
+  },
+  promote_acestream_orphan_to_plex: {
+    method: 'POST',
+    path: '/api/xmltv-channels/orphans/acestream/{acestreamSourceId}/promote',
+    pathParams: ['acestreamSourceId'],
+    mapBody: (args) => ({ displayName: args.displayName, iconUrl: args.iconUrl }),
+  },
+  update_synthetic_channel: {
+    method: 'PUT',
+    path: '/api/xmltv-channels/synthetic/{channelId}',
+    pathParams: ['channelId'],
+    mapBody: (args) => ({ displayName: args.displayName, iconUrl: args.iconUrl }),
   },
   get_target_lineup_channels: {
     method: 'GET',
@@ -409,7 +431,6 @@ const ROUTES: Record<string, RouteSpec> = {
     method: 'GET',
     path: '/api/xtream-streams/{xtreamChannelId}/url',
     pathParams: ['xtreamChannelId'],
-    queryParams: ['accountId'],
   },
 
   // -- EPG (additional) -----------------------------------------------------
@@ -468,7 +489,7 @@ const ROUTES: Record<string, RouteSpec> = {
   clear_old_events: {
     method: 'POST',
     path: '/api/events/clear-old',
-    queryParams: ['keepCount'],
+    mapBody: (args) => ({ keepCount: args.keepCount }),
   },
 
   // -- Settings (additional) ------------------------------------------------

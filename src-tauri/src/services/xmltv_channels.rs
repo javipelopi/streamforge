@@ -312,6 +312,23 @@ pub fn get_xmltv_channels_for_source(
 // Toggle / bulk operations
 // ============================================================================
 
+/// Read the current enabled state of an XMLTV channel (defaults to false).
+pub fn get_xmltv_channel_enabled(
+    conn: &mut SqliteConnection,
+    xmltv_channel_id: i32,
+) -> Result<bool, String> {
+    use crate::db::schema::xmltv_channel_settings;
+
+    let row = xmltv_channel_settings::table
+        .filter(xmltv_channel_settings::xmltv_channel_id.eq(xmltv_channel_id))
+        .select(xmltv_channel_settings::is_enabled)
+        .first::<Option<i32>>(conn)
+        .optional()
+        .map_err(|e| format!("Failed to read channel enabled state: {}", e))?;
+
+    Ok(row.flatten().unwrap_or(0) != 0)
+}
+
 /// Toggle an XMLTV channel's enabled state.
 ///
 /// Creates or updates the channel settings row. Returns the new enabled state.

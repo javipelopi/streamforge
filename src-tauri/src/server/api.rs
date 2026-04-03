@@ -132,6 +132,7 @@ pub fn api_router() -> Router<AppState> {
         .route("/xmltv-channels/{id}/primary-stream", post(set_primary_stream))
         .route("/xmltv-channels/{id}/toggle", post(toggle_xmltv_channel))
         .route("/xmltv-channels/{id}/order", put(update_channel_order))
+        .route("/xmltv-channels/order", put(bulk_update_channel_order))
         .route("/xmltv-channels/{id}/mappings", get(get_all_channel_mappings))
         .route("/xmltv-channels/{id}/mappings/xtream", post(add_manual_stream_mapping))
         .route("/xmltv-channels/{id}/mappings/m3u", post(add_m3u_channel_mapping))
@@ -480,10 +481,10 @@ async fn create_xmltv_source(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateXmltvSourceRequest {
-    pub name: String,
-    pub url: String,
-    pub format: String,
-    pub refresh_interval_hours: i32,
+    pub name: Option<String>,
+    pub url: Option<String>,
+    pub format: Option<String>,
+    pub refresh_interval_hours: Option<i32>,
 }
 
 async fn update_xmltv_source(
@@ -494,10 +495,10 @@ async fn update_xmltv_source(
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
 
     let updates = XmltvSourceUpdate {
-        name: Some(req.name),
-        url: Some(req.url),
-        format: Some(req.format),
-        refresh_interval_hours: Some(req.refresh_interval_hours),
+        name: req.name,
+        url: req.url,
+        format: req.format,
+        refresh_interval_hours: req.refresh_interval_hours,
         is_active: None,
         updated_at: None, // service sets this
     };
@@ -565,16 +566,27 @@ async fn set_primary_stream(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToggleChannelRequest {
-    pub enabled: bool,
+    pub enabled: Option<bool>,
 }
 
 async fn toggle_xmltv_channel(
     State(state): State<AppState>,
     Path(id): Path<i32>,
-    Json(req): Json<ToggleChannelRequest>,
+    body: Option<Json<ToggleChannelRequest>>,
 ) -> ApiResult<serde_json::Value> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-    let enabled = services::xmltv_channels::toggle_xmltv_channel(&mut conn, id, req.enabled)
+
+    let new_enabled = match body.and_then(|b| b.enabled) {
+        Some(explicit) => explicit,
+        None => {
+            // Toggle: read current state and flip
+            let current = services::xmltv_channels::get_xmltv_channel_enabled(&mut conn, id)
+                .map_err(|e| internal(e))?;
+            !current
+        }
+    };
+
+    let enabled = services::xmltv_channels::toggle_xmltv_channel(&mut conn, id, new_enabled)
         .map_err(|e| internal(e))?;
     state.invalidate_epg_cache();
     Ok(Json(serde_json::json!({ "enabled": enabled })))
@@ -598,6 +610,29 @@ async fn update_channel_order(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkUpdateChannelOrderRequest {
+    pub channel_ids: Vec<i32>,
+}
+
+async fn bulk_update_channel_order(
+    State(state): State<AppState>,
+    Json(req): Json<BulkUpdateChannelOrderRequest>,
+) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    for (index, channel_id) in req.channel_ids.iter().enumerate() {
+        services::xmltv_channels::update_channel_order(
+            &mut conn,
+            *channel_id,
+            Some(index as i32),
+        )
+        .map_err(|e| internal(e))?;
+    }
+    state.invalidate_epg_cache();
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn get_all_xtream_streams(
     State(state): State<AppState>,
 ) -> ApiResult<Vec<XtreamStreamSearchResult>> {
@@ -609,7 +644,7 @@ async fn get_all_xtream_streams(
 
 #[derive(Deserialize)]
 pub struct SearchQuery {
-    pub q: String,
+    pub query: String,
 }
 
 async fn search_xtream_streams(
@@ -617,7 +652,7 @@ async fn search_xtream_streams(
     Query(q): Query<SearchQuery>,
 ) -> ApiResult<Vec<XtreamStreamSearchResult>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-    let streams = services::xmltv_channels::search_xtream_streams(&mut conn, &q.q)
+    let streams = services::xmltv_channels::search_xtream_streams(&mut conn, &q.query)
         .map_err(|e| internal(e))?;
     Ok(Json(streams))
 }
@@ -1321,7 +1356,7 @@ async fn search_epg_programs(
     Query(q): Query<SearchQuery>,
 ) -> ApiResult<Vec<EpgSearchResult>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
-    let results = services::epg::search_epg_programs(&mut conn, &q.q)
+    let results = services::epg::search_epg_programs(&mut conn, &q.query)
         .map_err(|e| internal(e))?;
     Ok(Json(results))
 }
