@@ -55,6 +55,27 @@ pub async fn run_headless(config: HeadlessConfig) -> Result<(), Box<dyn std::err
     let db_connection = db::DbConnection::new(database_url)
         .map_err(|e| format!("Failed to create connection pool: {}", e))?;
 
+    // --- Startup event logging -----------------------------------------------
+    {
+        use crate::logging::log_event_internal;
+        if let Ok(mut log_conn) = db_connection.get_connection() {
+            let details = serde_json::json!({
+                "version": env!("CARGO_PKG_VERSION"),
+                "mode": "headless",
+                "data_dir": config.data_dir.as_ref().map(|p| p.display().to_string()),
+                "port": config.port,
+                "bind_address": config.bind_address.map(|a| a.to_string()),
+            });
+            let _ = log_event_internal(
+                &mut log_conn,
+                "info",
+                "system",
+                &format!("StreamForge v{} started (headless)", env!("CARGO_PKG_VERSION")),
+                Some(&details.to_string()),
+            );
+        }
+    }
+
     // --- App data dir (for credential retrieval) ----------------------------
     let app_data_dir = config
         .data_dir
