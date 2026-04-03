@@ -54,10 +54,8 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 8
+      - name: Enable corepack
+        run: corepack enable
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -115,10 +113,8 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 8
+      - name: Enable corepack
+        run: corepack enable
 
       - name: Install frontend dependencies
         run: pnpm install
