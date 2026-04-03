@@ -341,6 +341,7 @@ pub fn set_autostart_enabled(
 /// Story 4-6: Display Plex Configuration URLs
 /// Contains all URLs needed to configure Plex tuner plus server status.
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlexConfig {
     pub server_running: bool,
     pub local_ip: String,
@@ -470,14 +471,14 @@ mod tests {
 
         let json = serde_json::to_string(&config).unwrap();
 
-        // Verify all fields are present with snake_case
-        assert!(json.contains("\"server_running\":true"));
-        assert!(json.contains("\"local_ip\":\"192.168.1.100\""));
+        // Verify all fields are present with camelCase
+        assert!(json.contains("\"serverRunning\":true"));
+        assert!(json.contains("\"localIp\":\"192.168.1.100\""));
         assert!(json.contains("\"port\":5004"));
-        assert!(json.contains("\"m3u_url\":\"http://192.168.1.100:5004/playlist.m3u\""));
-        assert!(json.contains("\"epg_url\":\"http://192.168.1.100:5004/epg.xml\""));
-        assert!(json.contains("\"hdhr_url\":\"http://192.168.1.100:5004\""));
-        assert!(json.contains("\"tuner_count\":4"));
+        assert!(json.contains("\"m3uUrl\":\"http://192.168.1.100:5004/playlist.m3u\""));
+        assert!(json.contains("\"epgUrl\":\"http://192.168.1.100:5004/epg.xml\""));
+        assert!(json.contains("\"hdhrUrl\":\"http://192.168.1.100:5004\""));
+        assert!(json.contains("\"tunerCount\":4"));
     }
 
     #[test]
@@ -535,7 +536,7 @@ mod tests {
 
         assert_eq!(config.tuner_count, 0);
         let json = serde_json::to_string(&config).unwrap();
-        assert!(json.contains("\"tuner_count\":0"));
+        assert!(json.contains("\"tunerCount\":0"));
     }
 
     #[test]
@@ -552,7 +553,7 @@ mod tests {
 
         assert!(!config.server_running);
         let json = serde_json::to_string(&config).unwrap();
-        assert!(json.contains("\"server_running\":false"));
+        assert!(json.contains("\"serverRunning\":false"));
     }
 
     // ============================================================================

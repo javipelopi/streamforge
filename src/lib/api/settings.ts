@@ -7,19 +7,19 @@ import { invoke } from './invoke';
 /** Plex configuration response type */
 export interface PlexConfig {
   /** Whether the HTTP server is running and accepting connections */
-  server_running: boolean;
+  serverRunning: boolean;
   /** Local network IP address */
-  local_ip: string;
+  localIp: string;
   /** Server port (default 5004) */
   port: number;
   /** M3U Playlist URL for Plex tuner configuration */
-  m3u_url: string;
+  m3uUrl: string;
   /** EPG/XMLTV URL for Plex guide data */
-  epg_url: string;
+  epgUrl: string;
   /** HDHomeRun base URL for manual tuner setup */
-  hdhr_url: string;
+  hdhrUrl: string;
   /** Maximum concurrent streams (tuner count) from active accounts */
-  tuner_count: number;
+  tunerCount: number;
 }
 
 /**

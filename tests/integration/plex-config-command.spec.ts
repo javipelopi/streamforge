@@ -19,13 +19,13 @@ test.describe('get_plex_config Command', () => {
     const config = await invoke('get_plex_config');
 
     // THEN: Response has all required fields
-    expect(config).toHaveProperty('server_running');
-    expect(config).toHaveProperty('local_ip');
+    expect(config).toHaveProperty('serverRunning');
+    expect(config).toHaveProperty('localIp');
     expect(config).toHaveProperty('port');
-    expect(config).toHaveProperty('m3u_url');
-    expect(config).toHaveProperty('epg_url');
-    expect(config).toHaveProperty('hdhr_url');
-    expect(config).toHaveProperty('tuner_count');
+    expect(config).toHaveProperty('m3uUrl');
+    expect(config).toHaveProperty('epgUrl');
+    expect(config).toHaveProperty('hdhrUrl');
+    expect(config).toHaveProperty('tunerCount');
   });
 
   test('should return correct M3U URL format', async () => {
@@ -35,11 +35,11 @@ test.describe('get_plex_config Command', () => {
     const config: any = await invoke('get_plex_config');
 
     // THEN: M3U URL follows format http://{ip}:{port}/playlist.m3u
-    expect(config.m3u_url).toMatch(/^http:\/\/\d+\.\d+\.\d+\.\d+:\d+\/playlist\.m3u$/);
+    expect(config.m3uUrl).toMatch(/^http:\/\/\d+\.\d+\.\d+\.\d+:\d+\/playlist\.m3u$/);
 
-    // AND: URL uses local_ip and port from config
-    expect(config.m3u_url).toContain(config.local_ip);
-    expect(config.m3u_url).toContain(String(config.port));
+    // AND: URL uses localIp and port from config
+    expect(config.m3uUrl).toContain(config.localIp);
+    expect(config.m3uUrl).toContain(String(config.port));
   });
 
   test('should return correct EPG URL format', async () => {
@@ -49,11 +49,11 @@ test.describe('get_plex_config Command', () => {
     const config: any = await invoke('get_plex_config');
 
     // THEN: EPG URL follows format http://{ip}:{port}/epg.xml
-    expect(config.epg_url).toMatch(/^http:\/\/\d+\.\d+\.\d+\.\d+:\d+\/epg\.xml$/);
+    expect(config.epgUrl).toMatch(/^http:\/\/\d+\.\d+\.\d+\.\d+:\d+\/epg\.xml$/);
 
-    // AND: URL uses local_ip and port from config
-    expect(config.epg_url).toContain(config.local_ip);
-    expect(config.epg_url).toContain(String(config.port));
+    // AND: URL uses localIp and port from config
+    expect(config.epgUrl).toContain(config.localIp);
+    expect(config.epgUrl).toContain(String(config.port));
   });
 
   test('should return correct HDHomeRun URL format', async () => {
@@ -63,11 +63,11 @@ test.describe('get_plex_config Command', () => {
     const config: any = await invoke('get_plex_config');
 
     // THEN: HDHR URL follows format http://{ip}:{port}
-    expect(config.hdhr_url).toMatch(/^http:\/\/\d+\.\d+\.\d+\.\d+:\d+$/);
+    expect(config.hdhrUrl).toMatch(/^http:\/\/\d+\.\d+\.\d+\.\d+:\d+$/);
 
-    // AND: URL uses local_ip and port from config
-    expect(config.hdhr_url).toContain(config.local_ip);
-    expect(config.hdhr_url).toContain(String(config.port));
+    // AND: URL uses localIp and port from config
+    expect(config.hdhrUrl).toContain(config.localIp);
+    expect(config.hdhrUrl).toContain(String(config.port));
   });
 
   test('should return local network IP not localhost', async () => {
@@ -77,11 +77,11 @@ test.describe('get_plex_config Command', () => {
     const config: any = await invoke('get_plex_config');
 
     // THEN: local_ip is not 127.0.0.1 or localhost
-    expect(config.local_ip).not.toBe('127.0.0.1');
-    expect(config.local_ip).not.toBe('localhost');
+    expect(config.localIp).not.toBe('127.0.0.1');
+    expect(config.localIp).not.toBe('localhost');
 
     // AND: local_ip is valid IPv4 address
-    expect(config.local_ip).toMatch(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/);
+    expect(config.localIp).toMatch(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/);
   });
 
   test('should return tuner count from active accounts', async () => {
@@ -91,8 +91,8 @@ test.describe('get_plex_config Command', () => {
     const config: any = await invoke('get_plex_config');
 
     // THEN: tuner_count is positive integer
-    expect(config.tuner_count).toBeGreaterThan(0);
-    expect(Number.isInteger(config.tuner_count)).toBe(true);
+    expect(config.tunerCount).toBeGreaterThan(0);
+    expect(Number.isInteger(config.tunerCount)).toBe(true);
 
     // AND: tuner_count matches sum of active account max_connections
     // (Exact value depends on database fixture)
@@ -116,8 +116,8 @@ test.describe('get_plex_config Command', () => {
     const config: any = await invoke('get_plex_config');
 
     // THEN: server_running is true
-    expect(config.server_running).toBe(true);
-    expect(typeof config.server_running).toBe('boolean');
+    expect(config.serverRunning).toBe(true);
+    expect(typeof config.serverRunning).toBe('boolean');
   });
 
   test('should reuse existing get_local_ip logic', async () => {
@@ -128,15 +128,15 @@ test.describe('get_plex_config Command', () => {
 
     // THEN: local_ip uses same logic as discover.json endpoint
     // (Same IP detection library: local_ip_address crate)
-    expect(config.local_ip).toBeTruthy();
+    expect(config.localIp).toBeTruthy();
 
     // AND: Falls back to 127.0.0.1 only if local IP detection fails
-    if (config.local_ip === '127.0.0.1') {
+    if (config.localIp === '127.0.0.1') {
       // Fallback was used, acceptable
       expect(true).toBe(true);
     } else {
       // Should be valid local network IP
-      expect(config.local_ip).toMatch(/^(?!127\.0\.0\.1)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/);
+      expect(config.localIp).toMatch(/^(?!127\.0\.0\.1)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/);
     }
   });
 });

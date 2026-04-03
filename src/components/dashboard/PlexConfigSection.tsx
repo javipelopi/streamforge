@@ -189,14 +189,14 @@ export function PlexConfigSection() {
   }
 
   // Validate config data structure with proper type guards
-  const serverRunning = config?.server_running ?? false;
+  const serverRunning = config?.serverRunning ?? false;
   const hasValidConfig = config &&
-    typeof config.local_ip === 'string' &&
+    typeof config.localIp === 'string' &&
     typeof config.port === 'number' &&
-    typeof config.m3u_url === 'string' &&
-    typeof config.epg_url === 'string' &&
-    typeof config.hdhr_url === 'string' &&
-    typeof config.tuner_count === 'number';
+    typeof config.m3uUrl === 'string' &&
+    typeof config.epgUrl === 'string' &&
+    typeof config.hdhrUrl === 'string' &&
+    typeof config.tunerCount === 'number';
 
   // If config is invalid/malformed, treat as error state
   if (config && !hasValidConfig) {
@@ -267,7 +267,7 @@ export function PlexConfigSection() {
         <ConfigUrlRow
           label="M3U Playlist URL"
           description="Use this URL in Plex as the tuner playlist source"
-          url={config?.m3u_url ?? ''}
+          url={config?.m3uUrl ?? ''}
           disabled={!serverRunning}
           testIdPrefix="m3u"
           onCopy={handleCopy}
@@ -278,7 +278,7 @@ export function PlexConfigSection() {
         <ConfigUrlRow
           label="EPG/XMLTV URL"
           description="Use this URL in Plex for electronic program guide data"
-          url={config?.epg_url ?? ''}
+          url={config?.epgUrl ?? ''}
           disabled={!serverRunning}
           testIdPrefix="epg"
           onCopy={handleCopy}
@@ -289,7 +289,7 @@ export function PlexConfigSection() {
         <ConfigUrlRow
           label="HDHomeRun URL"
           description="Base URL for manual HDHomeRun tuner configuration"
-          url={config?.hdhr_url ?? ''}
+          url={config?.hdhrUrl ?? ''}
           disabled={!serverRunning}
           testIdPrefix="hdhr"
           onCopy={handleCopy}
@@ -313,7 +313,7 @@ export function PlexConfigSection() {
             data-testid="tuner-count-value"
             className="text-lg font-semibold text-gray-900"
           >
-            {config?.tuner_count ?? 0}
+            {config?.tunerCount ?? 0}
           </span>
         </div>
       </div>

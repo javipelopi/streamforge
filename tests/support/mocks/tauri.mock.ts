@@ -380,13 +380,13 @@ export async function injectSettingsStatefulMock(
         get_plex_config: () => {
           const port = window.__SETTINGS_STATE__.serverPort;
           return {
-            server_running: true,
-            local_ip: '192.168.1.100',
+            serverRunning: true,
+            localIp: '192.168.1.100',
             port: port,
-            m3u_url: \`http://192.168.1.100:\${port}/playlist.m3u\`,
-            epg_url: \`http://192.168.1.100:\${port}/epg.xml\`,
-            hdhr_url: \`http://192.168.1.100:\${port}\`,
-            tuner_count: 2
+            m3uUrl: \`http://192.168.1.100:\${port}/playlist.m3u\`,
+            epgUrl: \`http://192.168.1.100:\${port}/epg.xml\`,
+            hdhrUrl: \`http://192.168.1.100:\${port}\`,
+            tunerCount: 2
           };
         },
 
