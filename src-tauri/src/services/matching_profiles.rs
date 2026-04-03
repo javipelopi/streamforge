@@ -112,23 +112,53 @@ pub fn reorder_profiles(
     }
 }
 
-/// Preview: augment an XMLTV name with the first rule prefix/suffix.
+/// Preview: strip a provider name using prefix/suffix regex from the first rule.
 pub fn preview_normalization(name: &str, rules: &[NormalizationRule]) -> String {
-    augment_xmltv_name(name, rules)
+    strip_provider_name(name, rules)
 }
 
-/// Augment an XMLTV name by prepending prefix and appending suffix from the first rule.
-pub fn augment_xmltv_name(name: &str, rules: &[NormalizationRule]) -> String {
+/// Strip prefix and suffix regex patterns from a provider stream name.
+///
+/// The first rule's `prefix` and `suffix` fields are treated as regex patterns.
+/// The prefix regex is removed from the start of the name, the suffix regex
+/// from the end. Returns the stripped result (trimmed).
+pub fn strip_provider_name(name: &str, rules: &[NormalizationRule]) -> String {
     if let Some(rule) = rules.first() {
-        format!("{}{}{}", rule.prefix, name, rule.suffix)
+        let mut result = name.to_string();
+
+        if !rule.prefix.is_empty() {
+            if let Ok(re) = regex::Regex::new(&format!("^(?:{})", rule.prefix)) {
+                result = re.replace(&result, "").to_string();
+            }
+        }
+
+        if !rule.suffix.is_empty() {
+            if let Ok(re) = regex::Regex::new(&format!("(?:{})$", rule.suffix)) {
+                result = re.replace(&result, "").to_string();
+            }
+        }
+
+        result.trim().to_string()
     } else {
         name.to_string()
     }
 }
 
-/// Legacy alias.
-pub fn apply_normalization_rules(name: &str, rules: &[NormalizationRule]) -> String {
-    augment_xmltv_name(name, rules)
+/// Check whether a provider name matches the prefix filter from the first rule.
+/// If no prefix is set, all names pass the filter.
+pub fn matches_prefix_filter(name: &str, rules: &[NormalizationRule]) -> bool {
+    if let Some(rule) = rules.first() {
+        if rule.prefix.is_empty() {
+            return true;
+        }
+        if let Ok(re) = regex::Regex::new(&format!("^(?:{})", rule.prefix)) {
+            re.is_match(name)
+        } else {
+            true // Invalid regex → don't filter
+        }
+    } else {
+        true
+    }
 }
 
 /// Load active profiles for a specific XMLTV source, keyed by (stream_source_type, stream_source_id).

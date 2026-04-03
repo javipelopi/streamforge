@@ -9,7 +9,7 @@ use std::sync::LazyLock;
 
 use super::{scorer::calculate_match_score, MatchConfig, MatchResult, MatchStats, MatchType};
 use crate::db::models::{M3uChannel, NormalizationRule, XmltvChannel, XtreamChannel};
-use crate::services::matching_profiles::augment_xmltv_name;
+use crate::services::matching_profiles::{matches_prefix_filter, strip_provider_name};
 
 /// Result of matching M3U channels to XMLTV channels
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -108,13 +108,14 @@ pub fn match_channels(
     match_channels_with_rules(xmltv_channels, xtream_channels, config, &[])
 }
 
-/// Match XMLTV channels to Xtream streams with per-profile prefix/suffix rules.
+/// Match XMLTV channels to Xtream streams with per-profile prefix/suffix regex rules.
 ///
 /// When rules are present:
-///   1. Augment each XMLTV name: prefix + xmltv_name + suffix
-///   2. Basic-normalize both sides (lowercase + trim, NO quality stripping)
-///   3. Compare augmented XMLTV name against provider name
+///   1. Filter provider streams by prefix regex (only matching streams are candidates)
+///   2. Strip prefix and suffix regex from provider stream names
+///   3. Compare stripped provider name against XMLTV name (case-insensitive)
 ///
+/// XMLTV names are never modified — they are the reference.
 /// Display names in the target lineup remain the ORIGINAL XMLTV name.
 pub fn match_channels_with_rules(
     xmltv_channels: &[XmltvChannel],
@@ -132,17 +133,28 @@ pub fn match_channels_with_rules(
 
     let has_rules = !rules.is_empty();
 
+    // When rules are present: filter by prefix, then strip prefix+suffix from provider names.
+    // When no rules: use legacy normalization (strip quality suffixes).
     let xtream_normalized: Vec<(i32, String, Option<&str>)> = xtream_channels
         .iter()
         .filter_map(|c| {
-            c.id.map(|id| {
-                let norm = if has_rules {
-                    basic_normalize(&c.name)
-                } else {
-                    normalize_channel_name(&c.name)
-                };
-                (id, norm, c.epg_channel_id.as_deref())
-            })
+            c.id.map(|id| (id, c.name.clone(), c.epg_channel_id.as_deref()))
+        })
+        .filter(|(_id, name, _epg)| {
+            if has_rules {
+                matches_prefix_filter(name, rules)
+            } else {
+                true
+            }
+        })
+        .map(|(id, name, epg)| {
+            let norm = if has_rules {
+                let stripped = strip_provider_name(&name, rules);
+                basic_normalize(&stripped)
+            } else {
+                normalize_channel_name(&name)
+            };
+            (id, norm, epg)
         })
         .collect();
 
@@ -152,9 +164,9 @@ pub fn match_channels_with_rules(
             None => continue,
         };
 
+        // XMLTV names are the reference — normalize but never augment/strip
         let xmltv_normalized = if has_rules {
-            let augmented = augment_xmltv_name(&xmltv.display_name, rules);
-            basic_normalize(&augmented)
+            basic_normalize(&xmltv.display_name)
         } else {
             normalize_channel_name(&xmltv.display_name)
         };
@@ -221,7 +233,10 @@ pub fn match_m3u_channels(
     match_m3u_channels_with_rules(xmltv_channels, m3u_channels, config, &[])
 }
 
-/// Match M3U channels to XMLTV channels with per-profile prefix/suffix rules.
+/// Match M3U channels to XMLTV channels with per-profile prefix/suffix regex rules.
+///
+/// Same logic as `match_channels_with_rules` but for M3U sources:
+/// filter by prefix, strip prefix+suffix from provider names, compare against XMLTV.
 pub fn match_m3u_channels_with_rules(
     xmltv_channels: &[XmltvChannel],
     m3u_channels: &[M3uChannel],
@@ -243,13 +258,24 @@ pub fn match_m3u_channels_with_rules(
         .filter_map(|c| {
             c.id.map(|id| {
                 let name_to_match = c.tvg_name.as_deref().unwrap_or(&c.name);
-                let norm = if has_rules {
-                    basic_normalize(name_to_match)
-                } else {
-                    normalize_channel_name(name_to_match)
-                };
-                (id, norm, c.tvg_id.as_deref())
+                (id, name_to_match.to_string(), c.tvg_id.as_deref())
             })
+        })
+        .filter(|(_id, name, _tvg)| {
+            if has_rules {
+                matches_prefix_filter(name, rules)
+            } else {
+                true
+            }
+        })
+        .map(|(id, name, tvg)| {
+            let norm = if has_rules {
+                let stripped = strip_provider_name(&name, rules);
+                basic_normalize(&stripped)
+            } else {
+                normalize_channel_name(&name)
+            };
+            (id, norm, tvg)
         })
         .collect();
 
@@ -260,8 +286,7 @@ pub fn match_m3u_channels_with_rules(
         };
 
         let xmltv_normalized = if has_rules {
-            let augmented = augment_xmltv_name(&xmltv.display_name, rules);
-            basic_normalize(&augmented)
+            basic_normalize(&xmltv.display_name)
         } else {
             normalize_channel_name(&xmltv.display_name)
         };
@@ -347,13 +372,33 @@ mod tests {
     }
 
     #[test]
-    fn test_augment_matches_provider() {
+    fn test_strip_provider_name_matches_xmltv() {
         let rules = vec![NormalizationRule {
-            prefix: "Spain ".to_string(),
-            suffix: " FHD".to_string(),
+            prefix: r"ES\| ".to_string(),
+            suffix: r" FHD$| HD$| SD$| HEVC$| 4K$".to_string(),
         }];
-        let augmented = basic_normalize(&augment_xmltv_name("La 1", &rules));
-        let provider = basic_normalize("Spain La 1 FHD");
-        assert_eq!(augmented, provider);
+        let stripped = basic_normalize(&strip_provider_name("ES| ANTENA 3 FHD", &rules));
+        let xmltv = basic_normalize("Antena 3");
+        assert_eq!(stripped, xmltv);
+    }
+
+    #[test]
+    fn test_prefix_filter() {
+        let rules = vec![NormalizationRule {
+            prefix: r"ES\| ".to_string(),
+            suffix: String::new(),
+        }];
+        assert!(matches_prefix_filter("ES| ANTENA 3 FHD", &rules));
+        assert!(!matches_prefix_filter("UK| BBC ONE HD", &rules));
+    }
+
+    #[test]
+    fn test_strip_suffix_only() {
+        let rules = vec![NormalizationRule {
+            prefix: String::new(),
+            suffix: r" FHD$| HD$| SD$".to_string(),
+        }];
+        let stripped = strip_provider_name("ESPN HD", &rules);
+        assert_eq!(stripped, "ESPN");
     }
 }

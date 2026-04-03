@@ -7,18 +7,23 @@ import { invoke } from './invoke';
 export type StreamSourceType = 'xtream' | 'm3u' | 'acestream';
 
 /**
- * A matching rule: prefix and suffix added to XMLTV names to match provider names.
+ * A matching rule: prefix and suffix regex patterns stripped from provider stream names.
  *
- * XMLTV names are the reference (e.g. "La 1"). Provider names are messy
- * (e.g. "Spain La 1 FHD"). Rules augment the XMLTV name so it looks like
- * the provider naming for comparison.
+ * Provider names are messy (e.g. "ES| ANTENA 3 FHD"). XMLTV names are the
+ * reference (e.g. "Antena 3"). Rules strip the prefix and suffix from provider
+ * names so they match the XMLTV reference.
  *
- * Example: prefix="Spain " suffix=" FHD" -> "La 1" becomes "Spain La 1 FHD"
+ * The prefix regex also acts as a FILTER: only provider streams matching the
+ * prefix are candidates for matching.
+ *
+ * Example: prefix="ES\\| " suffix=" FHD$| HD$| SD$| HEVC$| 4K$"
+ *   "ES| ANTENA 3 FHD" → strip prefix → "ANTENA 3 FHD" → strip suffix → "ANTENA 3"
+ *   Case-insensitive compare against XMLTV "Antena 3" → match ✓
  */
 export interface NormalizationRule {
-  /** Text prepended to the XMLTV name for matching */
+  /** Regex pattern stripped from the start of provider stream names (also filters) */
   prefix: string;
-  /** Text appended to the XMLTV name for matching */
+  /** Regex pattern stripped from the end of provider stream names */
   suffix: string;
 }
 
@@ -90,21 +95,24 @@ export async function previewNormalization(name: string, rules: NormalizationRul
 // Preset Rules
 // ============================================================================
 
+/** Default quality suffix regex, always included in presets */
+const QUALITY_SUFFIX = String.raw` FHD$| HD$| SD$| HEVC$| 4K$`;
+
 export const PRESET_RULES: Record<string, { label: string; rule: NormalizationRule }> = {
-  spain_fhd: {
-    label: 'Spain FHD (prefix "Spain ", suffix " FHD")',
-    rule: { prefix: 'Spain ', suffix: ' FHD' },
+  spain: {
+    label: 'Spain (ES| prefix, quality suffixes)',
+    rule: { prefix: String.raw`ES\| `, suffix: QUALITY_SUFFIX },
   },
-  spain_hd: {
-    label: 'Spain HD (prefix "Spain ", suffix " HD")',
-    rule: { prefix: 'Spain ', suffix: ' HD' },
+  uk: {
+    label: 'UK (UK| prefix, quality suffixes)',
+    rule: { prefix: String.raw`UK\| `, suffix: QUALITY_SUFFIX },
   },
-  uk_prefix: {
-    label: 'UK prefix (prefix "UK: ")',
-    rule: { prefix: 'UK: ', suffix: '' },
+  france: {
+    label: 'France (FR| prefix, quality suffixes)',
+    rule: { prefix: String.raw`FR\| `, suffix: QUALITY_SUFFIX },
   },
-  us_prefix: {
-    label: 'US prefix (prefix "US: ")',
-    rule: { prefix: 'US: ', suffix: '' },
+  custom: {
+    label: 'Custom (empty — fill in your own)',
+    rule: { prefix: '', suffix: '' },
   },
 };
