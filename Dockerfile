@@ -2,7 +2,7 @@ FROM debian:bookworm-slim
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      libsqlite3-0 libdbus-1-3 libglib2.0-0 libssl3 ca-certificates && \
+      libsqlite3-0 libdbus-1-3 libglib2.0-0 libssl3 ca-certificates ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 COPY streamforge-server /usr/local/bin/

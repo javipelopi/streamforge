@@ -76,6 +76,19 @@ pub async fn run_headless(config: HeadlessConfig) -> Result<(), Box<dyn std::err
         }
     }
 
+    // --- Check for ffmpeg ---------------------------------------------------
+    match std::process::Command::new("ffmpeg").arg("-version").output() {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout);
+            let first_line = version.lines().next().unwrap_or("unknown");
+            println!("  ffmpeg: {}", first_line);
+        }
+        _ => {
+            eprintln!("  WARNING: ffmpeg not found — HLS browser streaming will not work.");
+            eprintln!("  Install: apt install ffmpeg (Linux) / brew install ffmpeg (macOS)");
+        }
+    }
+
     // --- App data dir (for credential retrieval) ----------------------------
     // Use explicit override if provided, otherwise the canonical credential
     // directory shared with desktop mode.
