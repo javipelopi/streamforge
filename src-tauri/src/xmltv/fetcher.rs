@@ -27,6 +27,7 @@ pub async fn fetch_xmltv(url: &str, format: &str) -> Result<Vec<u8>, XmltvError>
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(DOWNLOAD_TIMEOUT_SECS))
+            .danger_accept_invalid_certs(true)
         .build()
         .map_err(|e| XmltvError::DownloadError(format!("Failed to create HTTP client: {}", e)))?;
 

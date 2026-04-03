@@ -15,6 +15,7 @@ static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
     Client::builder()
         .timeout(Duration::from_secs(30))
         .user_agent("StreamForge/1.0")
+            .danger_accept_invalid_certs(true)
         .build()
         .expect("Failed to create HTTP client")
 });
@@ -201,6 +202,7 @@ pub async fn fetch_m3u_playlist_with_timeout(
         .timeout(Duration::from_secs(timeout_secs))
         .user_agent("StreamForge/1.0")
         .resolve(host, (pinned_ip, port).into())
+            .danger_accept_invalid_certs(true)
         .build()?;
 
     let response = client.get(url).send().await?;

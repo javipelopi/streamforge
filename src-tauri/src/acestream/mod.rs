@@ -20,6 +20,7 @@ fn get_http_client() -> Result<&'static Client, AcestreamError> {
     Ok(HTTP_CLIENT.get_or_init(|| {
         Client::builder()
             .timeout(Duration::from_secs(HEALTH_CHECK_TIMEOUT_SECS))
+            .danger_accept_invalid_certs(true)
             .build()
             .unwrap_or_else(|_| {
                 // Fallback to default client if builder fails

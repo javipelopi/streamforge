@@ -44,6 +44,7 @@ impl XtreamClient {
         let http = Client::builder()
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .danger_accept_invalid_certs(true)
             .build()
             .map_err(XtreamError::Network)?;
 
