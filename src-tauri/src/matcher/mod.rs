@@ -24,7 +24,8 @@ mod scorer;
 
 pub use auto_rematch::*;
 pub use fuzzy::{
-    epg_ids_match, match_channels, match_m3u_channels, normalize_channel_name, M3uMatchResult,
+    epg_ids_match, match_channels, match_channels_with_rules, match_m3u_channels,
+    match_m3u_channels_with_rules, normalize_channel_name, normalize_with_rules, M3uMatchResult,
 };
 pub use persistence::*;
 pub use scorer::*;
