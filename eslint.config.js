@@ -52,6 +52,9 @@ export default [
         HTMLVideoElement: 'readonly',
         URLSearchParams: 'readonly',
         RequestInit: 'readonly',
+        Blob: 'readonly',
+        FileReader: 'readonly',
+        alert: 'readonly',
       },
     },
     plugins: {

@@ -9,8 +9,8 @@ import { X, Volume2, VolumeX, Maximize, Minimize, Play, Pause, Loader2, AlertCir
 import Hls from 'hls.js';
 import { getServerPort } from '../../lib/api';
 
-/** Toggle fullscreen — uses Tauri window API in desktop, browser Fullscreen API otherwise */
-async function toggleFullscreen(value: boolean): Promise<void> {
+/** Set fullscreen — uses Tauri window API in desktop, browser Fullscreen API otherwise */
+async function setFullscreenMode(value: boolean): Promise<void> {
   try {
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     await getCurrentWindow().setFullscreen(value);
@@ -331,7 +331,7 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
   useEffect(() => {
     if (!isOpen && isFullscreen) {
       setIsFullscreen(false);
-      toggleFullscreen(false).catch(() => {
+      setFullscreenMode(false).catch(() => {
         // Ignore errors during cleanup
       });
     }
@@ -360,7 +360,7 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
           if (isFullscreen) {
             setIsFullscreen(false);
             try {
-              await toggleFullscreen(false);
+              await setFullscreenMode(false);
             } catch (err) {
               console.error('[VideoPlayer] Failed to exit fullscreen:', err);
             }
@@ -416,7 +416,7 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
     const newFullscreen = !isFullscreen;
     setIsFullscreen(newFullscreen);
     try {
-      await toggleFullscreen(newFullscreen);
+      await setFullscreenMode(newFullscreen);
     } catch (e) {
       console.error('[VideoPlayer] Fullscreen error:', e);
     }
