@@ -58,3 +58,6 @@ src-tauri/target/
 .logs/
 __pycache__/
 .land-worktree/
+.beads/
+_bmad-output/
+_bmad/
