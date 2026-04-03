@@ -9,14 +9,16 @@
  * - Xtream tab: Browse Xtream stream sources with lazy-loaded streams
  * - M3U tab: Browse M3U playlist sources
  * - Acestream tab: Manage Acestream P2P sources
+ * - Matching Rules tab: Configure matching profiles with normalization rules
  */
 import { useState } from 'react';
 import { XmltvSourcesTab } from '../components/sources/XmltvSourcesTab';
 import { XtreamSourcesTab } from '../components/sources/XtreamSourcesTab';
 import { M3uSourcesTab } from '../components/sources/M3uSourcesTab';
 import { AcestreamSourcesTab } from '../components/sources/AcestreamSourcesTab';
+import { MatchingProfilesTab } from '../components/sources/MatchingProfilesTab';
 
-type TabType = 'xmltv' | 'xtream' | 'm3u' | 'acestream';
+type TabType = 'xmltv' | 'xtream' | 'm3u' | 'acestream' | 'matching';
 
 export function Sources() {
   const [activeTab, setActiveTab] = useState<TabType>('xmltv');
@@ -27,7 +29,7 @@ export function Sources() {
       <div className="mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Sources</h1>
         <p className="text-gray-500 mt-1">
-          Browse your XMLTV, Xtream, M3U, and Acestream channel sources
+          Browse your XMLTV, Xtream, M3U, and Acestream channel sources. Configure matching rules.
         </p>
       </div>
 
@@ -89,6 +91,20 @@ export function Sources() {
         >
           Acestream
         </button>
+        <button
+          data-testid="matching-tab"
+          role="tab"
+          aria-selected={activeTab === 'matching'}
+          aria-controls="matching-tab-panel"
+          className={`px-4 py-2 font-medium text-sm ${
+            activeTab === 'matching'
+              ? 'border-b-2 border-blue-500 text-blue-600'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+          onClick={() => setActiveTab('matching')}
+        >
+          Matching Rules
+        </button>
       </div>
 
       {/* Tab Panels */}
@@ -133,6 +149,17 @@ export function Sources() {
           className="flex-1 overflow-hidden"
         >
           <AcestreamSourcesTab />
+        </div>
+      )}
+
+      {activeTab === 'matching' && (
+        <div
+          id="matching-tab-panel"
+          role="tabpanel"
+          aria-labelledby="matching-tab"
+          className="flex-1 overflow-hidden"
+        >
+          <MatchingProfilesTab />
         </div>
       )}
     </div>

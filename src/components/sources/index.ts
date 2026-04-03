@@ -29,6 +29,12 @@ export { AcestreamSourcesTab } from './AcestreamSourcesTab';
 export { AcestreamSourceRow } from './AcestreamSourceRow';
 export { AcestreamSourceDialog } from './AcestreamSourceDialog';
 
+// Matching Profile Components
+export { MatchingProfilesTab } from './MatchingProfilesTab';
+export { MatchingProfileDialog } from './MatchingProfileDialog';
+export { MatchingRuleEditor } from './MatchingRuleEditor';
+export { MatchPreview } from './MatchPreview';
+
 // Shared Components
 export { LinkToXmltvChannelDialog } from './LinkToXmltvChannelDialog';
 export * from './shared';
