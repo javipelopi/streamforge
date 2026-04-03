@@ -6,7 +6,7 @@
 use diesel::prelude::*;
 use std::collections::HashMap;
 use std::time::Instant;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use crate::credentials::CredentialManager;
 use crate::db::{
@@ -24,17 +24,14 @@ pub use crate::types::{ChannelResponse, ScanAndRematchResponse, ScanChannelsResp
 /// and stores/updates channels in the database.
 #[tauri::command]
 pub async fn scan_channels(
-    app: AppHandle,
+    _app: AppHandle,
     db: State<'_, DbConnection>,
     account_id: i32,
 ) -> Result<ScanChannelsResponse, String> {
     let start_time = Instant::now();
 
-    // Get app data directory for credential retrieval
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|_| "Failed to get app data directory".to_string())?;
+    // Use the canonical credential directory (shared with headless mode)
+    let app_data_dir = crate::credentials::get_credential_dir();
 
     // Get database connection
     let mut conn = db
@@ -299,17 +296,14 @@ use crate::matcher::{perform_auto_rematch, MatchConfig, ProviderChanges, Rematch
 /// Enhanced response with both channel and match statistics
 #[tauri::command]
 pub async fn scan_and_rematch(
-    app: AppHandle,
+    _app: AppHandle,
     db: State<'_, DbConnection>,
     account_id: i32,
 ) -> Result<ScanAndRematchResponse, String> {
     let start_time = Instant::now();
 
-    // Get app data directory for credential retrieval
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|_| "Failed to get app data directory".to_string())?;
+    // Use the canonical credential directory (shared with headless mode)
+    let app_data_dir = crate::credentials::get_credential_dir();
 
     // Get database connection
     let mut conn = db

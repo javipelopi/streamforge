@@ -6,7 +6,7 @@
 
 use diesel::prelude::*;
 use serde::Serialize;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use crate::credentials::CredentialManager;
 use crate::db::models::{Account, ChannelMapping, XmltvChannel, XtreamChannel};
@@ -337,7 +337,7 @@ pub fn unlink_xtream_stream(
 /// The full stream URL (e.g., http://server.com/live/user/pass/12345.ts)
 #[tauri::command]
 pub async fn get_xtream_stream_url(
-    app: AppHandle,
+    _app: AppHandle,
     db: State<'_, DbConnection>,
     xtream_channel_id: i32,
 ) -> Result<String, String> {
@@ -362,11 +362,8 @@ pub async fn get_xtream_stream_url(
         .first::<Account>(&mut conn)
         .map_err(|e| format!("Account not found: {}", e))?;
 
-    // Get app data directory for credential manager
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+    // Use the canonical credential directory (shared with headless mode)
+    let app_data_dir = crate::credentials::get_credential_dir();
 
     // Decrypt the password
     let credential_manager = CredentialManager::new(app_data_dir);
