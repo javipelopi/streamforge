@@ -8,5 +8,6 @@ export * from './epg';
 export * from './lineup';
 export * from './logs';
 export * from './matcher';
+export * from './matching-profiles';
 export * from './settings';
 export * from './sources';
