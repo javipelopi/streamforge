@@ -16,11 +16,7 @@ function isTauri(): boolean {
 const DESKTOP_ONLY_COMMANDS = new Set([
   'get_autostart_enabled',
   'set_autostart_enabled',
-  'check_for_update',
   'download_and_install_update',
-  'get_update_settings',
-  'set_auto_check_updates',
-  'get_current_version',
 ]);
 
 /**

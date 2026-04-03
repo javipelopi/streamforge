@@ -201,6 +201,11 @@ pub fn api_router() -> Router<AppState> {
         .route("/config/export", get(export_configuration))
         .route("/config/import", post(import_configuration))
         .route("/config/validate-import", post(validate_import_file))
+        // Updates
+        .route("/updates/version", get(get_current_version))
+        .route("/updates/settings", get(get_update_settings_handler))
+        .route("/updates/auto-check", put(set_auto_check_updates_handler))
+        .route("/updates/check", post(check_for_update_handler))
 }
 
 // ===========================================================================
@@ -2042,4 +2047,70 @@ async fn validate_import_file(
     let preview = crate::types::validate_import_file(req.content)
         .map_err(|e| internal(e))?;
     Ok(Json(preview))
+}
+
+// ---------------------------------------------------------------------------
+// Updates
+// ---------------------------------------------------------------------------
+
+async fn get_current_version() -> ApiResult<String> {
+    Ok(Json(env!("CARGO_PKG_VERSION").to_string()))
+}
+
+async fn get_update_settings_handler(
+    State(state): State<AppState>,
+) -> ApiResult<serde_json::Value> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+
+    let auto_check = services::settings::get_setting(&mut conn, "auto_check_updates")
+        .unwrap_or(None)
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(true);
+
+    let last_check = services::settings::get_setting(&mut conn, "last_update_check")
+        .unwrap_or(None);
+
+    Ok(Json(serde_json::json!({
+        "autoCheck": auto_check,
+        "lastCheck": last_check,
+        "currentVersion": env!("CARGO_PKG_VERSION"),
+    })))
+}
+
+async fn set_auto_check_updates_handler(
+    State(state): State<AppState>,
+    Json(req): Json<serde_json::Value>,
+) -> ApiResult<()> {
+    let enabled = req.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    services::settings::set_setting(&mut conn, "auto_check_updates", if enabled { "true" } else { "false" })
+        .map_err(|e| internal(e.to_string()))?;
+    Ok(Json(()))
+}
+
+async fn check_for_update_handler() -> ApiResult<serde_json::Value> {
+    // In headless/REST mode, use the same GitHub check as the startup version check
+    let url = "https://github.com/javipelopi/streamforge/releases/latest/download/latest.json";
+    let current = env!("CARGO_PKG_VERSION");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| internal(e.to_string()))?;
+
+    let response = client.get(url).send().await
+        .map_err(|e| internal(format!("Failed to check for updates: {}", e)))?;
+
+    let body: serde_json::Value = response.json().await
+        .map_err(|e| internal(format!("Failed to parse update info: {}", e)))?;
+
+    let latest = body.get("version").and_then(|v| v.as_str()).unwrap_or(current);
+    let available = latest != current;
+
+    Ok(Json(serde_json::json!({
+        "available": available,
+        "version": if available { Some(latest) } else { None },
+        "notes": body.get("notes").and_then(|v| v.as_str()),
+        "date": body.get("pub_date").and_then(|v| v.as_str()),
+    })))
 }

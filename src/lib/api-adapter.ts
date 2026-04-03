@@ -505,6 +505,25 @@ const ROUTES: Record<string, RouteSpec> = {
     path: '/api/config/validate-import',
     mapBody: bodyAll,
   },
+
+  // -- Updates ---------------------------------------------------------------
+  get_current_version: {
+    method: 'GET',
+    path: '/api/updates/version',
+  },
+  get_update_settings: {
+    method: 'GET',
+    path: '/api/updates/settings',
+  },
+  set_auto_check_updates: {
+    method: 'PUT',
+    path: '/api/updates/auto-check',
+    mapBody: (args) => ({ enabled: args.enabled }),
+  },
+  check_for_update: {
+    method: 'POST',
+    path: '/api/updates/check',
+  },
 };
 
 // ---------------------------------------------------------------------------
