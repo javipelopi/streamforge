@@ -1409,12 +1409,13 @@ async fn get_plex_config(
     let base_url = format!("http://{}:{}", local_ip, port);
 
     Ok(Json(serde_json::json!({
-        "localIp": local_ip,
+        "server_running": true,
+        "local_ip": local_ip,
         "port": port,
-        "m3uUrl": format!("{}/playlist.m3u", base_url),
-        "epgUrl": format!("{}/epg.xml", base_url),
-        "hdhrUrl": base_url,
-        "tunerCount": tuner_count,
+        "m3u_url": format!("{}/playlist.m3u", base_url),
+        "epg_url": format!("{}/epg.xml", base_url),
+        "hdhr_url": base_url,
+        "tuner_count": tuner_count,
     })))
 }
 
