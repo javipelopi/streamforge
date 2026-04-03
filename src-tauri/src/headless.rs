@@ -21,6 +21,10 @@ pub struct HeadlessConfig {
     pub data_dir: Option<PathBuf>,
     /// Bind address for the HTTP server. Defaults to `0.0.0.0`.
     pub bind_address: Option<IpAddr>,
+    /// Export configuration to this file path, then exit.
+    pub export_config: Option<PathBuf>,
+    /// Import configuration from this file path, then exit.
+    pub import_config: Option<PathBuf>,
 }
 
 impl Default for HeadlessConfig {
@@ -29,6 +33,8 @@ impl Default for HeadlessConfig {
             port: None,
             data_dir: None,
             bind_address: None,
+            export_config: None,
+            import_config: None,
         }
     }
 }
@@ -54,6 +60,29 @@ pub async fn run_headless(config: HeadlessConfig) -> Result<(), Box<dyn std::err
 
     let db_connection = db::DbConnection::new(database_url)
         .map_err(|e| format!("Failed to create connection pool: {}", e))?;
+
+    // --- Config export/import (exit early if requested) ---------------------
+    if let Some(ref path) = config.export_config {
+        let json = crate::commands::config::export_configuration_standalone(&db_connection)
+            .map_err(|e| format!("Export failed: {}", e))?;
+        std::fs::write(path, &json)
+            .map_err(|e| format!("Failed to write export file: {}", e))?;
+        println!("Configuration exported to {}", path.display());
+        return Ok(());
+    }
+
+    if let Some(ref path) = config.import_config {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read import file: {}", e))?;
+        let result = crate::commands::config::import_configuration_standalone(&db_connection, &content)
+            .map_err(|e| format!("Import failed: {}", e))?;
+        println!("{}", result.message);
+        println!(
+            "Imported: {} settings, {} accounts, {} XMLTV sources",
+            result.settings_imported, result.accounts_imported, result.xmltv_sources_imported
+        );
+        return Ok(());
+    }
 
     // --- App data dir (for credential retrieval) ----------------------------
     let app_data_dir = config
