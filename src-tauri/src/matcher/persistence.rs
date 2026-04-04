@@ -67,7 +67,7 @@ pub fn save_channel_mappings(
             })
             .collect();
 
-        let inserted_count = diesel::insert_into(channel_mappings::table)
+        let inserted_count = diesel::insert_or_ignore_into(channel_mappings::table)
             .values(&new_mappings)
             .execute(conn)
             .map_err(|e| {
