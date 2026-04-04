@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::schema::{
     accounts, acestream_sources, channel_mappings, event_log, m3u_channels, m3u_sources,
-    matching_profiles, programs, settings, xmltv_channel_settings, xmltv_channels, xmltv_sources,
-    xtream_channels,
+    match_exclusions, matching_profiles, programs, settings, xmltv_channel_settings,
+    xmltv_channels, xmltv_sources, xtream_channels,
 };
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone)]
@@ -529,6 +529,31 @@ impl NewChannelMapping {
         self.stream_priority = priority;
         self
     }
+}
+
+// ============================================================================
+// Match Exclusions Models
+// ============================================================================
+
+/// A recorded exclusion: user removed this auto-match so the matcher skips it.
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize)]
+#[diesel(table_name = match_exclusions)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[serde(rename_all = "camelCase")]
+pub struct MatchExclusion {
+    pub id: Option<i32>,
+    pub xmltv_channel_id: i32,
+    pub xtream_channel_id: i32,
+    pub created_at: String,
+}
+
+/// New match exclusion for insertion
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = match_exclusions)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewMatchExclusion {
+    pub xmltv_channel_id: i32,
+    pub xtream_channel_id: i32,
 }
 
 // ============================================================================

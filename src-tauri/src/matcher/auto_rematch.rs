@@ -25,7 +25,9 @@ use super::{fuzzy::match_channels, MatchConfig};
 use crate::db::models::{
     ChannelMapping, NewChannelMapping, NewXmltvChannelSettings, XmltvChannel, XtreamChannel,
 };
-use crate::db::schema::{channel_mappings, xmltv_channel_settings, xmltv_channels, xtream_channels};
+use crate::db::schema::{
+    channel_mappings, match_exclusions, xmltv_channel_settings, xmltv_channels, xtream_channels,
+};
 
 /// Summary of changes detected in the provider's stream list
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -175,6 +177,16 @@ pub fn auto_rematch_new_streams(
         .filter_map(|m| m.xtream_channel_id.map(|xtream_id| (m.xmltv_channel_id, xtream_id)))
         .collect();
 
+    // Load exclusions so the matcher skips user-removed pairings
+    let excluded_pairs: HashSet<(i32, i32)> = match_exclusions::table
+        .select((
+            match_exclusions::xmltv_channel_id,
+            match_exclusions::xtream_channel_id,
+        ))
+        .load::<(i32, i32)>(conn)?
+        .into_iter()
+        .collect();
+
     // Build map of xmltv_channel_id -> list of mappings
     let mut mappings_by_xmltv: HashMap<i32, Vec<&ChannelMapping>> = HashMap::new();
     for mapping in &existing_mappings {
@@ -189,6 +201,11 @@ pub fn auto_rematch_new_streams(
     for m in &matches {
         // Skip if mapping already exists
         if existing_pairs.contains(&(m.xmltv_channel_id, m.xtream_channel_id)) {
+            continue;
+        }
+
+        // Skip if user previously excluded this pairing
+        if excluded_pairs.contains(&(m.xmltv_channel_id, m.xtream_channel_id)) {
             continue;
         }
 

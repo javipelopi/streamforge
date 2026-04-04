@@ -178,8 +178,8 @@ export const MatchedStreamsList = memo(function MatchedStreamsList({
                 </button>
               )}
 
-              {/* Remove button (for manual matches, always show for orphaned) */}
-              {(match.isManual || match.isOrphaned) && onRemoveMapping && (
+              {/* Remove button (all matches can be removed; auto-matches get exclusion-listed) */}
+              {onRemoveMapping && (
                 <button
                   data-testid="remove-mapping-button"
                   onClick={() => handleRemove(match.mappingId)}
@@ -190,7 +190,13 @@ export const MatchedStreamsList = memo(function MatchedStreamsList({
                       : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
                   }`}
                   aria-label={`Remove ${match.name} mapping`}
-                  title={match.isOrphaned ? 'Remove this unavailable mapping' : undefined}
+                  title={
+                    match.isOrphaned
+                      ? 'Remove this unavailable mapping'
+                      : !match.isManual
+                        ? 'Remove and exclude from future auto-matching'
+                        : undefined
+                  }
                 >
                   {isRemoving ? (
                     <Loader2 className="w-4 h-4 animate-spin" />

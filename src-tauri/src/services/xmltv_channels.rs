@@ -14,10 +14,12 @@ use crate::types::{
     XtreamStreamSearchResult, SYNTHETIC_SOURCE_ID,
 };
 use crate::db::models::{
-    ChannelMapping, NewChannelMapping, NewXmltvChannel, NewXmltvChannelSettings,
-    XmltvChannel, XmltvChannelSettings, XtreamChannel,
+    ChannelMapping, NewChannelMapping, NewMatchExclusion, NewXmltvChannel,
+    NewXmltvChannelSettings, XmltvChannel, XmltvChannelSettings, XtreamChannel,
 };
-use crate::db::schema::{channel_mappings, xmltv_channel_settings, xmltv_channels, xtream_channels};
+use crate::db::schema::{
+    channel_mappings, match_exclusions, xmltv_channel_settings, xmltv_channels, xtream_channels,
+};
 use crate::matcher::normalize_channel_name;
 
 /// Minimum fuzzy score threshold for search results.
@@ -674,6 +676,21 @@ pub fn remove_stream_mapping(
 
         let xmltv_channel_id = mapping.xmltv_channel_id;
         let was_primary = mapping.is_primary.unwrap_or(0) != 0;
+
+        // If this is an auto-matched xtream mapping, record an exclusion so
+        // the matcher won't recreate it on future runs.
+        if mapping.is_manual.unwrap_or(0) == 0
+            && mapping.source_type == "xtream"
+            && mapping.xtream_channel_id.is_some()
+        {
+            let exclusion = NewMatchExclusion {
+                xmltv_channel_id: mapping.xmltv_channel_id,
+                xtream_channel_id: mapping.xtream_channel_id.unwrap(),
+            };
+            diesel::insert_or_ignore_into(match_exclusions::table)
+                .values(&exclusion)
+                .execute(conn)?;
+        }
 
         diesel::delete(
             channel_mappings::table.filter(channel_mappings::id.eq(Some(mapping_id))),
