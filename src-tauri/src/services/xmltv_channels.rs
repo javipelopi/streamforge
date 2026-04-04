@@ -329,9 +329,23 @@ pub fn get_xmltv_channel_enabled(
     Ok(row.flatten().unwrap_or(0) != 0)
 }
 
+/// Get the current maximum `plex_display_order` across all enabled channels.
+/// Returns 0 if no channels have a display order set.
+fn get_max_display_order(conn: &mut SqliteConnection) -> Result<i32, String> {
+    let max_order: Option<i32> = xmltv_channel_settings::table
+        .filter(xmltv_channel_settings::is_enabled.eq(1))
+        .select(diesel::dsl::max(xmltv_channel_settings::plex_display_order))
+        .first::<Option<i32>>(conn)
+        .map_err(|e| format!("Failed to query max display order: {}", e))?;
+
+    Ok(max_order.unwrap_or(0))
+}
+
 /// Toggle an XMLTV channel's enabled state.
 ///
 /// Creates or updates the channel settings row. Returns the new enabled state.
+/// When enabling, assigns `plex_display_order = max + 1` so the channel appends
+/// to the end of the lineup instead of being sorted alphabetically.
 pub fn toggle_xmltv_channel(
     conn: &mut SqliteConnection,
     xmltv_channel_id: i32,
@@ -343,14 +357,34 @@ pub fn toggle_xmltv_channel(
 
     let enabled_int = if enabled { 1 } else { 0 };
 
+    // When enabling, assign the next display order so new channels append to end
+    let next_order = if enabled {
+        Some(get_max_display_order(conn)? + 1)
+    } else {
+        None
+    };
+
     // Upsert: try update first, insert if no row exists
-    let updated = diesel::update(
-        xmltv_channel_settings::table
-            .filter(xmltv_channel_settings::xmltv_channel_id.eq(xmltv_channel_id)),
-    )
-    .set(xmltv_channel_settings::is_enabled.eq(enabled_int))
-    .execute(conn)
-    .map_err(|e| format!("Failed to update channel settings: {}", e))?;
+    let updated = if enabled {
+        diesel::update(
+            xmltv_channel_settings::table
+                .filter(xmltv_channel_settings::xmltv_channel_id.eq(xmltv_channel_id)),
+        )
+        .set((
+            xmltv_channel_settings::is_enabled.eq(enabled_int),
+            xmltv_channel_settings::plex_display_order.eq(next_order),
+        ))
+        .execute(conn)
+        .map_err(|e| format!("Failed to update channel settings: {}", e))?
+    } else {
+        diesel::update(
+            xmltv_channel_settings::table
+                .filter(xmltv_channel_settings::xmltv_channel_id.eq(xmltv_channel_id)),
+        )
+        .set(xmltv_channel_settings::is_enabled.eq(enabled_int))
+        .execute(conn)
+        .map_err(|e| format!("Failed to update channel settings: {}", e))?
+    };
 
     if updated == 0 {
         // No existing settings row — insert one
@@ -358,6 +392,7 @@ pub fn toggle_xmltv_channel(
             .values((
                 xmltv_channel_settings::xmltv_channel_id.eq(xmltv_channel_id),
                 xmltv_channel_settings::is_enabled.eq(enabled_int),
+                xmltv_channel_settings::plex_display_order.eq(next_order),
             ))
             .execute(conn)
             .map_err(|e| format!("Failed to create channel settings: {}", e))?;
@@ -368,6 +403,8 @@ pub fn toggle_xmltv_channel(
 
 /// Bulk-toggle multiple XMLTV channels at once.
 ///
+/// When enabling, assigns sequential `plex_display_order` values starting from
+/// `max + 1` so new channels append to the end of the lineup.
 /// Returns the number of channels affected.
 pub fn bulk_toggle_channels(
     conn: &mut SqliteConnection,
@@ -380,24 +417,50 @@ pub fn bulk_toggle_channels(
 
     let enabled_int = if enabled { 1 } else { 0 };
 
+    // Get starting order before the transaction so each channel gets a unique position
+    let mut next_order = if enabled {
+        get_max_display_order(conn)? + 1
+    } else {
+        0 // unused when disabling
+    };
+
     conn.transaction(|conn| {
         let mut affected = 0usize;
 
         for &channel_id in channel_ids {
-            let updated = diesel::update(
-                xmltv_channel_settings::table
-                    .filter(xmltv_channel_settings::xmltv_channel_id.eq(channel_id)),
-            )
-            .set(xmltv_channel_settings::is_enabled.eq(enabled_int))
-            .execute(conn)?;
+            let order_value = if enabled { Some(next_order) } else { None };
+
+            let updated = if enabled {
+                diesel::update(
+                    xmltv_channel_settings::table
+                        .filter(xmltv_channel_settings::xmltv_channel_id.eq(channel_id)),
+                )
+                .set((
+                    xmltv_channel_settings::is_enabled.eq(enabled_int),
+                    xmltv_channel_settings::plex_display_order.eq(order_value),
+                ))
+                .execute(conn)?
+            } else {
+                diesel::update(
+                    xmltv_channel_settings::table
+                        .filter(xmltv_channel_settings::xmltv_channel_id.eq(channel_id)),
+                )
+                .set(xmltv_channel_settings::is_enabled.eq(enabled_int))
+                .execute(conn)?
+            };
 
             if updated == 0 {
                 diesel::insert_into(xmltv_channel_settings::table)
                     .values((
                         xmltv_channel_settings::xmltv_channel_id.eq(channel_id),
                         xmltv_channel_settings::is_enabled.eq(enabled_int),
+                        xmltv_channel_settings::plex_display_order.eq(order_value),
                     ))
                     .execute(conn)?;
+            }
+
+            if enabled {
+                next_order += 1;
             }
             affected += 1;
         }
