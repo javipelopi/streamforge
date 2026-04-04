@@ -41,6 +41,8 @@ import {
   setFailoverStrictness,
   FailoverStrictness,
   ResilienceConfig,
+  getMatchThreshold,
+  setMatchThreshold as setMatchThresholdApi,
 } from '../lib/api';
 import { ImportPreviewDialog } from '../components/settings/ImportPreviewDialog';
 
@@ -127,6 +129,7 @@ export function Settings() {
   const [savedLogVerbosity, setSavedLogVerbosity] = useState<LogVerbosity>('verbose');
 
   // Failover resilience state (ip-6fj)
+  const [matchThreshold, setMatchThreshold] = useState(0.95);
   const [failoverStrictness, setFailoverStrictnessState] = useState<FailoverStrictness>('balanced');
   const [savedFailoverStrictness, setSavedFailoverStrictness] = useState<FailoverStrictness>('balanced');
   const [resilienceDetails, setResilienceDetails] = useState<ResilienceConfig | null>(null);
@@ -184,6 +187,14 @@ export function Settings() {
         const verbosity = await getLogVerbosity();
         setLogVerbosityState(verbosity);
         setSavedLogVerbosity(verbosity);
+
+        // Load match threshold
+        try {
+          const threshold = await getMatchThreshold();
+          setMatchThreshold(threshold);
+        } catch {
+          // Use default
+        }
 
         // Load failover resilience settings (ip-6fj)
         try {
@@ -813,6 +824,52 @@ export function Settings() {
                 ? formatRelativeTime(epgSchedule.lastScheduledRefresh)
                 : 'Never'}
             </span>
+          </div>
+        </div>
+      </section>
+
+      {/* Match Threshold Section */}
+      <section className="mb-8">
+        <h2 className="text-lg font-semibold mb-2 text-gray-700">Channel Matching</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Minimum similarity score required for auto-matching channels
+        </p>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <label htmlFor="match-threshold" className="font-medium text-gray-900">
+                Match Threshold
+              </label>
+              <p className="text-sm text-gray-500">
+                Higher values require closer name matches (0.80 = loose, 0.95 = strict, 1.0 = exact)
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                id="match-threshold"
+                type="range"
+                min="0.80"
+                max="1.00"
+                step="0.01"
+                value={matchThreshold}
+                onChange={(e) => setMatchThreshold(parseFloat(e.target.value))}
+                className="w-32"
+              />
+              <span className="text-sm font-mono w-12 text-right">{matchThreshold.toFixed(2)}</span>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await setMatchThresholdApi(matchThreshold);
+                  } catch (err) {
+                    console.error('Failed to save threshold:', err);
+                  }
+                }}
+                className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+              >
+                Save
+              </button>
+            </div>
           </div>
         </div>
       </section>

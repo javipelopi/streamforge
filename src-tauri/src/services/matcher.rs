@@ -26,7 +26,7 @@ use crate::matcher::{
 use crate::services::matching_profiles;
 
 /// Default match threshold
-const DEFAULT_MATCH_THRESHOLD: f64 = 0.85;
+const DEFAULT_MATCH_THRESHOLD: f64 = 0.95;
 const MATCH_THRESHOLD_KEY: &str = "match_threshold";
 
 /// Result of running the channel matching algorithm.
