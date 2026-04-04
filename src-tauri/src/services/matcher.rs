@@ -221,6 +221,15 @@ pub fn run_channel_matching(
     // Get all XMLTV channel IDs for settings creation
     let xmltv_ids: Vec<i32> = xmltv_data.iter().filter_map(|c| c.id).collect();
 
+    // Clear existing auto-matched mappings before saving new ones
+    use crate::db::schema::channel_mappings;
+    // (manual mappings with is_manual=1 are preserved)
+    diesel::delete(
+        channel_mappings::table.filter(channel_mappings::is_manual.eq(0)),
+    )
+    .execute(conn)
+    .map_err(|e| format!("Failed to clear old auto-matched mappings: {}", e))?;
+
     // Save to database
     let saved_count = save_channel_mappings(conn, &matches, &xmltv_ids)
         .map_err(|e| format!("Failed to save channel mappings: {}", e))?;
