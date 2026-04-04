@@ -185,6 +185,38 @@ pub fn run_channel_matching(
         combined_stats.total_source_channels += stats_for_source.total_source_channels;
     }
 
+    // Post-process: when multiple profiles match the same XMLTV channel,
+    // only the first profile's match (highest priority, iterated first) should be primary.
+    // Re-assign is_primary and stream_priority globally per XMLTV channel.
+    {
+        use std::collections::HashMap as HM;
+
+        // Group match indices by xmltv_channel_id, preserving insertion order (profile priority)
+        let mut indices_by_xmltv: HM<i32, Vec<usize>> = HM::new();
+        for (i, m) in all_matches.iter().enumerate() {
+            indices_by_xmltv
+                .entry(m.xmltv_channel_id)
+                .or_default()
+                .push(i);
+        }
+
+        // For each XMLTV channel, sort by confidence (desc) and reassign primary/priority
+        for (_xmltv_id, indices) in &mut indices_by_xmltv {
+            // Sort indices by confidence descending (best match overall becomes primary)
+            indices.sort_by(|&a, &b| {
+                all_matches[b]
+                    .confidence
+                    .partial_cmp(&all_matches[a].confidence)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            for (rank, &idx) in indices.iter().enumerate() {
+                all_matches[idx].is_primary = rank == 0;
+                all_matches[idx].stream_priority = rank as i32;
+            }
+        }
+    }
+
     let matches = all_matches;
     let stats = combined_stats;
 

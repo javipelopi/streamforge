@@ -22,8 +22,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 use super::{fuzzy::match_channels, MatchConfig};
-use crate::db::models::{ChannelMapping, NewChannelMapping, XmltvChannel, XtreamChannel};
-use crate::db::schema::{channel_mappings, xmltv_channels, xtream_channels};
+use crate::db::models::{
+    ChannelMapping, NewChannelMapping, NewXmltvChannelSettings, XmltvChannel, XtreamChannel,
+};
+use crate::db::schema::{channel_mappings, xmltv_channel_settings, xmltv_channels, xtream_channels};
 
 /// Summary of changes detected in the provider's stream list
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -228,9 +230,23 @@ pub fn auto_rematch_new_streams(
     // Insert new mappings in bulk
     let count = new_mappings_to_insert.len() as i32;
     if !new_mappings_to_insert.is_empty() {
+        // Collect xmltv_channel_ids that are getting new mappings
+        let newly_matched_xmltv_ids: HashSet<i32> = new_mappings_to_insert
+            .iter()
+            .map(|m| m.xmltv_channel_id)
+            .collect();
+
         diesel::insert_into(channel_mappings::table)
             .values(&new_mappings_to_insert)
             .execute(conn)?;
+
+        // Ensure xmltv_channel_settings rows exist for newly matched channels
+        // so they appear in the Disabled tab (is_enabled defaults to false)
+        for xmltv_id in &newly_matched_xmltv_ids {
+            diesel::insert_or_ignore_into(xmltv_channel_settings::table)
+                .values(&NewXmltvChannelSettings::new(*xmltv_id, false))
+                .execute(conn)?;
+        }
     }
 
     Ok(count)
@@ -811,9 +827,23 @@ pub fn auto_rematch_m3u_channels(
     // Insert new mappings in bulk
     let count = new_mappings_to_insert.len() as i32;
     if !new_mappings_to_insert.is_empty() {
+        // Collect xmltv_channel_ids that are getting new mappings
+        let newly_matched_xmltv_ids: HashSet<i32> = new_mappings_to_insert
+            .iter()
+            .map(|m| m.xmltv_channel_id)
+            .collect();
+
         diesel::insert_into(channel_mappings::table)
             .values(&new_mappings_to_insert)
             .execute(conn)?;
+
+        // Ensure xmltv_channel_settings rows exist for newly matched channels
+        // so they appear in the Disabled tab (is_enabled defaults to false)
+        for xmltv_id in &newly_matched_xmltv_ids {
+            diesel::insert_or_ignore_into(xmltv_channel_settings::table)
+                .values(&NewXmltvChannelSettings::new(*xmltv_id, false))
+                .execute(conn)?;
+        }
     }
 
     Ok(count)
