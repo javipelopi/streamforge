@@ -99,7 +99,12 @@ export async function getXmltvChannelSettings(xmltvChannelId: number): Promise<X
  * @returns Current threshold value (0.0 to 1.0)
  */
 export async function getMatchThreshold(): Promise<number> {
-  return invoke<number>('get_match_threshold');
+  const result = await invoke<number | { threshold: number }>('get_match_threshold');
+  // REST API returns { threshold: number }, Tauri IPC returns bare number
+  if (typeof result === 'object' && result !== null && 'threshold' in result) {
+    return result.threshold;
+  }
+  return result as number;
 }
 
 /**
