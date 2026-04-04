@@ -200,16 +200,10 @@ pub fn run_channel_matching(
                 .push(i);
         }
 
-        // For each XMLTV channel, sort by confidence (desc) and reassign primary/priority
-        for (_xmltv_id, indices) in &mut indices_by_xmltv {
-            // Sort indices by confidence descending (best match overall becomes primary)
-            indices.sort_by(|&a, &b| {
-                all_matches[b]
-                    .confidence
-                    .partial_cmp(&all_matches[a].confidence)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-
+        // Indices are in insertion order which reflects profile priority_order
+        // (ascending — lower number = higher priority). First profile's match
+        // for each XMLTV channel is primary; subsequent profiles are failovers.
+        for (_xmltv_id, indices) in &indices_by_xmltv {
             for (rank, &idx) in indices.iter().enumerate() {
                 all_matches[idx].is_primary = rank == 0;
                 all_matches[idx].stream_priority = rank as i32;
