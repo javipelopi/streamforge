@@ -161,6 +161,23 @@ pub fn matches_prefix_filter(name: &str, rules: &[NormalizationRule]) -> bool {
     }
 }
 
+/// Check whether a provider name matches the suffix filter from the first rule.
+/// If no suffix is set, all names pass the filter.
+pub fn matches_suffix_filter(name: &str, rules: &[NormalizationRule]) -> bool {
+    if let Some(rule) = rules.first() {
+        if rule.suffix.is_empty() {
+            return true;
+        }
+        if let Ok(re) = regex::Regex::new(&format!("(?:{})$", rule.suffix)) {
+            re.is_match(name)
+        } else {
+            true // Invalid regex → don't filter
+        }
+    } else {
+        true
+    }
+}
+
 /// Load active profiles for a specific XMLTV source, keyed by (stream_source_type, stream_source_id).
 pub fn get_active_profiles_for_xmltv_source(
     conn: &mut SqliteConnection,

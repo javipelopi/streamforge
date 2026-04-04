@@ -1107,6 +1107,8 @@ pub struct MatchingProfile {
     pub is_active: i32,
     pub created_at: String,
     pub updated_at: String,
+    pub require_prefix: i32,
+    pub require_suffix: i32,
 }
 
 impl MatchingProfile {
@@ -1129,6 +1131,10 @@ pub struct NewMatchingProfile {
     pub rules: String,
     #[serde(default = "default_is_active")]
     pub is_active: i32,
+    #[serde(default = "default_is_active")]
+    pub require_prefix: i32,
+    #[serde(default = "default_is_active")]
+    pub require_suffix: i32,
 }
 
 /// Changeset for updating a matching profile
@@ -1140,4 +1146,6 @@ pub struct MatchingProfileUpdate {
     pub rules: Option<String>,
     pub is_active: Option<i32>,
     pub updated_at: Option<String>,
+    pub require_prefix: Option<i32>,
+    pub require_suffix: Option<i32>,
 }

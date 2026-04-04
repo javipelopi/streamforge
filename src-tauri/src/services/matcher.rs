@@ -146,8 +146,14 @@ pub fn run_channel_matching(
             }
 
             let rules = profile.parsed_rules();
-            let (matches_for_pair, stats_for_pair) =
-                match_channels_with_rules(&xmltv_subset, &xtream_subset, &config, &rules);
+            let (matches_for_pair, stats_for_pair) = match_channels_with_rules(
+                &xmltv_subset,
+                &xtream_subset,
+                &config,
+                &rules,
+                profile.require_prefix != 0,
+                profile.require_suffix != 0,
+            );
 
             all_matches.extend(matches_for_pair);
             combined_stats.matched += stats_for_pair.matched;

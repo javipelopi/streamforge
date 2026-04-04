@@ -9,7 +9,9 @@ use std::sync::LazyLock;
 
 use super::{scorer::calculate_match_score, MatchConfig, MatchResult, MatchStats, MatchType};
 use crate::db::models::{M3uChannel, NormalizationRule, XmltvChannel, XtreamChannel};
-use crate::services::matching_profiles::{matches_prefix_filter, strip_provider_name};
+use crate::services::matching_profiles::{
+    matches_prefix_filter, matches_suffix_filter, strip_provider_name,
+};
 
 /// Result of matching M3U channels to XMLTV channels
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -105,15 +107,18 @@ pub fn match_channels(
     xtream_channels: &[XtreamChannel],
     config: &MatchConfig,
 ) -> (Vec<MatchResult>, MatchStats) {
-    match_channels_with_rules(xmltv_channels, xtream_channels, config, &[])
+    match_channels_with_rules(xmltv_channels, xtream_channels, config, &[], true, true)
 }
 
 /// Match XMLTV channels to Xtream streams with per-profile prefix/suffix regex rules.
 ///
 /// When rules are present:
 ///   1. Filter provider streams by prefix regex (only matching streams are candidates)
-///   2. Strip prefix and suffix regex from provider stream names
-///   3. Compare stripped provider name against XMLTV name (case-insensitive)
+///      — unless `require_prefix` is false, in which case prefix is stripped but not required
+///   2. Filter provider streams by suffix regex (only matching streams are candidates)
+///      — unless `require_suffix` is false, in which case suffix is stripped but not required
+///   3. Strip prefix and suffix regex from provider stream names
+///   4. Compare stripped provider name against XMLTV name (case-insensitive)
 ///
 /// XMLTV names are never modified — they are the reference.
 /// Display names in the target lineup remain the ORIGINAL XMLTV name.
@@ -122,6 +127,8 @@ pub fn match_channels_with_rules(
     xtream_channels: &[XtreamChannel],
     config: &MatchConfig,
     rules: &[NormalizationRule],
+    require_prefix: bool,
+    require_suffix: bool,
 ) -> (Vec<MatchResult>, MatchStats) {
     let start = std::time::Instant::now();
     let mut all_matches: Vec<MatchResult> = Vec::new();
@@ -142,7 +149,9 @@ pub fn match_channels_with_rules(
         })
         .filter(|(_id, name, _epg)| {
             if has_rules {
-                matches_prefix_filter(name, rules)
+                let prefix_ok = !require_prefix || matches_prefix_filter(name, rules);
+                let suffix_ok = !require_suffix || matches_suffix_filter(name, rules);
+                prefix_ok && suffix_ok
             } else {
                 true
             }
@@ -230,18 +239,20 @@ pub fn match_m3u_channels(
     m3u_channels: &[M3uChannel],
     config: &MatchConfig,
 ) -> (Vec<M3uMatchResult>, MatchStats) {
-    match_m3u_channels_with_rules(xmltv_channels, m3u_channels, config, &[])
+    match_m3u_channels_with_rules(xmltv_channels, m3u_channels, config, &[], true, true)
 }
 
 /// Match M3U channels to XMLTV channels with per-profile prefix/suffix regex rules.
 ///
 /// Same logic as `match_channels_with_rules` but for M3U sources:
-/// filter by prefix, strip prefix+suffix from provider names, compare against XMLTV.
+/// filter by prefix/suffix (when required), strip prefix+suffix, compare against XMLTV.
 pub fn match_m3u_channels_with_rules(
     xmltv_channels: &[XmltvChannel],
     m3u_channels: &[M3uChannel],
     config: &MatchConfig,
     rules: &[NormalizationRule],
+    require_prefix: bool,
+    require_suffix: bool,
 ) -> (Vec<M3uMatchResult>, MatchStats) {
     let start = std::time::Instant::now();
     let mut all_matches: Vec<M3uMatchResult> = Vec::new();
@@ -263,7 +274,9 @@ pub fn match_m3u_channels_with_rules(
         })
         .filter(|(_id, name, _tvg)| {
             if has_rules {
-                matches_prefix_filter(name, rules)
+                let prefix_ok = !require_prefix || matches_prefix_filter(name, rules);
+                let suffix_ok = !require_suffix || matches_suffix_filter(name, rules);
+                prefix_ok && suffix_ok
             } else {
                 true
             }

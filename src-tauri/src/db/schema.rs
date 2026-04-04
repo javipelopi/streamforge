@@ -98,6 +98,8 @@ diesel::table! {
         is_active -> Integer,
         created_at -> Text,
         updated_at -> Text,
+        require_prefix -> Integer,
+        require_suffix -> Integer,
     }
 }
 

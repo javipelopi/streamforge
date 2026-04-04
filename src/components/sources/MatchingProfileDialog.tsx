@@ -25,7 +25,7 @@ import {
   type M3uSource,
 } from '../../lib/api';
 import { runChannelMatching, type MatchResponse } from '../../lib/api/matcher';
-import { Play, Loader2, CheckCircle2 } from 'lucide-react';
+import { Play, Loader2, CheckCircle2, Info } from 'lucide-react';
 
 export interface MatchingProfileDialogProps {
   open: boolean;
@@ -52,6 +52,8 @@ export function MatchingProfileDialog({
   const [streamSourceId, setStreamSourceId] = useState<number>(0);
   const [priorityOrder, setPriorityOrder] = useState<number>(0);
   const [rule, setRule] = useState<NormalizationRule>({ prefix: '', suffix: '' });
+  const [requirePrefix, setRequirePrefix] = useState(true);
+  const [requireSuffix, setRequireSuffix] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savedState, setSavedState] = useState<'idle' | 'saved' | 'matching' | 'done'>('idle');
   const [matchResult, setMatchResult] = useState<MatchResponse | null>(null);
@@ -94,6 +96,8 @@ export function MatchingProfileDialog({
         setStreamSourceType(profile.streamSourceType);
         setStreamSourceId(profile.streamSourceId);
         setPriorityOrder(profile.priorityOrder);
+        setRequirePrefix(profile.requirePrefix !== 0);
+        setRequireSuffix(profile.requireSuffix !== 0);
         try {
           const parsed = JSON.parse(profile.rules) as NormalizationRule[];
           setRule(parsed[0] ?? { prefix: '', suffix: '' });
@@ -106,6 +110,8 @@ export function MatchingProfileDialog({
         setStreamSourceId(accounts[0]?.id ?? 0);
         setPriorityOrder(existingCount);
         setRule({ prefix: '', suffix: '' });
+        setRequirePrefix(true);
+        setRequireSuffix(true);
       }
       setError(null);
       setSavedState('idle');
@@ -135,6 +141,8 @@ export function MatchingProfileDialog({
         streamSourceId,
         priorityOrder,
         rules: JSON.stringify([rule]),
+        requirePrefix: requirePrefix ? 1 : 0,
+        requireSuffix: requireSuffix ? 1 : 0,
       });
       setSavedState('saved');
     } catch (err) {
@@ -267,6 +275,43 @@ export function MatchingProfileDialog({
         <hr className="border-gray-200" />
 
         <MatchingRuleEditor rule={rule} onChange={setRule} />
+
+        <div className="grid grid-cols-2 gap-4">
+          <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={requirePrefix}
+              onChange={(e) => setRequirePrefix(e.target.checked)}
+              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            />
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium text-gray-700">Require prefix match</span>
+            </div>
+            <span className="relative group/tip">
+              <Info className="w-4 h-4 text-gray-400" />
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity pointer-events-none">
+                When enabled, only streams that contain this prefix are matched.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={requireSuffix}
+              onChange={(e) => setRequireSuffix(e.target.checked)}
+              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            />
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium text-gray-700">Require suffix match</span>
+            </div>
+            <span className="relative group/tip">
+              <Info className="w-4 h-4 text-gray-400" />
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity pointer-events-none">
+                When enabled, only streams that contain this suffix are matched.
+              </span>
+            </span>
+          </label>
+        </div>
 
         <hr className="border-gray-200" />
 

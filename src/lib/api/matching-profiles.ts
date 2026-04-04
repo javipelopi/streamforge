@@ -37,6 +37,8 @@ export interface MatchingProfile {
   isActive: number;
   createdAt: string;
   updatedAt: string;
+  requirePrefix: number;
+  requireSuffix: number;
 }
 
 export interface NewMatchingProfile {
@@ -46,12 +48,16 @@ export interface NewMatchingProfile {
   priorityOrder: number;
   rules: string;
   isActive?: number;
+  requirePrefix?: number;
+  requireSuffix?: number;
 }
 
 export interface MatchingProfileUpdate {
   priorityOrder?: number;
   rules?: string;
   isActive?: number;
+  requirePrefix?: number;
+  requireSuffix?: number;
 }
 
 export interface PreviewResult {
