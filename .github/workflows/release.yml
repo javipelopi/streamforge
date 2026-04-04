@@ -192,9 +192,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download desktop artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: desktop-*
+          path: all-artifacts
+
+      - name: Download server artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: server-*
           path: all-artifacts
 
       - name: Generate updater latest.json
