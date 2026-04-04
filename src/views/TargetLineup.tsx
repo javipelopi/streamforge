@@ -6,10 +6,10 @@
  * - Enabled: channels in the lineup with ordering (drag to reorder)
  * - Disabled: matched but disabled channels with enable toggle
  */
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { AlertTriangle, Tv } from 'lucide-react';
+import { AlertTriangle, Tv, Search, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ROUTES } from '../lib/routes';
 import {
@@ -32,6 +32,7 @@ export function TargetLineup() {
   const queryClient = useQueryClient();
   const parentRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<LineupTab>('enabled');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // State for undo toast
   const [undoToast, setUndoToast] = useState<{
@@ -74,8 +75,21 @@ export function TargetLineup() {
   // Filter out temporarily removed channels for display
   const displayChannels = channels.filter((c) => !removedChannels.has(c.id));
 
+  // Filter channels by search query
+  const filteredEnabledChannels = useMemo(() => {
+    if (!searchQuery.trim()) return displayChannels;
+    const query = searchQuery.toLowerCase();
+    return displayChannels.filter((c) => c.displayName.toLowerCase().includes(query));
+  }, [displayChannels, searchQuery]);
+
+  const filteredDisabledChannels = useMemo(() => {
+    if (!searchQuery.trim()) return disabledChannels;
+    const query = searchQuery.toLowerCase();
+    return disabledChannels.filter((c) => c.displayName.toLowerCase().includes(query));
+  }, [disabledChannels, searchQuery]);
+
   // Determine which list to use for virtualizer
-  const activeList = activeTab === 'enabled' ? displayChannels : disabledChannels;
+  const activeList = activeTab === 'enabled' ? filteredEnabledChannels : filteredDisabledChannels;
 
   // Mutation for updating channel order with optimistic update
   const updateOrderMutation = useMutation({
@@ -259,10 +273,16 @@ export function TargetLineup() {
     };
   }, [undoToast.timeoutId]);
 
-  // Reset virtualizer scroll when switching tabs
+  // Reset virtualizer scroll and clear search when switching tabs
   useEffect(() => {
+    setSearchQuery('');
     virtualizer.scrollToIndex(0);
   }, [activeTab, virtualizer]);
+
+  // Reset virtualizer scroll when search query changes
+  useEffect(() => {
+    virtualizer.scrollToIndex(0);
+  }, [searchQuery, virtualizer]);
 
   // Loading state
   const isActiveLoading = activeTab === 'enabled' ? isLoading : isLoadingDisabled;
@@ -305,10 +325,16 @@ export function TargetLineup() {
   const enabledCount = displayChannels.length;
   const disabledCount = disabledChannels.length;
 
-  // Empty state for Enabled tab
+  // Whether we have data at all (before filtering)
+  const hasEnabledChannels = displayChannels.length > 0 || undoToast.show;
+  const hasDisabledChannels = disabledChannels.length > 0;
+
+  // Empty state for Enabled tab (no data at all, not just filtered out)
   const showEnabledEmpty = activeTab === 'enabled' && displayChannels.length === 0 && !undoToast.show;
-  // Empty state for Disabled tab
+  // Empty state for Disabled tab (no data at all)
   const showDisabledEmpty = activeTab === 'disabled' && disabledChannels.length === 0;
+  // No search results
+  const showNoSearchResults = searchQuery.trim() !== '' && activeList.length === 0 && !showEnabledEmpty && !showDisabledEmpty;
 
   return (
     <div data-testid="target-lineup-view" className="p-6 h-full flex flex-col">
@@ -351,6 +377,47 @@ export function TargetLineup() {
           Disabled{disabledCount > 0 && ` (${disabledCount})`}
         </button>
       </div>
+
+      {/* Search input - only show when there are channels to filter */}
+      {((activeTab === 'enabled' && hasEnabledChannels) || (activeTab === 'disabled' && hasDisabledChannels)) && (
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            data-testid="lineup-search-input"
+            type="text"
+            placeholder={`Search ${activeTab} channels...`}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-8 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              data-testid="lineup-search-clear"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              aria-label="Clear search"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* No search results */}
+      {showNoSearchResults && (
+        <div data-testid="lineup-no-results" className="flex-1 flex items-center justify-center">
+          <div className="text-center py-12">
+            <Search className="w-12 h-12 mx-auto text-gray-300 mb-4" />
+            <h2 className="text-lg font-semibold text-gray-700 mb-1">No channels found</h2>
+            <p className="text-gray-500">
+              No {activeTab} channels match &ldquo;{searchQuery}&rdquo;
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Empty states */}
       {showEnabledEmpty && (
