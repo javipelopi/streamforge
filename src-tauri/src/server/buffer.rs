@@ -67,24 +67,30 @@ impl Default for BufferConfig {
 }
 
 /// Check if FFmpeg is available in PATH
+/// Cache the FFmpeg availability check result (checked once at startup)
+static FFMPEG_AVAILABLE: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
+
+/// Check FFmpeg availability. Result is cached after first call.
+/// IMPORTANT: Must not block the async runtime — the first call should
+/// happen at startup (before serving requests).
 pub fn check_ffmpeg_available() -> Result<(), io::Error> {
-    match std::process::Command::new("ffmpeg")
-        .arg("-version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-    {
-        Ok(status) if status.success() => Ok(()),
-        Ok(_) => Err(io::Error::other(
-            "FFmpeg returned non-zero exit code",
-        )),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "FFmpeg not found. Please install FFmpeg and ensure it's in your PATH. \
-             See README.md for installation instructions.",
-        )),
-        Err(e) => Err(e),
-    }
+    let result = FFMPEG_AVAILABLE.get_or_init(|| {
+        match std::process::Command::new("ffmpeg")
+            .arg("-version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+        {
+            Ok(status) if status.success() => Ok(()),
+            Ok(_) => Err("FFmpeg returned non-zero exit code".to_string()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Err(
+                "FFmpeg not found. Please install FFmpeg and ensure it's in your PATH.".to_string(),
+            ),
+            Err(e) => Err(e.to_string()),
+        }
+    });
+
+    result.as_ref().map(|_| ()).map_err(|e| io::Error::other(e.clone()))
 }
 
 pub(crate) struct BufferState {
