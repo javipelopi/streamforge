@@ -13,6 +13,8 @@ import { PlayButton } from '../player';
 interface TargetLineupChannelRowProps {
   channel: TargetLineupChannel;
   virtualItem: VirtualItem;
+  /** 1-indexed position in the full (unfiltered) lineup */
+  lineupPosition: number;
   totalChannels: number;
   onMoveToPosition: (channelId: number, newPosition: number) => void;
   onToggleEnabled: () => void;
@@ -21,12 +23,13 @@ interface TargetLineupChannelRowProps {
 export const TargetLineupChannelRow = memo(function TargetLineupChannelRow({
   channel,
   virtualItem,
+  lineupPosition,
   totalChannels,
   onMoveToPosition,
   onToggleEnabled,
 }: TargetLineupChannelRowProps) {
   const hasStreams = channel.streamCount > 0;
-  const currentPosition = virtualItem.index + 1;
+  const currentPosition = lineupPosition;
 
   // Local state for the position input
   const [inputValue, setInputValue] = useState(String(currentPosition));

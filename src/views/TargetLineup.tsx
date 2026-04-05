@@ -88,6 +88,13 @@ export function TargetLineup() {
     return disabledChannels.filter((c) => c.displayName.toLowerCase().includes(query));
   }, [disabledChannels, searchQuery]);
 
+  // Map channel ID → 1-indexed position in the full (unfiltered) lineup
+  const channelPositionMap = useMemo(() => {
+    const map = new Map<number, number>();
+    displayChannels.forEach((c, i) => map.set(c.id, i + 1));
+    return map;
+  }, [displayChannels]);
+
   // Determine which list to use for virtualizer
   const activeList = activeTab === 'enabled' ? filteredEnabledChannels : filteredDisabledChannels;
 
@@ -507,6 +514,7 @@ export function TargetLineup() {
                       key={channel.id}
                       channel={channel}
                       virtualItem={virtualItem}
+                      lineupPosition={channelPositionMap.get(channel.id) ?? virtualItem.index + 1}
                       totalChannels={displayChannels.length}
                       onMoveToPosition={handleMoveToPosition}
                       onToggleEnabled={() => handleToggleEnabled(channel)}
