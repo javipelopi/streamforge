@@ -711,7 +711,7 @@ async fn list_match_exclusions(
 ) -> ApiResult<Vec<crate::db::models::MatchExclusionWithNames>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let exclusions = services::xmltv_channels::list_match_exclusions(&mut conn)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(exclusions))
 }
 
@@ -721,7 +721,7 @@ async fn delete_match_exclusion(
 ) -> ApiResult<()> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     services::xmltv_channels::delete_match_exclusion(&mut conn, id)
-        .map_err(|e| not_found(e))?;
+        .map_err(not_found)?;
     Ok(Json(()))
 }
 
