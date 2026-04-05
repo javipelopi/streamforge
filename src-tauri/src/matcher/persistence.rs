@@ -97,14 +97,26 @@ pub fn save_channel_mappings(
                     .execute(conn)?;
             }
 
-            // For channels with no matches, ensure is_enabled = false
+            // For channels with no auto-matches, only disable if they also
+            // have no manual matches. Manual matches are user-curated and
+            // should keep the channel in the lineup.
             if !has_matches {
-                diesel::update(
-                    xmltv_channel_settings::table
-                        .filter(xmltv_channel_settings::xmltv_channel_id.eq(xmltv_id)),
-                )
-                .set(xmltv_channel_settings::is_enabled.eq(0))
-                .execute(conn)?;
+                let has_manual: bool = channel_mappings::table
+                    .filter(channel_mappings::xmltv_channel_id.eq(xmltv_id))
+                    .filter(channel_mappings::is_manual.eq(1))
+                    .count()
+                    .get_result::<i64>(conn)
+                    .unwrap_or(0)
+                    > 0;
+
+                if !has_manual {
+                    diesel::update(
+                        xmltv_channel_settings::table
+                            .filter(xmltv_channel_settings::xmltv_channel_id.eq(xmltv_id)),
+                    )
+                    .set(xmltv_channel_settings::is_enabled.eq(0))
+                    .execute(conn)?;
+                }
             }
         }
 
