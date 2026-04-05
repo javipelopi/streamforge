@@ -220,6 +220,67 @@ impl AppState {
     pub fn log_system_event(&self, level: &str, message: &str, details: Option<&str>) {
         self.log_event(level, "system", message, details);
     }
+
+    /// Non-blocking variant of log_event — spawns DB write on a blocking thread.
+    ///
+    /// Prints to stderr immediately (non-blocking), then fires off a
+    /// `spawn_blocking` task for the database insert. Use this from async
+    /// handlers to avoid blocking the tokio runtime on event logging.
+    pub fn log_event_nonblocking(
+        &self,
+        level: &str,
+        category: &str,
+        message: &str,
+        details: Option<&str>,
+    ) {
+        // Always print to stderr immediately (non-blocking)
+        let level_tag = match level {
+            "error" => "[ERROR]",
+            "warn" => "[WARN]",
+            _ => "[INFO]",
+        };
+        if let Some(d) = details {
+            eprintln!("{} {}: {} - {}", level_tag, category, message, d);
+        } else {
+            eprintln!("{} {}: {}", level_tag, category, message);
+        }
+
+        // Fire-and-forget DB write on blocking thread
+        let pool = self.pool.clone();
+        let level = level.to_string();
+        let category = category.to_string();
+        let message = message.to_string();
+        let details = details.map(|d| d.to_string());
+        tokio::task::spawn_blocking(move || {
+            if let Ok(mut conn) = pool.get() {
+                if let Err(e) =
+                    log_event_internal(&mut conn, &level, &category, &message, details.as_deref())
+                {
+                    eprintln!("[ERROR] Failed to log event to database: {}", e);
+                }
+            }
+        });
+    }
+
+    /// Non-blocking stream event log (convenience method)
+    pub fn log_stream_event_nonblocking(
+        &self,
+        level: &str,
+        message: &str,
+        details: Option<&str>,
+    ) {
+        self.log_event_nonblocking(level, "stream", message, details);
+    }
+
+    /// Non-blocking connection event log (convenience method)
+    pub fn log_connection_event_nonblocking(
+        &self,
+        level: &str,
+        message: &str,
+        details: Option<&str>,
+    ) {
+        self.log_event_nonblocking(level, "connection", message, details);
+    }
 }
 
 #[cfg(test)]

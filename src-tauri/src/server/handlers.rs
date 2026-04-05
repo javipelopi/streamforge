@@ -427,80 +427,99 @@ pub async fn stream_proxy(
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let stream_manager = state.stream_manager();
 
-    // Step 1: Get database connection
-    let mut conn = state.get_connection().map_err(|e| {
-        state.log_stream_event(
-            "error",
-            &format!("Database connection failed for channel {}: {}", channel_id, e),
-            Some(&serde_json::json!({
-                "channelId": channel_id,
-                "error": e.to_string(),
-            }).to_string()),
-        );
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Internal server error".to_string(),
-        )
-    })?;
-
-    // Step 3: Check if channel is enabled
-    let is_enabled: Option<i32> = xmltv_channel_settings::table
-        .filter(xmltv_channel_settings::xmltv_channel_id.eq(channel_id))
-        .select(xmltv_channel_settings::is_enabled)
-        .first(&mut conn)
-        .optional()
-        .map_err(|e| {
-            state.log_stream_event(
-                "error",
-                &format!("Settings query failed for channel {}: {}", channel_id, e),
-                Some(&serde_json::json!({
-                    "channelId": channel_id,
-                    "error": e.to_string(),
-                }).to_string()),
+    // Steps 1-4: All initial database operations run on a blocking thread
+    // to avoid blocking the tokio async runtime (hq-23g4).
+    //
+    // Diesel + SQLite queries are synchronous. Running them directly in an
+    // async handler blocks the tokio worker thread, stalling ALL concurrent
+    // tasks on that thread (including other stream proxies).
+    let pool = state.pool().clone();
+    let (available_streams, resilience_config) = tokio::task::spawn_blocking(move || {
+        let mut conn = pool.get().map_err(|e| {
+            eprintln!(
+                "[ERROR] stream: Database connection failed for channel {}: {}",
+                channel_id, e
             );
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_string(),
             )
-        })?
-        .flatten();
+        })?;
 
-    if is_enabled != Some(1) {
-        return Err((StatusCode::NOT_FOUND, "Channel not found".to_string()));
-    }
+        // Check if channel is enabled
+        let is_enabled: Option<i32> = xmltv_channel_settings::table
+            .filter(xmltv_channel_settings::xmltv_channel_id.eq(channel_id))
+            .select(xmltv_channel_settings::is_enabled)
+            .first(&mut conn)
+            .optional()
+            .map_err(|e| {
+                eprintln!(
+                    "[ERROR] stream: Settings query failed for channel {}: {}",
+                    channel_id, e
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
+            })?
+            .flatten();
 
-    // Step 4: Load ALL available streams for failover (Story 4-5)
-    let available_streams = get_all_streams_for_channel(&mut conn, channel_id).map_err(|e| {
-        state.log_stream_event(
-            "error",
-            &format!("Stream lookup failed for channel {}: {}", channel_id, e),
-            Some(&serde_json::json!({
-                "channelId": channel_id,
-                "error": e.to_string(),
-            }).to_string()),
+        if is_enabled != Some(1) {
+            return Err((StatusCode::NOT_FOUND, "Channel not found".to_string()));
+        }
+
+        // Load ALL available streams for failover (Story 4-5)
+        let available_streams =
+            get_all_streams_for_channel(&mut conn, channel_id).map_err(|e| {
+                eprintln!(
+                    "[ERROR] stream: Stream lookup failed for channel {}: {}",
+                    channel_id, e
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
+            })?;
+
+        if available_streams.is_empty() {
+            return Err((StatusCode::NOT_FOUND, "Channel not found".to_string()));
+        }
+
+        // Load resilience configuration from settings
+        let resilience_config = ResilienceConfig::from_db(&mut conn);
+
+        Ok((available_streams, resilience_config))
+    })
+    .await
+    .map_err(|e| {
+        eprintln!(
+            "[ERROR] stream: Database task panicked for channel {}: {}",
+            channel_id, e
         );
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal server error".to_string(),
         )
-    })?;
-
-    if available_streams.is_empty() {
-        return Err((StatusCode::NOT_FOUND, "Channel not found".to_string()));
-    }
+    })??;
 
     // FIX #2 (HIGH): Check Acestream platform compatibility BEFORE failover loop
     // This prevents platform errors from being treated as connection errors during failover
     for stream in &available_streams {
         if let StreamSourceType::Acestream { .. } = &stream.source_type {
             if !crate::acestream::is_acestream_supported() {
-                state.log_stream_event(
+                state.log_stream_event_nonblocking(
                     "error",
-                    &format!("Acestream not supported on this platform for channel {}", channel_id),
-                    Some(&serde_json::json!({
-                        "channelId": channel_id,
-                        "platform": std::env::consts::OS,
-                    }).to_string()),
+                    &format!(
+                        "Acestream not supported on this platform for channel {}",
+                        channel_id
+                    ),
+                    Some(
+                        &serde_json::json!({
+                            "channelId": channel_id,
+                            "platform": std::env::consts::OS,
+                        })
+                        .to_string(),
+                    ),
                 );
                 return Err((
                     StatusCode::SERVICE_UNAVAILABLE,
@@ -510,12 +529,12 @@ pub async fn stream_proxy(
         }
     }
 
-    // Step 4b: Load resilience configuration from settings
-    let resilience_config = ResilienceConfig::from_db(&mut conn);
     eprintln!(
         "[INFO] stream: channel {} using failover strictness={}, retries={}, backoff_base={}ms",
-        channel_id, resilience_config.strictness,
-        resilience_config.max_retries, resilience_config.backoff_base_ms
+        channel_id,
+        resilience_config.strictness,
+        resilience_config.max_retries,
+        resilience_config.backoff_base_ms
     );
 
     // Step 5: Initialize failover state with resilience config
@@ -529,7 +548,7 @@ pub async fn stream_proxy(
             .danger_accept_invalid_certs(true)
         .build()
         .map_err(|e| {
-            state.log_stream_event(
+            state.log_stream_event_nonblocking(
                 "error",
                 &format!("HTTP client creation failed for channel {}: {}", channel_id, e),
                 Some(&serde_json::json!({
@@ -552,7 +571,7 @@ pub async fn stream_proxy(
     loop {
         // Check total failover timeout (outer bound)
         if failover_start.elapsed() > FAILOVER_TOTAL_TIMEOUT {
-            state.log_stream_event(
+            state.log_stream_event_nonblocking(
                 "error",
                 &format!("Failover timeout exceeded for channel {} ({}ms)", channel_id, failover_start.elapsed().as_millis()),
                 Some(&serde_json::json!({
@@ -579,13 +598,21 @@ pub async fn stream_proxy(
                 if failover_state.is_on_backup() {
                     if let Some(reason) = &last_failure_reason {
                         let from_stream_id = failover_state.original_stream_id;
-                        let _ = log_failover_event(
-                            &mut conn,
-                            channel_id,
-                            from_stream_id,
-                            Some(current_stream.stream_id),
-                            reason,
-                        );
+                        // Fire-and-forget: log failover event on blocking thread (hq-23g4)
+                        let pool = state.pool().clone();
+                        let to_id = current_stream.stream_id;
+                        let reason = reason.clone();
+                        tokio::task::spawn_blocking(move || {
+                            if let Ok(mut conn) = pool.get() {
+                                let _ = log_failover_event(
+                                    &mut conn,
+                                    channel_id,
+                                    from_stream_id,
+                                    Some(to_id),
+                                    &reason,
+                                );
+                            }
+                        });
                     }
                 }
 
@@ -595,7 +622,7 @@ pub async fn stream_proxy(
             Err(reason) => {
                 // FIX #9 (MEDIUM): Use Display trait for consistent source type naming
                 let source_type_name = current_stream.source_type.to_string();
-                state.log_stream_event(
+                state.log_stream_event_nonblocking(
                     "warn",
                     &format!(
                         "{} stream {} failed for channel {}: {} (attempt took {}ms)",
@@ -619,7 +646,7 @@ pub async fn stream_proxy(
                 // Resilient retry: retry the same stream with backoff for transient errors
                 if failover_state.should_retry(&reason) {
                     let delay = failover_state.record_retry();
-                    state.log_stream_event(
+                    state.log_stream_event_nonblocking(
                         "info",
                         &format!(
                             "Retrying stream {} for channel {} (retry {}/{}, backoff {}ms)",
@@ -638,7 +665,7 @@ pub async fn stream_proxy(
                 // Try alternate endpoint with same quality before downgrading
                 if let Some(alt_idx) = failover_state.find_alternate_endpoint() {
                     let alt_stream = &failover_state.available_streams[alt_idx];
-                    state.log_stream_event(
+                    state.log_stream_event_nonblocking(
                         "info",
                         &format!(
                             "Trying alternate endpoint stream {} for channel {} (same quality, different server)",
@@ -662,13 +689,20 @@ pub async fn stream_proxy(
     let (stream_info, stream_url, upstream_response) = match successful_stream {
         Some(s) => s,
         None => {
-            // All streams failed - log error event
+            // All streams failed - log error event on blocking thread (hq-23g4)
             if let Some(reason) = &last_failure_reason {
                 let from_stream_id = failover_state.original_stream_id;
-                let _ = log_failover_event(&mut conn, channel_id, from_stream_id, None, reason);
+                let pool = state.pool().clone();
+                let reason = reason.clone();
+                tokio::task::spawn_blocking(move || {
+                    if let Ok(mut conn) = pool.get() {
+                        let _ =
+                            log_failover_event(&mut conn, channel_id, from_stream_id, None, &reason);
+                    }
+                });
             }
 
-            state.log_stream_event(
+            state.log_stream_event_nonblocking(
                 "error",
                 &format!("All {} streams failed for channel {}", failover_state.stream_count(), channel_id),
                 Some(&serde_json::json!({
@@ -703,7 +737,7 @@ pub async fn stream_proxy(
     let session_id = if requires_tuner {
         // Xtream sources: enforce tuner limit
         stream_manager.start_session(session).ok_or_else(|| {
-            state.log_stream_event(
+            state.log_stream_event_nonblocking(
                 "warn",
                 &format!("Failed to start session (tuner limit reached) for channel {}", channel_id),
                 Some(&serde_json::json!({
@@ -726,7 +760,7 @@ pub async fn stream_proxy(
             StreamSourceType::Acestream { .. } => "acestream",
             _ => "unknown",
         };
-        state.log_stream_event(
+        state.log_stream_event_nonblocking(
             "debug",
             &format!("Starting {} stream for channel {} (no tuner slot required)", source_type_name, channel_id),
             Some(&serde_json::json!({
@@ -764,7 +798,7 @@ pub async fn stream_proxy(
         if requires_tuner {
             stream_manager.end_session(&session_id);
         }
-        state.log_stream_event(
+        state.log_stream_event_nonblocking(
             "error",
             &format!("FFmpeg failed to start for channel {}: {}", channel_id, e),
             Some(&serde_json::json!({
@@ -864,7 +898,7 @@ async fn try_connect_stream(
         }
         Err(_elapsed) => {
             let source_type_name = stream.source_type.to_string();
-            state.log_connection_event(
+            state.log_connection_event_nonblocking(
                 "error",
                 &format!(
                     "Credential retrieval timed out for {} stream {} ({}ms limit)",
@@ -890,7 +924,7 @@ async fn try_connect_stream(
         use super::stream::StreamUrlError;
 
         let source_type_name = stream.source_type.to_string();
-        state.log_connection_event(
+        state.log_connection_event_nonblocking(
             "error",
             &format!(
                 "URL build failed for {} stream {}: {}",
@@ -935,7 +969,7 @@ async fn try_connect_stream(
         StreamSourceType::Acestream { .. } => "Acestream",
     };
 
-    state.log_connection_event(
+    state.log_connection_event_nonblocking(
         "info",
         &format!(
             "Trying {} stream {} (priority {}, quality {})",
