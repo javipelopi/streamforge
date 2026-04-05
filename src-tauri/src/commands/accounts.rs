@@ -79,7 +79,7 @@ fn validate_account_input(
 
 /// Add a new Xtream Codes account
 ///
-/// Stores the password securely using OS keychain (preferred) or AES-256-GCM encryption (fallback).
+/// Stores the password securely using AES-256-GCM encryption.
 #[tauri::command]
 pub async fn add_account(
     _app: AppHandle,
@@ -128,7 +128,7 @@ pub async fn add_account(
 
     // Store password securely using the account ID as key
     let credential_manager = CredentialManager::new(app_data_dir);
-    let (_, encrypted_password) = credential_manager
+    let encrypted_password = credential_manager
         .store_password(&account_id.to_string(), &request.password)
         .map_err(|_| AccountError::CredentialStorageError)?;
 
@@ -247,7 +247,7 @@ pub async fn update_account(
         let _ = credential_manager.delete_password(&id.to_string(), &existing.password_encrypted);
 
         // Store new password
-        let (_, encrypted_password) = credential_manager
+        let encrypted_password = credential_manager
             .store_password(&id.to_string(), password)
             .map_err(|_| AccountError::CredentialStorageError)?;
 
@@ -329,11 +329,11 @@ pub async fn test_connection(
         .first(&mut conn)
         .map_err(|_| AccountError::NotFound)?;
 
-    // Retrieve password from keyring/fallback (password is NEVER logged)
+    // Retrieve password (AES-decrypted; password is NEVER logged)
     let credential_manager = CredentialManager::new(app_data_dir);
     let password = credential_manager
         .retrieve_password(&account_id.to_string(), &account.password_encrypted)
-        .map_err(|_| "Failed to retrieve credentials".to_string())?;
+        .map_err(|e| e.to_string())?;
 
     // Create Xtream client and authenticate
     let client = XtreamClient::new(&account.server_url, &account.username, &password)

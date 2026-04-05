@@ -44,11 +44,11 @@ pub async fn scan_channels(
         .first(&mut conn)
         .map_err(|_| "Account not found".to_string())?;
 
-    // Retrieve password from keyring/fallback (password is NEVER logged)
+    // Retrieve password (AES-decrypted; password is NEVER logged)
     let credential_manager = CredentialManager::new(app_data_dir);
     let password = credential_manager
         .retrieve_password(&account_id.to_string(), &account.password_encrypted)
-        .map_err(|_| "Failed to retrieve credentials".to_string())?;
+        .map_err(|e| e.to_string())?;
 
     // Create Xtream client
     let client = XtreamClient::new(&account.server_url, &account.username, &password)
@@ -316,11 +316,11 @@ pub async fn scan_and_rematch(
         .first(&mut conn)
         .map_err(|_| "Account not found".to_string())?;
 
-    // Retrieve password from keyring/fallback
+    // Retrieve password (AES-decrypted)
     let credential_manager = CredentialManager::new(app_data_dir);
     let password = credential_manager
         .retrieve_password(&account_id.to_string(), &account.password_encrypted)
-        .map_err(|_| "Failed to retrieve credentials".to_string())?;
+        .map_err(|e| e.to_string())?;
 
     // Create Xtream client
     let client = XtreamClient::new(&account.server_url, &account.username, &password)

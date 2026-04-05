@@ -1422,7 +1422,7 @@ pub fn create_failover_stream(
                     };
 
                     // Build backup stream URL using source type
-                    // Use spawn_blocking to avoid keychain blocking the async runtime
+                    // Use spawn_blocking for credential I/O (AES decryption)
                     let backup_source = backup.source_type.clone();
                     let backup_dir = app_data_dir.clone();
                     let backup_url = match tokio::task::spawn_blocking(move || {

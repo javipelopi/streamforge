@@ -840,9 +840,9 @@ async fn try_connect_stream(
     state: &AppState,
 ) -> Result<(String, reqwest::Response), FailureReason> {
     // Build URL based on source type (handles credentials for Xtream).
-    // Credential retrieval (especially macOS Keychain) is synchronous and can
-    // block indefinitely. Run it on a blocking thread with a timeout to prevent
-    // stalling the async runtime and the entire failover loop.
+    // Credential retrieval (AES decryption + disk I/O) is synchronous.
+    // Run it on a blocking thread with a timeout to prevent stalling the
+    // async runtime and the entire failover loop.
     let source_clone = stream.source_type.clone();
     let app_data_dir = state.app_data_dir().clone();
     let stream_url_result = tokio::time::timeout(
@@ -882,7 +882,7 @@ async fn try_connect_stream(
                 ),
             );
             return Err(FailureReason::CredentialError(
-                "Credential retrieval timed out (possible Keychain prompt)".to_string(),
+                "Credential retrieval timed out".to_string(),
             ));
         }
     }
@@ -1101,29 +1101,30 @@ fn seed_stream_proxy_data(conn: &mut crate::db::DbPooledConnection) -> Result<us
     let mut records = 0;
 
     // Seed accounts
-    // Use keychain placeholder format: "keychain:{account_id}" which the credential manager recognizes
-    // Account 1: Active account - password_encrypted = "keychain:1" as bytes
+    // password_encrypted stores dummy bytes — test servers are unreachable, so
+    // actual credential decryption is never needed for these test accounts.
+    // Account 1: Active account
     diesel::sql_query(
         "INSERT OR REPLACE INTO accounts (id, name, server_url, username, password_encrypted, max_connections, is_active, created_at, updated_at)
-         VALUES (1, 'Test IPTV Provider', 'http://test-xtream.local:8080', 'testuser', X'6b6579636861696e3a31', 2, 1, datetime('now'), datetime('now'))"
+         VALUES (1, 'Test IPTV Provider', 'http://test-xtream.local:8080', 'testuser', X'00000000000000000000000074657374', 2, 1, datetime('now'), datetime('now'))"
     )
     .execute(conn)
     .map_err(|e| format!("Failed to seed account 1: {}", e))?;
     records += 1;
 
-    // Account 2: Inactive account - password_encrypted = "keychain:2" as bytes
+    // Account 2: Inactive account
     diesel::sql_query(
         "INSERT OR REPLACE INTO accounts (id, name, server_url, username, password_encrypted, max_connections, is_active, created_at, updated_at)
-         VALUES (2, 'Inactive Provider', 'http://inactive.local:8080', 'inactive', X'6b6579636861696e3a32', 1, 0, datetime('now'), datetime('now'))"
+         VALUES (2, 'Inactive Provider', 'http://inactive.local:8080', 'inactive', X'00000000000000000000000074657374', 1, 0, datetime('now'), datetime('now'))"
     )
     .execute(conn)
     .map_err(|e| format!("Failed to seed account 2: {}", e))?;
     records += 1;
 
-    // Account 3: Unreachable server - password_encrypted = "keychain:3" as bytes
+    // Account 3: Unreachable server
     diesel::sql_query(
         "INSERT OR REPLACE INTO accounts (id, name, server_url, username, password_encrypted, max_connections, is_active, created_at, updated_at)
-         VALUES (3, 'Unreachable Provider', 'http://192.0.2.1:9999', 'noreachuser', X'6b6579636861696e3a33', 1, 1, datetime('now'), datetime('now'))"
+         VALUES (3, 'Unreachable Provider', 'http://192.0.2.1:9999', 'noreachuser', X'00000000000000000000000074657374', 1, 1, datetime('now'), datetime('now'))"
     )
     .execute(conn)
     .map_err(|e| format!("Failed to seed account 3: {}", e))?;

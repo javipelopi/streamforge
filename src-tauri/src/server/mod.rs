@@ -65,7 +65,7 @@ pub fn create_app_state(pool: DbPool) -> AppState {
 /// Create AppState with explicit app data directory
 ///
 /// This is the preferred constructor for production use as it ensures
-/// the stream proxy can properly decrypt credentials stored in keyring/AES.
+/// the stream proxy can properly decrypt AES-encrypted credentials.
 pub fn create_app_state_with_dir(pool: DbPool, app_data_dir: PathBuf) -> AppState {
     AppState::with_app_data_dir(pool, app_data_dir)
 }

@@ -138,6 +138,36 @@ pub fn run() {
                 }
             }
 
+            // --- Keychain migration check -------------------------------------------
+            // Detect accounts still using the removed OS Keychain backend and warn.
+            {
+                use diesel::prelude::*;
+                use db::schema::accounts;
+
+                if let Ok(mut mig_conn) = db_connection.get_connection() {
+                    let all_accounts: Vec<(Option<i32>, String, Vec<u8>)> = accounts::table
+                        .select((accounts::id, accounts::name, accounts::password_encrypted))
+                        .load(&mut mig_conn)
+                        .unwrap_or_default();
+
+                    let stale: Vec<_> = all_accounts
+                        .iter()
+                        .filter(|(_, _, blob)| credentials::is_keychain_placeholder(blob))
+                        .collect();
+
+                    if !stale.is_empty() {
+                        eprintln!(
+                            "WARNING: {} account(s) still use the removed OS Keychain backend. \
+                             Please re-enter their passwords.",
+                            stale.len()
+                        );
+                        for (id, name, _) in &stale {
+                            eprintln!("  • [{}] {}", id.unwrap_or(0), name);
+                        }
+                    }
+                }
+            }
+
             // Use the canonical credential directory so desktop and headless
             // modes share the same encryption salt / key derivation path.
             let app_data_dir = credentials::get_credential_dir();

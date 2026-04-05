@@ -100,7 +100,7 @@ pub fn add_account(
     let account_id = inserted.id.unwrap_or(0);
 
     let credential_manager = CredentialManager::new(app_data_dir.to_path_buf());
-    let (_, encrypted_password) = credential_manager
+    let encrypted_password = credential_manager
         .store_password(&account_id.to_string(), &request.password)
         .map_err(|_| AccountError::CredentialStorageError)?;
 
@@ -185,7 +185,7 @@ pub fn update_account(
         let _ =
             credential_manager.delete_password(&id.to_string(), &existing.password_encrypted);
 
-        let (_, encrypted_password) = credential_manager
+        let encrypted_password = credential_manager
             .store_password(&id.to_string(), password)
             .map_err(|_| AccountError::CredentialStorageError)?;
 

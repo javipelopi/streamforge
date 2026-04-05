@@ -99,6 +99,36 @@ pub async fn run_headless(config: HeadlessConfig) -> Result<(), Box<dyn std::err
         )
     })?;
 
+    // --- Keychain migration check -------------------------------------------
+    // Detect accounts that still have legacy Keychain placeholders in
+    // password_encrypted.  These need to be re-entered via the web UI.
+    {
+        use diesel::prelude::*;
+        use crate::db::schema::accounts;
+
+        if let Ok(mut mig_conn) = db_connection.get_connection() {
+            let all_accounts: Vec<(Option<i32>, String, Vec<u8>)> = accounts::table
+                .select((accounts::id, accounts::name, accounts::password_encrypted))
+                .load(&mut mig_conn)
+                .unwrap_or_default();
+
+            let stale: Vec<_> = all_accounts
+                .iter()
+                .filter(|(_, _, blob)| crate::credentials::is_keychain_placeholder(blob))
+                .collect();
+
+            if !stale.is_empty() {
+                eprintln!();
+                eprintln!("  ⚠  {} account(s) still use the removed OS Keychain backend.", stale.len());
+                eprintln!("     Their credentials must be re-entered via the web UI:");
+                for (id, name, _) in &stale {
+                    eprintln!("       • [{}] {}", id.unwrap_or(0), name);
+                }
+                eprintln!();
+            }
+        }
+    }
+
     // --- HTTP server --------------------------------------------------------
     let pool = db_connection.clone_pool();
     let server_state = server::create_app_state_with_dir(pool, app_data_dir);

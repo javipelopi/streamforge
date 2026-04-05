@@ -52,8 +52,7 @@ rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 mime_guess = "2"
 url = "2.5"
 
-# Credential storage
-keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+# Credential storage (AES-256-GCM)
 aes-gcm = "0.10"
 rand = "0.8"
 base64 = "0.22"

@@ -1,5 +1,5 @@
 -- Create accounts table for storing Xtream Codes credentials
--- Password is stored encrypted in the database as fallback when keychain is unavailable
+-- Password is stored as AES-256-GCM encrypted blob
 CREATE TABLE accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,

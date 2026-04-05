@@ -1,8 +1,8 @@
 //! Credential storage module for secure password management
 //!
-//! This module provides secure credential storage using:
-//! 1. OS Keychain (via keyring crate) as primary storage
-//! 2. AES-256-GCM encryption as fallback when keychain is unavailable
+//! All credentials are stored using AES-256-GCM file-based encryption.
+//! Keys are derived via HKDF-SHA256 from a stored random salt and the machine
+//! hostname.
 
 use aes_gcm::{
     aead::{Aead, KeyInit},
@@ -15,10 +15,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-/// Service name for keyring entries
-const SERVICE_NAME: &str = "iptv";
-
-/// Salt filename for AES fallback encryption
+/// Salt filename for AES encryption
 const SALT_FILENAME: &str = "credential_salt";
 
 /// Length of the salt used for key derivation
@@ -27,12 +24,13 @@ const SALT_LENGTH: usize = 32;
 /// Nonce length for AES-256-GCM
 const NONCE_LENGTH: usize = 12;
 
+/// Prefix used by the legacy Keychain storage backend.
+/// Placeholders stored in the DB have the format `keychain:{account_id}`.
+const KEYCHAIN_PLACEHOLDER_PREFIX: &[u8] = b"keychain:";
+
 /// Errors that can occur during credential operations
 #[derive(Debug, Error)]
 pub enum CredentialError {
-    #[error("Keyring error: {0}")]
-    KeyringError(String),
-
     #[error("Encryption error: {0}")]
     EncryptionError(String),
 
@@ -44,19 +42,13 @@ pub enum CredentialError {
 
     #[error("Invalid data: {0}")]
     InvalidData(String),
+
+    #[error("Legacy Keychain credential for account '{0}' must be re-entered via the web UI")]
+    KeychainMigrationRequired(String),
 }
 
 /// Result type for credential operations
 pub type Result<T> = std::result::Result<T, CredentialError>;
-
-/// Credential storage backend
-#[derive(Debug, Clone)]
-pub enum StorageBackend {
-    /// OS Keychain storage (preferred)
-    Keychain,
-    /// AES-256-GCM encrypted storage (fallback)
-    Encrypted,
-}
 
 /// Credential manager handles secure storage and retrieval of passwords
 pub struct CredentialManager {
@@ -67,119 +59,47 @@ impl CredentialManager {
     /// Create a new credential manager
     ///
     /// # Arguments
-    /// * `app_data_dir` - Directory for storing fallback encryption data
+    /// * `app_data_dir` - Directory for storing encryption data (salt file)
     pub fn new(app_data_dir: PathBuf) -> Self {
         Self { app_data_dir }
     }
 
-    /// Store a password securely
-    ///
-    /// Tries keychain first, falls back to AES encryption if unavailable.
-    /// Returns the encrypted bytes for database storage (used in fallback mode).
+    /// Store a password securely using AES-256-GCM encryption.
     ///
     /// # Arguments
-    /// * `account_id` - Unique identifier for the account
+    /// * `_account_id` - Unique identifier for the account (unused, kept for API compat)
     /// * `password` - The password to store
     ///
     /// # Returns
-    /// * `(StorageBackend, Vec<u8>)` - The storage backend used and encrypted data for database
+    /// The encrypted bytes for database storage
     pub fn store_password(
         &self,
-        account_id: &str,
+        _account_id: &str,
         password: &str,
-    ) -> Result<(StorageBackend, Vec<u8>)> {
-        // Try keychain first
-        match self.store_in_keychain(account_id, password) {
-            Ok(()) => {
-                // For keychain storage, we still store a placeholder in the database
-                // to indicate we're using keychain storage
-                let placeholder = self.create_keychain_placeholder(account_id);
-                Ok((StorageBackend::Keychain, placeholder))
-            }
-            Err(e) => {
-                // Keychain failed, log and use AES encryption fallback
-                eprintln!(
-                    "Keychain unavailable for account '{}': {}. Falling back to AES-256-GCM encryption.",
-                    account_id, e
-                );
-                let encrypted = self.encrypt_password(password)?;
-                Ok((StorageBackend::Encrypted, encrypted))
-            }
-        }
+    ) -> Result<Vec<u8>> {
+        self.encrypt_password(password)
     }
 
-    /// Retrieve a password
+    /// Retrieve a password by decrypting the stored data.
     ///
-    /// # Arguments
-    /// * `account_id` - Unique identifier for the account
-    /// * `encrypted_data` - The encrypted data from database
-    ///
-    /// # Returns
-    /// The decrypted password
+    /// Returns `KeychainMigrationRequired` if the data is a legacy Keychain
+    /// placeholder, since the Keychain backend has been removed.
     pub fn retrieve_password(&self, account_id: &str, encrypted_data: &[u8]) -> Result<String> {
-        // Check if this is a keychain placeholder
-        if self.is_keychain_placeholder(account_id, encrypted_data) {
-            return self.retrieve_from_keychain(account_id);
+        if is_keychain_placeholder(encrypted_data) {
+            return Err(CredentialError::KeychainMigrationRequired(
+                account_id.to_string(),
+            ));
         }
 
-        // Otherwise, decrypt using AES
         self.decrypt_password(encrypted_data)
     }
 
-    /// Delete a password from storage
+    /// Delete a password from storage.
     ///
-    /// # Arguments
-    /// * `account_id` - Unique identifier for the account
-    /// * `encrypted_data` - The encrypted data from database (to determine storage type)
-    pub fn delete_password(&self, account_id: &str, encrypted_data: &[u8]) -> Result<()> {
-        // Try to delete from keychain (if it exists there)
-        if self.is_keychain_placeholder(account_id, encrypted_data) {
-            let _ = self.delete_from_keychain(account_id);
-        }
-        // Encrypted data in database is deleted by the caller (database delete)
+    /// Encrypted data in the database is deleted by the caller (database delete).
+    /// This is now a no-op since all credentials are stored as AES blobs in the DB.
+    pub fn delete_password(&self, _account_id: &str, _encrypted_data: &[u8]) -> Result<()> {
         Ok(())
-    }
-
-    /// Store password in OS keychain
-    fn store_in_keychain(&self, account_id: &str, password: &str) -> Result<()> {
-        let entry = keyring::Entry::new(SERVICE_NAME, account_id)
-            .map_err(|e| CredentialError::KeyringError(e.to_string()))?;
-        entry
-            .set_password(password)
-            .map_err(|e| CredentialError::KeyringError(e.to_string()))?;
-        Ok(())
-    }
-
-    /// Retrieve password from OS keychain
-    fn retrieve_from_keychain(&self, account_id: &str) -> Result<String> {
-        let entry = keyring::Entry::new(SERVICE_NAME, account_id)
-            .map_err(|e| CredentialError::KeyringError(e.to_string()))?;
-        entry
-            .get_password()
-            .map_err(|e| CredentialError::KeyringError(e.to_string()))
-    }
-
-    /// Delete password from OS keychain
-    fn delete_from_keychain(&self, account_id: &str) -> Result<()> {
-        let entry = keyring::Entry::new(SERVICE_NAME, account_id)
-            .map_err(|e| CredentialError::KeyringError(e.to_string()))?;
-        entry
-            .delete_credential()
-            .map_err(|e| CredentialError::KeyringError(e.to_string()))?;
-        Ok(())
-    }
-
-    /// Create a placeholder for keychain storage
-    /// This is stored in the database to indicate that the actual password is in keychain
-    fn create_keychain_placeholder(&self, account_id: &str) -> Vec<u8> {
-        // Format: "keychain:" + account_id
-        format!("keychain:{}", account_id).into_bytes()
-    }
-
-    /// Check if the encrypted data is a keychain placeholder
-    fn is_keychain_placeholder(&self, account_id: &str, data: &[u8]) -> bool {
-        let expected = format!("keychain:{}", account_id);
-        data == expected.as_bytes()
     }
 
     /// Encrypt password using AES-256-GCM
@@ -313,15 +233,19 @@ impl CredentialManager {
     }
 }
 
+/// Check whether the given encrypted data is a legacy Keychain placeholder.
+pub fn is_keychain_placeholder(data: &[u8]) -> bool {
+    data.starts_with(KEYCHAIN_PLACEHOLDER_PREFIX)
+}
+
 /// Standalone function to store a password (for backward compatibility)
 pub fn store_password(
     app_data_dir: &Path,
-    account_id: &str,
+    _account_id: &str,
     password: &str,
 ) -> Result<Vec<u8>> {
     let manager = CredentialManager::new(app_data_dir.to_path_buf());
-    let (_, encrypted) = manager.store_password(account_id, password)?;
-    Ok(encrypted)
+    manager.store_password(_account_id, password)
 }
 
 /// Standalone function to retrieve a password (for backward compatibility)
@@ -433,15 +357,41 @@ mod tests {
     }
 
     #[test]
-    fn test_keychain_placeholder() {
+    fn test_keychain_placeholder_detection() {
+        assert!(is_keychain_placeholder(b"keychain:123"));
+        assert!(is_keychain_placeholder(b"keychain:some_account"));
+        assert!(!is_keychain_placeholder(b"not_a_placeholder"));
+        assert!(!is_keychain_placeholder(b""));
+        assert!(!is_keychain_placeholder(&[0, 1, 2, 3]));
+    }
+
+    #[test]
+    fn test_retrieve_keychain_placeholder_returns_migration_error() {
         let app_data_dir = get_unique_test_app_data_dir();
         let manager = CredentialManager::new(app_data_dir.clone());
 
-        let account_id = "test_account_123";
-        let placeholder = manager.create_keychain_placeholder(account_id);
+        let result = manager.retrieve_password("42", b"keychain:42");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("re-entered"),
+            "error should mention re-entering credentials: {}",
+            err_msg
+        );
 
-        assert!(manager.is_keychain_placeholder(account_id, &placeholder));
-        assert!(!manager.is_keychain_placeholder("other_account", &placeholder));
+        // Cleanup
+        let _ = fs::remove_dir_all(&app_data_dir);
+    }
+
+    #[test]
+    fn test_store_and_retrieve_roundtrip() {
+        let app_data_dir = get_unique_test_app_data_dir();
+        let manager = CredentialManager::new(app_data_dir.clone());
+
+        let password = "my_secret";
+        let encrypted = manager.store_password("acct1", password).unwrap();
+        let decrypted = manager.retrieve_password("acct1", &encrypted).unwrap();
+        assert_eq!(decrypted, password);
 
         // Cleanup
         let _ = fs::remove_dir_all(&app_data_dir);
