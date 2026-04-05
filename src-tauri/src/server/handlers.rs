@@ -793,7 +793,7 @@ pub async fn stream_proxy(
         BufferConfig::default(),
         session_id.clone(),
         stream_manager.clone(),
-    ).map_err(|e| {
+    ).await.map_err(|e| {
         // Only end session for sources that were tracked against tuner limit
         if requires_tuner {
             stream_manager.end_session(&session_id);

@@ -126,7 +126,7 @@ pub struct BufferedStream {
 }
 
 impl BufferedStream {
-    pub fn new(
+    pub async fn new(
         upstream_url: &str,
         config: BufferConfig,
         session_id: String,
@@ -135,25 +135,34 @@ impl BufferedStream {
         // Verify FFmpeg is available before attempting to spawn
         check_ffmpeg_available()?;
 
-        let mut child = Command::new("ffmpeg")
-            .args([
-                "-hide_banner",
-                "-loglevel", "warning",
-                "-reconnect", "1",
-                "-reconnect_streamed", "1",
-                "-reconnect_delay_max", "2",
-                "-i", upstream_url,
-                "-c", "copy",
-                "-f", "mpegts",
-                "-fflags", "+genpts",
-                "-mpegts_flags", "+initial_discontinuity",
-                "-",
-            ])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()?;
+        // Spawn FFmpeg on a blocking thread to avoid blocking the async runtime
+        // during fork+exec. tokio::process::Command::spawn() is synchronous and
+        // performs fork+exec which can block the runtime thread, causing deadlocks
+        // under concurrent stream requests.
+        let url = upstream_url.to_string();
+        let mut child = tokio::task::spawn_blocking(move || {
+            Command::new("ffmpeg")
+                .args([
+                    "-hide_banner",
+                    "-loglevel", "warning",
+                    "-reconnect", "1",
+                    "-reconnect_streamed", "1",
+                    "-reconnect_delay_max", "2",
+                    "-i", &url,
+                    "-c", "copy",
+                    "-f", "mpegts",
+                    "-fflags", "+genpts",
+                    "-mpegts_flags", "+initial_discontinuity",
+                    "-",
+                ])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()
+        })
+        .await
+        .map_err(|e| io::Error::other(format!("FFmpeg spawn task failed: {}", e)))??;
 
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
@@ -206,7 +215,7 @@ impl BufferedStream {
     }
 
     /// Create a new BufferedStream with custom health monitoring configuration (Story 4.7)
-    pub fn with_health_config(
+    pub async fn with_health_config(
         upstream_url: &str,
         config: BufferConfig,
         health_config: HealthConfig,
@@ -216,25 +225,31 @@ impl BufferedStream {
         // Verify FFmpeg is available before attempting to spawn
         check_ffmpeg_available()?;
 
-        let mut child = Command::new("ffmpeg")
-            .args([
-                "-hide_banner",
-                "-loglevel", "warning",
-                "-reconnect", "1",
-                "-reconnect_streamed", "1",
-                "-reconnect_delay_max", "2",
-                "-i", upstream_url,
-                "-c", "copy",
-                "-f", "mpegts",
-                "-fflags", "+genpts",
-                "-mpegts_flags", "+initial_discontinuity",
-                "-",
-            ])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()?;
+        // Spawn FFmpeg on a blocking thread (same rationale as new())
+        let url = upstream_url.to_string();
+        let mut child = tokio::task::spawn_blocking(move || {
+            Command::new("ffmpeg")
+                .args([
+                    "-hide_banner",
+                    "-loglevel", "warning",
+                    "-reconnect", "1",
+                    "-reconnect_streamed", "1",
+                    "-reconnect_delay_max", "2",
+                    "-i", &url,
+                    "-c", "copy",
+                    "-f", "mpegts",
+                    "-fflags", "+genpts",
+                    "-mpegts_flags", "+initial_discontinuity",
+                    "-",
+                ])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()
+        })
+        .await
+        .map_err(|e| io::Error::other(format!("FFmpeg spawn task failed: {}", e)))??;
 
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();

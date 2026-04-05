@@ -1320,7 +1320,7 @@ pub fn create_failover_stream(
                                 BufferConfig::default(),
                                 ctx.session_id.clone(),
                                 stream_manager.clone(),
-                            ) {
+                            ).await {
                                 Ok(new) => {
                                     eprintln!(
                                         "[INFO] stream:{} retry {}/{} successful - resuming",
@@ -1452,7 +1452,7 @@ pub fn create_failover_stream(
                         BufferConfig::default(),
                         ctx.session_id.clone(),
                         stream_manager.clone(),
-                    ) {
+                    ).await {
                         Ok(s) => s,
                         Err(e) => {
                             eprintln!("[ERROR] stream:{} failed to create backup stream: {}", ctx.session_id, e);
