@@ -159,9 +159,20 @@ pub fn get_xmltv_channels_with_mappings(
                 plex_display_order,
                 match_count: matches.len() as i32,
                 matches,
+                tags: vec![],
             })
         })
         .collect();
+
+    // Batch-load tags for all channels
+    let channel_ids: Vec<i32> = result.iter().map(|c| c.id).collect();
+    let tags_map = crate::services::channel_tags::get_tags_for_channels(conn, &channel_ids)
+        .unwrap_or_default();
+    for channel in &mut result {
+        if let Some(tags) = tags_map.get(&channel.id) {
+            channel.tags = tags.clone();
+        }
+    }
 
     // Sort by plex_display_order (nulls last), then by display_name
     result.sort_by(|a, b| match (a.plex_display_order, b.plex_display_order) {
@@ -219,11 +230,16 @@ pub fn get_target_lineup_channels(
         .map(|(id, count)| (id, count as i32))
         .collect();
 
+    // Batch-load tags
+    let tags_map = crate::services::channel_tags::get_tags_for_channels(conn, &channel_ids)
+        .unwrap_or_default();
+
     let result: Vec<TargetLineupChannel> = enabled_channels
         .into_iter()
         .filter_map(|(channel, settings)| {
             let channel_id = channel.id?;
             let stream_count = counts_map.get(&channel_id).copied().unwrap_or(0);
+            let tags = tags_map.get(&channel_id).cloned().unwrap_or_default();
 
             Some(TargetLineupChannel {
                 id: channel_id,
@@ -233,6 +249,7 @@ pub fn get_target_lineup_channels(
                 is_synthetic: channel.is_synthetic.unwrap_or(0) != 0,
                 stream_count,
                 plex_display_order: settings.plex_display_order,
+                tags,
             })
         })
         .collect();
@@ -1268,6 +1285,7 @@ pub fn promote_orphan_to_plex(
             plex_display_order: None,
             match_count: 1,
             matches: vec![],  // Caller can reload if needed
+            tags: vec![],
         })
     })
     .map_err(|e: diesel::result::Error| format!("Failed to promote orphan Xtream stream: {}", e))
@@ -1329,6 +1347,7 @@ pub fn promote_m3u_orphan_to_plex(
             plex_display_order: None,
             match_count: 1,
             matches: vec![],
+            tags: vec![],
         })
     })
     .map_err(|e: diesel::result::Error| format!("Failed to promote orphan M3U channel: {}", e))
@@ -1390,6 +1409,7 @@ pub fn promote_acestream_orphan_to_plex(
             plex_display_order: None,
             match_count: 1,
             matches: vec![],
+            tags: vec![],
         })
     })
     .map_err(|e: diesel::result::Error| format!("Failed to promote orphan Acestream source: {}", e))
@@ -1443,6 +1463,9 @@ pub fn update_synthetic_channel(
         .unwrap_or(false);
     let plex_display_order = settings.as_ref().and_then(|s| s.plex_display_order);
 
+    let tags = crate::services::channel_tags::get_tags_for_channel(conn, channel_id)
+        .unwrap_or_default();
+
     Ok(XmltvChannelWithMappings {
         id: channel_id,
         source_id: channel.source_id,
@@ -1454,6 +1477,7 @@ pub fn update_synthetic_channel(
         plex_display_order,
         match_count: 0,
         matches: vec![],
+        tags,
     })
 }
 

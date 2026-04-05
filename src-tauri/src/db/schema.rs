@@ -47,6 +47,15 @@ diesel::table! {
 }
 
 diesel::table! {
+    channel_tags (id) {
+        id -> Nullable<Integer>,
+        xmltv_channel_id -> Integer,
+        tag -> Text,
+        created_at -> Text,
+    }
+}
+
+diesel::table! {
     event_log (id) {
         id -> Nullable<Integer>,
         timestamp -> Text,
@@ -193,6 +202,7 @@ diesel::joinable!(channel_mappings -> acestream_sources (acestream_source_id));
 diesel::joinable!(channel_mappings -> m3u_channels (m3u_channel_id));
 diesel::joinable!(channel_mappings -> xmltv_channels (xmltv_channel_id));
 diesel::joinable!(channel_mappings -> xtream_channels (xtream_channel_id));
+diesel::joinable!(channel_tags -> xmltv_channels (xmltv_channel_id));
 diesel::joinable!(m3u_channels -> m3u_sources (source_id));
 diesel::joinable!(match_exclusions -> xmltv_channels (xmltv_channel_id));
 diesel::joinable!(match_exclusions -> xtream_channels (xtream_channel_id));
@@ -206,6 +216,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     accounts,
     acestream_sources,
     channel_mappings,
+    channel_tags,
     event_log,
     m3u_channels,
     m3u_sources,

@@ -10,9 +10,10 @@ pub use connection::{establish_connection, run_migrations, DbConnection, DbPool,
 pub use connection::get_db_path;
 pub use connection::get_db_path_standalone;
 pub use models::{
-    Account, AccountStatusUpdate, ChannelMapping, EventCategory, EventLevel, EventLog,
-    MatchingProfile, MatchingProfileUpdate, NewAccount, NewChannelMapping, NewEventLog,
-    NewMatchingProfile, NewProgram, NewXmltvChannel, NewXmltvChannelSettings, NewXmltvSource,
-    NewXtreamChannel, NormalizationRule, Program, Setting, XmltvChannel, XmltvChannelSettings,
-    XmltvSource, XmltvSourceUpdate, XtreamChannel, XtreamChannelUpdate,
+    Account, AccountStatusUpdate, ChannelMapping, ChannelTag, EventCategory, EventLevel,
+    EventLog, MatchingProfile, MatchingProfileUpdate, NewAccount, NewChannelMapping,
+    NewChannelTag, NewEventLog, NewMatchingProfile, NewProgram, NewXmltvChannel,
+    NewXmltvChannelSettings, NewXmltvSource, NewXtreamChannel, NormalizationRule, Program,
+    Setting, XmltvChannel, XmltvChannelSettings, XmltvSource, XmltvSourceUpdate,
+    XtreamChannel, XtreamChannelUpdate,
 };

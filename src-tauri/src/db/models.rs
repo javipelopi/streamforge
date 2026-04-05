@@ -2,9 +2,9 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::db::schema::{
-    accounts, acestream_sources, channel_mappings, event_log, m3u_channels, m3u_sources,
-    match_exclusions, matching_profiles, programs, settings, xmltv_channel_settings,
-    xmltv_channels, xmltv_sources, xtream_channels,
+    accounts, acestream_sources, channel_mappings, channel_tags, event_log, m3u_channels,
+    m3u_sources, match_exclusions, matching_profiles, programs, settings,
+    xmltv_channel_settings, xmltv_channels, xmltv_sources, xtream_channels,
 };
 
 #[derive(Queryable, Selectable, Insertable, Debug, Clone)]
@@ -1173,4 +1173,29 @@ pub struct MatchingProfileUpdate {
     pub updated_at: Option<String>,
     pub require_prefix: Option<i32>,
     pub require_suffix: Option<i32>,
+}
+
+// ============================================================================
+// Channel Tags Models (ip-lko)
+// ============================================================================
+
+/// Channel tag for XMLTV channels
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone, Serialize)]
+#[diesel(table_name = channel_tags)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelTag {
+    pub id: Option<i32>,
+    pub xmltv_channel_id: i32,
+    pub tag: String,
+    pub created_at: String,
+}
+
+/// New channel tag for insertion
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = channel_tags)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewChannelTag {
+    pub xmltv_channel_id: i32,
+    pub tag: String,
 }

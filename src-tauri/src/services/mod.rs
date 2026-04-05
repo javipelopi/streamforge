@@ -12,6 +12,7 @@
 
 pub mod accounts;
 pub mod acestream;
+pub mod channel_tags;
 pub mod channels;
 pub mod epg;
 pub mod logs;

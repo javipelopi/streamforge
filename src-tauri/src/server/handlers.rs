@@ -1,13 +1,14 @@
 use axum::{
     body::Body,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, HeaderMap, HeaderValue, Response, StatusCode},
     response::IntoResponse,
     Json,
 };
 use diesel::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 
 use super::epg;
@@ -24,6 +25,12 @@ use super::stream::{
 };
 use crate::credentials::CredentialManager;
 use crate::db::schema::{accounts, channel_mappings, xmltv_channel_settings, xtream_channels};
+
+/// Query parameters for tag-filtered playlist/EPG endpoints.
+#[derive(Deserialize, Default)]
+pub struct TagFilterParams {
+    pub tag: Option<String>,
+}
 
 /// Health check response structure
 #[derive(Serialize)]
@@ -60,7 +67,12 @@ pub async fn fallback_handler() -> StatusCode {
 /// - Stream URLs pointing to /stream/{xmltv_channel_id}
 ///
 /// Returns Content-Type: audio/x-mpegurl with ETag for caching
-pub async fn playlist_m3u(State(state): State<AppState>) -> Result<impl IntoResponse, (StatusCode, String)> {
+///
+/// Optional query parameter: `?tag=spain` filters to channels with that tag.
+pub async fn playlist_m3u(
+    State(state): State<AppState>,
+    Query(params): Query<TagFilterParams>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
     let mut conn = state
         .get_connection()
         .map_err(|e| {
@@ -73,7 +85,7 @@ pub async fn playlist_m3u(State(state): State<AppState>) -> Result<impl IntoResp
         })?;
 
     let port = state.get_port();
-    let m3u_content = m3u::generate_m3u_playlist(&mut conn, port)
+    let mut channels = m3u::get_enabled_channels_for_m3u(&mut conn)
         .map_err(|e| {
             state.log_system_event(
                 "error",
@@ -82,6 +94,17 @@ pub async fn playlist_m3u(State(state): State<AppState>) -> Result<impl IntoResp
             );
             (StatusCode::INTERNAL_SERVER_ERROR, "Unable to generate playlist".to_string())
         })?;
+
+    // Filter by tag if provided
+    if let Some(ref tag) = params.tag {
+        let tagged_ids: HashSet<i32> = crate::services::channel_tags::get_channel_ids_with_tag(&mut conn, tag)
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        channels.retain(|ch| tagged_ids.contains(&ch.xmltv_channel_id));
+    }
+
+    let m3u_content = m3u::generate_m3u_from_channels(&channels, port);
 
     // Generate ETag from content hash for cache validation
     // Plex can use this to avoid re-downloading unchanged playlists
@@ -130,47 +153,49 @@ fn generate_etag(content: &str) -> String {
 pub async fn epg_xml(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(params): Query<TagFilterParams>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    // Check server-side cache first
-    if let Some(cached) = state.get_epg_cache() {
-        let etag = format!("\"{}\"", cached.etag);
+    let is_tag_filtered = params.tag.is_some();
 
-        // Check If-None-Match for 304 response
-        if let Some(client_etag) = headers.get(header::IF_NONE_MATCH) {
-            if let Ok(etag_str) = client_etag.to_str() {
-                if etag_str == etag {
-                    // Return 304 Not Modified
-                    let mut response_headers = HeaderMap::new();
-                    response_headers.insert(header::ETAG, HeaderValue::from_str(&etag).unwrap());
-                    response_headers.insert(
-                        header::CACHE_CONTROL,
-                        HeaderValue::from_static("public, max-age=300"),
-                    );
-                    return Ok((StatusCode::NOT_MODIFIED, response_headers, String::new()));
+    // Use server-side cache only for unfiltered requests
+    if !is_tag_filtered {
+        if let Some(cached) = state.get_epg_cache() {
+            let etag = format!("\"{}\"", cached.etag);
+
+            if let Some(client_etag) = headers.get(header::IF_NONE_MATCH) {
+                if let Ok(etag_str) = client_etag.to_str() {
+                    if etag_str == etag {
+                        let mut response_headers = HeaderMap::new();
+                        response_headers.insert(header::ETAG, HeaderValue::from_str(&etag).unwrap());
+                        response_headers.insert(
+                            header::CACHE_CONTROL,
+                            HeaderValue::from_static("public, max-age=300"),
+                        );
+                        return Ok((StatusCode::NOT_MODIFIED, response_headers, String::new()));
+                    }
                 }
             }
-        }
 
-        // Return cached content
-        let content_length = cached.content.len();
-        let mut response_headers = HeaderMap::new();
-        response_headers.insert(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("application/xml; charset=utf-8"),
-        );
-        response_headers.insert(
-            header::CONTENT_LENGTH,
-            HeaderValue::from_str(&content_length.to_string()).unwrap(),
-        );
-        response_headers.insert(header::ETAG, HeaderValue::from_str(&etag).unwrap());
-        response_headers.insert(
-            header::CACHE_CONTROL,
-            HeaderValue::from_static("public, max-age=300"),
-        );
-        return Ok((StatusCode::OK, response_headers, cached.content));
+            let content_length = cached.content.len();
+            let mut response_headers = HeaderMap::new();
+            response_headers.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/xml; charset=utf-8"),
+            );
+            response_headers.insert(
+                header::CONTENT_LENGTH,
+                HeaderValue::from_str(&content_length.to_string()).unwrap(),
+            );
+            response_headers.insert(header::ETAG, HeaderValue::from_str(&etag).unwrap());
+            response_headers.insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("public, max-age=300"),
+            );
+            return Ok((StatusCode::OK, response_headers, cached.content));
+        }
     }
 
-    // Cache miss - generate fresh EPG
+    // Cache miss or tag-filtered - generate fresh EPG
     let mut conn = state.get_connection().map_err(|e| {
         state.log_system_event(
             "error",
@@ -183,22 +208,42 @@ pub async fn epg_xml(
         )
     })?;
 
-    let xml_content = epg::generate_xmltv_epg(&mut conn).map_err(|e| {
-        state.log_system_event(
-            "error",
-            &format!("EPG endpoint - generation failed: {}", e),
-            Some(&serde_json::json!({"error": e.to_string()}).to_string()),
-        );
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Internal server error".to_string(),
-        )
-    })?;
+    // For tag-filtered requests, get channels then filter, then generate EPG
+    let xml_content = if let Some(ref tag) = params.tag {
+        let tagged_ids: HashSet<i32> = crate::services::channel_tags::get_channel_ids_with_tag(&mut conn, tag)
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
 
-    // Generate ETag and store in cache
+        let mut channels = epg::get_enabled_channels_for_epg(&mut conn).map_err(|e| {
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("EPG generation failed: {}", e))
+        })?;
+        channels.retain(|ch| tagged_ids.contains(&ch.internal_id));
+
+        // Generate EPG with only tagged channels (programs handled inside)
+        epg::generate_xmltv_epg_for_channels(&mut conn, &channels).map_err(|e| {
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("EPG generation failed: {}", e))
+        })?
+    } else {
+        epg::generate_xmltv_epg(&mut conn).map_err(|e| {
+            state.log_system_event(
+                "error",
+                &format!("EPG endpoint - generation failed: {}", e),
+                Some(&serde_json::json!({"error": e.to_string()}).to_string()),
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            )
+        })?
+    };
+
+    // Generate ETag and store in cache (only for unfiltered requests)
     let etag_hash = generate_etag(&xml_content);
     let etag = format!("\"{}\"", etag_hash);
-    state.set_epg_cache(xml_content.clone(), etag_hash);
+    if !is_tag_filtered {
+        state.set_epg_cache(xml_content.clone(), etag_hash);
+    }
 
     // Check If-None-Match for conditional request
     if let Some(client_etag) = headers.get(header::IF_NONE_MATCH) {

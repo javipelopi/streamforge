@@ -154,6 +154,9 @@ pub fn api_router() -> Router<AppState> {
         .route("/xmltv-channels/orphans/acestream/{id}/promote", post(promote_acestream_orphan_to_plex))
         // Synthetic channel update
         .route("/xmltv-channels/synthetic/{id}", put(update_synthetic_channel))
+        // Channel tags
+        .route("/tags", get(get_all_tags))
+        .route("/xmltv-channels/{id}/tags", get(get_channel_tags).put(set_channel_tags))
         // Orphan M3U and Acestream
         .route("/orphans/m3u", get(get_orphan_m3u_channels))
         .route("/orphans/acestream", get(get_orphan_acestream_sources))
@@ -2258,4 +2261,41 @@ async fn preview_matching_normalization(
         original: body.name,
         normalized,
     }))
+}
+
+// ===========================================================================
+// Channel Tags (ip-lko)
+// ===========================================================================
+
+async fn get_all_tags(State(state): State<AppState>) -> ApiResult<Vec<String>> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    let tags = services::channel_tags::get_all_tags(&mut conn)
+        .map_err(|e| internal(e.to_string()))?;
+    Ok(Json(tags))
+}
+
+async fn get_channel_tags(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+) -> ApiResult<Vec<String>> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    let tags = services::channel_tags::get_tags_for_channel(&mut conn, id)
+        .map_err(|e| internal(e.to_string()))?;
+    Ok(Json(tags))
+}
+
+#[derive(Deserialize)]
+struct SetTagsRequest {
+    tags: Vec<String>,
+}
+
+async fn set_channel_tags(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+    Json(body): Json<SetTagsRequest>,
+) -> ApiResult<Vec<String>> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    let tags = services::channel_tags::set_tags_for_channel(&mut conn, id, &body.tags)
+        .map_err(|e| internal(e.to_string()))?;
+    Ok(Json(tags))
 }

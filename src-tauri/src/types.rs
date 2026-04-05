@@ -670,6 +670,8 @@ pub struct XmltvChannelWithMappings {
     // Matches
     pub match_count: i32,
     pub matches: Vec<XtreamStreamMatch>,
+    // Tags
+    pub tags: Vec<String>,
 }
 
 /// Parse qualities string (JSON array or comma-separated) into Vec<String>
@@ -772,6 +774,8 @@ pub struct TargetLineupChannel {
     pub stream_count: i32,
     /// Display order in Plex lineup
     pub plex_display_order: Option<i32>,
+    /// User-defined tags for filtering
+    pub tags: Vec<String>,
 }
 
 /// XMLTV channel with mapping info for Sources view

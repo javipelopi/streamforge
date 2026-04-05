@@ -76,7 +76,7 @@ pub fn get_xmltv_channels_with_mappings(
     }
 
     // Build result list
-    let result: Vec<XmltvChannelWithMappings> = channels
+    let mut result: Vec<XmltvChannelWithMappings> = channels
         .into_iter()
         .filter_map(|channel| {
             let channel_id = channel.id?;
@@ -157,12 +157,22 @@ pub fn get_xmltv_channels_with_mappings(
                 plex_display_order,
                 match_count: matches.len() as i32,
                 matches,
+                tags: vec![],
             })
         })
         .collect();
 
+    // Batch-load tags for all channels
+    let channel_ids: Vec<i32> = result.iter().map(|c| c.id).collect();
+    let tags_map = crate::services::channel_tags::get_tags_for_channels(&mut conn, &channel_ids)
+        .unwrap_or_default();
+    for channel in &mut result {
+        if let Some(tags) = tags_map.get(&channel.id) {
+            channel.tags = tags.clone();
+        }
+    }
+
     // Story 3-6: Sort by plex_display_order (nulls last), then by display_name as fallback
-    let mut result = result;
     result.sort_by(|a, b| {
         match (a.plex_display_order, b.plex_display_order) {
             (Some(a_order), Some(b_order)) => a_order.cmp(&b_order),
@@ -238,12 +248,17 @@ pub fn get_target_lineup_channels(
         .map(|(id, count)| (id, count as i32))
         .collect();
 
+    // Batch-load tags
+    let tags_map = crate::services::channel_tags::get_tags_for_channels(&mut conn, &channel_ids)
+        .unwrap_or_default();
+
     // Build result from pre-filtered enabled channels
     let result: Vec<TargetLineupChannel> = enabled_channels
         .into_iter()
         .filter_map(|(channel, settings)| {
             let channel_id = channel.id?;
             let stream_count = counts_map.get(&channel_id).copied().unwrap_or(0);
+            let tags = tags_map.get(&channel_id).cloned().unwrap_or_default();
 
             Some(TargetLineupChannel {
                 id: channel_id,
@@ -253,6 +268,7 @@ pub fn get_target_lineup_channels(
                 is_synthetic: channel.is_synthetic.unwrap_or(0) != 0,
                 stream_count,
                 plex_display_order: settings.plex_display_order,
+                tags,
             })
         })
         .collect();

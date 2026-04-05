@@ -469,6 +469,61 @@ fn write_programme<W: std::io::Write>(
     Ok(())
 }
 
+/// Generate XMLTV EPG for a pre-filtered list of channels.
+///
+/// Similar to `generate_xmltv_epg` but accepts channels directly (used for
+/// tag-filtered EPG output where channels have already been filtered).
+pub fn generate_xmltv_epg_for_channels(
+    conn: &mut DbPooledConnection,
+    channels: &[XmltvChannelOutput],
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let mut id_map: std::collections::HashMap<i32, String> = std::collections::HashMap::new();
+    for channel in channels {
+        id_map.insert(channel.internal_id, channel.id.clone());
+    }
+
+    let non_synthetic_ids: Vec<i32> = channels
+        .iter()
+        .filter(|c| !c.is_synthetic)
+        .map(|c| c.internal_id)
+        .collect();
+
+    let program_rows = get_programs_for_channels(conn, &non_synthetic_ids)?;
+
+    let mut programmes: Vec<XmltvProgramme> = program_rows
+        .into_iter()
+        .filter_map(|row| {
+            let channel_id = id_map.get(&row.xmltv_channel_id)?;
+            let start_dt = parse_db_datetime(&row.start_time)?;
+            let end_dt = parse_db_datetime(&row.end_time)?;
+
+            Some(XmltvProgramme {
+                channel_id: channel_id.clone(),
+                title: row.title,
+                description: row.description.filter(|s| !s.trim().is_empty()),
+                start: format_xmltv_datetime(start_dt),
+                stop: format_xmltv_datetime(end_dt),
+                category: row.category.filter(|s| !s.trim().is_empty()),
+                episode_num: row.episode_info.filter(|s| !s.trim().is_empty()),
+            })
+        })
+        .collect();
+
+    for channel in channels {
+        if channel.is_synthetic {
+            programmes.extend(generate_placeholder_programs(channel));
+        }
+    }
+
+    programmes.sort_by(|a, b| {
+        a.channel_id
+            .cmp(&b.channel_id)
+            .then_with(|| a.start.cmp(&b.start))
+    });
+
+    format_xmltv_output(channels, &programmes)
+}
+
 /// Generate XMLTV content from pre-fetched data (for testing without DB)
 pub fn generate_xmltv_from_data(
     channels: &[XmltvChannelOutput],
