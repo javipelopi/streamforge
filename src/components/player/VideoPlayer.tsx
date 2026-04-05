@@ -2,12 +2,12 @@
  * Video Player Component
  *
  * A modal video player for watching IPTV streams.
- * Uses local FFmpeg-based HLS proxy for reliable playback of any stream format.
+ * Uses mpegts.js for client-side MPEG-TS demuxing via Media Source Extensions.
+ * Connects directly to the stream proxy — no FFmpeg or temp files needed.
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { X, Volume2, VolumeX, Maximize, Minimize, Play, Pause, Loader2, AlertCircle, Tv, ExternalLink } from 'lucide-react';
-import Hls from 'hls.js';
-import { getServerPort } from '../../lib/api';
+import mpegts from 'mpegts.js';
 
 /** Set fullscreen — uses Tauri window API in desktop, browser Fullscreen API otherwise */
 async function setFullscreenMode(value: boolean): Promise<void> {
@@ -23,21 +23,11 @@ async function setFullscreenMode(value: boolean): Promise<void> {
   }
 }
 
-/** Get the server base URL — uses window.location in browser, 127.0.0.1 in Tauri */
-function getServerBaseUrl(port: number): string {
-  if (typeof window !== 'undefined' && !('__TAURI__' in window)) {
-    return window.location.origin;
-  }
-  return `http://127.0.0.1:${port}`;
-}
-
 interface VideoPlayerProps {
   /** Whether the player modal is open */
   isOpen: boolean;
-  /** Stream URL to play (used for external player and legacy HLS) */
+  /** Stream URL to play (proxy URL or direct stream URL) */
   url: string | null;
-  /** XMLTV channel ID — when provided, HLS resolves upstream URL server-side (avoids deadlock) */
-  channelId?: number | null;
   /** Display title */
   title: string;
   /** Optional channel icon */
@@ -48,12 +38,10 @@ interface VideoPlayerProps {
   onOpenExternal?: () => void;
 }
 
-export function VideoPlayer({ isOpen, url, channelId, title, icon, onClose, onOpenExternal }: VideoPlayerProps) {
+export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const hlsRef = useRef<Hls | null>(null);
+  const playerRef = useRef<mpegts.Player | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const sessionIdRef = useRef<string | null>(null);
-  const serverPortRef = useRef<number>(5004);
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -69,30 +57,20 @@ export function VideoPlayer({ isOpen, url, channelId, title, icon, onClose, onOp
     setIconError(false);
   }, [icon]);
 
-  // Stop HLS session when closing
-  const stopSession = useCallback(async () => {
-    const sessionId = sessionIdRef.current;
-    const hls = hlsRef.current;
+  // Destroy mpegts.js player
+  const destroyPlayer = useCallback(() => {
+    const player = playerRef.current;
+    playerRef.current = null;
 
-    // Clear refs first to prevent double cleanup
-    sessionIdRef.current = null;
-    hlsRef.current = null;
-
-    if (hls) {
-      hls.destroy();
-    }
-
-    if (sessionId) {
-      // Fire and forget - don't await, and ignore errors (component is unmounting)
-      fetch(`${getServerBaseUrl(serverPortRef.current)}/hls/${sessionId}/stop`, {
-        method: 'DELETE',
-      }).catch(() => {
-        // Ignore errors during cleanup
-      });
+    if (player) {
+      player.pause();
+      player.unload();
+      player.detachMediaElement();
+      player.destroy();
     }
   }, []);
 
-  // Initialize video playback via local HLS proxy
+  // Initialize video playback via mpegts.js
   useEffect(() => {
     if (!isOpen || !url || !videoRef.current) return;
 
@@ -100,220 +78,85 @@ export function VideoPlayer({ isOpen, url, channelId, title, icon, onClose, onOp
     setIsLoading(true);
     setError(null);
 
-    console.log('[VideoPlayer] Loading stream via HLS proxy:', url);
+    console.log('[VideoPlayer] Loading stream via mpegts.js:', url);
 
-    const setupStream = async () => {
-      try {
-        // Get server port
-        const serverPort = await getServerPort();
-        serverPortRef.current = serverPort;
+    if (!mpegts.isSupported()) {
+      setError('MPEG-TS playback is not supported in this browser (requires Media Source Extensions).');
+      setIsLoading(false);
+      return;
+    }
 
-        // Start HLS session — use channel_id when available to avoid self-loop deadlock
-        const hlsStartParams = channelId
-          ? `channel_id=${channelId}`
-          : `url=${encodeURIComponent(url)}`;
-        console.log('[VideoPlayer] Starting HLS session with:', hlsStartParams);
-        const startResponse = await fetch(
-          `${getServerBaseUrl(serverPort)}/hls/start?${hlsStartParams}`
-        );
+    const player = mpegts.createPlayer({
+      type: 'mpegts',
+      isLive: true,
+      url: url,
+    }, {
+      enableWorker: true,
+      liveBufferLatencyChasing: true,
+      liveBufferLatencyMaxLatency: 10,
+      liveBufferLatencyMinRemain: 2,
+      lazyLoadMaxDuration: 60,
+      autoCleanupSourceBuffer: true,
+      autoCleanupMaxBackwardDuration: 30,
+      autoCleanupMinBackwardDuration: 15,
+    });
 
-        if (!startResponse.ok) {
-          const errorText = await startResponse.text();
-          throw new Error(errorText || 'Failed to start stream');
-        }
+    player.attachMediaElement(video);
+    player.load();
 
-        const { session_id } = await startResponse.json();
-        sessionIdRef.current = session_id;
-        console.log('[VideoPlayer] HLS session started:', session_id);
+    player.on(mpegts.Events.ERROR, (errorType, errorDetail, errorInfo) => {
+      console.error('[VideoPlayer] mpegts.js error:', errorType, errorDetail, errorInfo);
+      setError(`Stream error: ${errorDetail || errorType}`);
+      setIsLoading(false);
+    });
 
-        // Build the HLS playlist URL
-        const hlsUrl = `${getServerBaseUrl(serverPort)}/hls/${session_id}/stream.m3u8`;
-        console.log('[VideoPlayer] HLS URL:', hlsUrl);
+    player.on(mpegts.Events.LOADING_COMPLETE, () => {
+      console.log('[VideoPlayer] Loading complete (stream ended)');
+    });
 
-        // Use HLS.js to play the local HLS stream
-        if (Hls.isSupported()) {
-          const hls = new Hls({
-            enableWorker: true,
-            lowLatencyMode: false,
-            // Buffer settings - very generous for problematic streams
-            backBufferLength: 90,
-            maxBufferLength: 60,
-            maxMaxBufferLength: 180,
-            maxBufferSize: 100 * 1000 * 1000, // 100MB buffer
-            // Live stream settings - very tolerant
-            liveSyncDurationCount: 5,     // Stay 5 segments behind live edge
-            liveMaxLatencyDurationCount: 15, // Allow 15 segments latency
-            liveDurationInfinity: true,
-            liveBackBufferLength: 90,
-            // Be extremely tolerant of buffer gaps
-            maxBufferHole: 2.0,           // Allow 2s gaps
-            highBufferWatchdogPeriod: 8,  // Wait 8s before stall detection
-            nudgeOffset: 0.2,             // Nudge by 200ms when stalled
-            nudgeMaxRetry: 10,            // Allow many nudge retries
-            // Fragment loading - very generous
-            fragLoadingTimeOut: 30000,
-            fragLoadingMaxRetry: 10,
-            fragLoadingRetryDelay: 500,
-            fragLoadingMaxRetryTimeout: 60000,
-            // Level loading
-            levelLoadingTimeOut: 15000,
-            levelLoadingMaxRetry: 6,
-            levelLoadingRetryDelay: 500,
-            // Manifest loading
-            manifestLoadingTimeOut: 15000,
-            manifestLoadingMaxRetry: 6,
-            manifestLoadingRetryDelay: 500,
-            // Start position
-            startPosition: -1,
-            // ABR settings - stick to single quality
-            abrEwmaDefaultEstimate: 5000000,
-            startLevel: 0,
-            // Error recovery
-            enableSoftwareAES: true,
-            debug: false,
-          });
-
-          hls.loadSource(hlsUrl);
-          hls.attachMedia(video);
-
-          hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            console.log('[VideoPlayer] HLS manifest parsed');
-            setIsLoading(false);
-            video.play().then(() => {
-              console.log('[VideoPlayer] Playback started');
-              setIsPlaying(true);
-            }).catch((e) => {
-              console.log('[VideoPlayer] Autoplay blocked:', e);
-              setIsPlaying(false);
-            });
-          });
-
-          // Track retry attempts for network errors
-          let networkRetryCount = 0;
-          const maxNetworkRetries = 3;
-
-          // Track media error recovery attempts
-          let mediaRecoveryAttempts = 0;
-          const maxMediaRecovery = 5;
-
-          hls.on(Hls.Events.ERROR, (_, data) => {
-            // Only log errors occasionally to reduce noise
-            if (data.fatal || data.details === 'bufferStalledError') {
-              console.log('[VideoPlayer] HLS error:', data.type, data.details, 'fatal:', data.fatal);
-            }
-
-            if (data.fatal) {
-              console.error('[VideoPlayer] Fatal HLS error:', data.type, data.details);
-
-              switch (data.type) {
-                case Hls.ErrorTypes.NETWORK_ERROR:
-                  networkRetryCount++;
-                  if (networkRetryCount <= maxNetworkRetries) {
-                    console.log(`[VideoPlayer] Network error, retry ${networkRetryCount}/${maxNetworkRetries}...`);
-                    hls.startLoad();
-                  } else {
-                    setError('Stream ended or became unavailable.');
-                    setIsLoading(false);
-                  }
-                  break;
-
-                case Hls.ErrorTypes.MEDIA_ERROR:
-                  mediaRecoveryAttempts++;
-                  if (mediaRecoveryAttempts <= maxMediaRecovery) {
-                    console.log(`[VideoPlayer] Media error, recovery attempt ${mediaRecoveryAttempts}/${maxMediaRecovery}...`);
-                    if (mediaRecoveryAttempts === 1) {
-                      hls.recoverMediaError();
-                    } else {
-                      // More aggressive recovery - swap audio codec
-                      hls.swapAudioCodec();
-                      hls.recoverMediaError();
-                    }
-                  } else {
-                    setError('Failed to play stream. The stream may be incompatible.');
-                    setIsLoading(false);
-                  }
-                  break;
-
-                default:
-                  setError('Failed to play stream. The stream may be offline or incompatible.');
-                  setIsLoading(false);
-                  break;
-              }
-            } else {
-              // Non-fatal errors - these are usually recoverable
-              if (data.details === 'bufferStalledError') {
-                // HLS.js will handle this with nudging based on our config
-                // Just ensure video keeps trying to play
-                if (video.paused && !video.ended) {
-                  video.play().catch(() => {});
-                }
-              }
-            }
-          });
-
-          // Reset media recovery counter on successful fragment buffering
-          hls.on(Hls.Events.FRAG_BUFFERED, () => {
-            mediaRecoveryAttempts = 0;
-          });
-
-          // Also listen for successful fragment loading to reset counters
-          hls.on(Hls.Events.FRAG_LOADED, () => {
-            networkRetryCount = 0;
-          });
-
-          hlsRef.current = hls;
-        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-          // Native HLS support (Safari)
-          video.src = hlsUrl;
-          video.addEventListener('loadedmetadata', () => {
-            setIsLoading(false);
-            video.play().catch(() => setIsPlaying(false));
-          });
-          video.addEventListener('error', () => {
-            setError('Failed to play stream.');
-            setIsLoading(false);
-          });
-        } else {
-          setError('HLS playback is not supported in this browser.');
-          setIsLoading(false);
-        }
-      } catch (e) {
-        console.error('[VideoPlayer] Setup error:', e);
-        const errorMsg = e instanceof Error ? e.message : 'Unknown error';
-        if (errorMsg.includes('FFmpeg')) {
-          setError('FFmpeg not found. Please install FFmpeg to use the built-in player.');
-        } else {
-          setError(`Failed to start stream: ${errorMsg}`);
-        }
-        setIsLoading(false);
-      }
+    // Use video element events for readiness
+    const handleCanPlay = () => {
+      console.log('[VideoPlayer] Stream ready, starting playback');
+      setIsLoading(false);
+      video.play().then(() => {
+        setIsPlaying(true);
+      }).catch((e) => {
+        console.log('[VideoPlayer] Autoplay blocked:', e);
+        setIsPlaying(false);
+      });
     };
 
-    setupStream();
+    const handleError = () => {
+      if (!playerRef.current) return; // Already destroyed
+      const mediaError = video.error;
+      console.error('[VideoPlayer] Video element error:', mediaError);
+      setError(`Playback error: ${mediaError?.message || 'Unknown error'}`);
+      setIsLoading(false);
+    };
+
+    video.addEventListener('canplay', handleCanPlay);
+    video.addEventListener('error', handleError);
+
+    playerRef.current = player;
 
     return () => {
-      stopSession();
+      video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('error', handleError);
+      destroyPlayer();
       video.src = '';
     };
-  }, [isOpen, url, channelId, stopSession]);
+  }, [isOpen, url, destroyPlayer]);
 
   // Handle video events
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !isOpen) return;
 
-    const handlePlay = () => {
-      console.log('[VideoPlayer] Video play event');
-      setIsPlaying(true);
-    };
-    const handlePause = () => {
-      console.log('[VideoPlayer] Video pause event');
-      setIsPlaying(false);
-    };
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
     const handleVolumeChange = () => setIsMuted(video.muted);
     const handleWaiting = () => setIsLoading(true);
     const handlePlaying = () => {
-      console.log('[VideoPlayer] Video playing event');
       setIsPlaying(true);
       setIsLoading(false);
     };

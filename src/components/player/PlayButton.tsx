@@ -16,8 +16,6 @@ interface PlayButtonProps {
   title: string;
   /** Optional channel/stream icon */
   icon?: string | null;
-  /** XMLTV channel ID — passed through to HLS player for server-side URL resolution */
-  channelId?: number;
   /** Optional size variant */
   size?: 'sm' | 'md';
   /** Optional className override */
@@ -28,7 +26,6 @@ export function PlayButton({
   getStreamUrl,
   title,
   icon,
-  channelId,
   size = 'sm',
   className,
 }: PlayButtonProps) {
@@ -38,22 +35,17 @@ export function PlayButton({
   const [error, setError] = useState<string | null>(null);
 
   const handlePlay = useCallback(async (external: boolean) => {
-    console.log('[PlayButton] handlePlay called, external:', external);
     setIsLoading(true);
     setError(null);
     setMenuOpen(false);
 
     try {
-      console.log('[PlayButton] Getting stream URL...');
       const url = await getStreamUrl();
-      console.log('[PlayButton] Got stream URL:', url);
 
       if (external) {
-        console.log('[PlayButton] Opening in external player...');
         await openInExternalPlayer(url);
       } else {
-        console.log('[PlayButton] Opening in built-in player...');
-        playStream({ url, title, icon, channelId });
+        playStream({ url, title, icon });
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to get stream URL';
@@ -62,7 +54,7 @@ export function PlayButton({
     } finally {
       setIsLoading(false);
     }
-  }, [getStreamUrl, title, icon, channelId, playStream, openInExternalPlayer]);
+  }, [getStreamUrl, title, icon, playStream, openInExternalPlayer]);
 
   const iconSize = size === 'sm' ? 'w-4 h-4' : 'w-5 h-5';
   const buttonSize = size === 'sm' ? 'p-1.5' : 'p-2';
@@ -75,7 +67,6 @@ export function PlayButton({
           onClick={(e) => {
             e.stopPropagation();
             if (isLoading) return;
-            // Single click opens menu for player choice
             setMenuOpen(true);
           }}
           disabled={isLoading}

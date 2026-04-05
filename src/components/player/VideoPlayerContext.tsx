@@ -3,7 +3,7 @@
  *
  * Provides a global video player modal that can be triggered from anywhere in the app.
  * Used for watching streams directly from Sources, Lineup, and EPG views.
- * Supports both built-in HLS.js player and external player (VLC/mpv) option.
+ * Supports both built-in mpegts.js player and external player (VLC/mpv) option.
  */
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import { VideoPlayer } from './VideoPlayer';
@@ -19,14 +19,12 @@ async function shellOpen(url: string): Promise<void> {
 }
 
 interface PlayStreamOptions {
-  /** Stream URL to play (used for external player and legacy HLS) */
+  /** Stream URL to play (proxy URL or direct stream URL) */
   url: string;
   /** Display title for the player */
   title: string;
   /** Optional channel/stream icon */
   icon?: string | null;
-  /** XMLTV channel ID — when provided, HLS player resolves upstream URL server-side */
-  channelId?: number;
 }
 
 interface VideoPlayerContextValue {
@@ -116,7 +114,6 @@ export function VideoPlayerProvider({ children }: VideoPlayerProviderProps) {
       <VideoPlayer
         isOpen={isOpen}
         url={currentStream?.url ?? null}
-        channelId={currentStream?.channelId ?? null}
         title={currentStream?.title ?? ''}
         icon={currentStream?.icon}
         onClose={closePlayer}
