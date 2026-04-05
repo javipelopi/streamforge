@@ -173,6 +173,7 @@ pub async fn start_hls_stream(
 
     // Shutdown signal for coordinating FFmpeg + monitor tasks
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let num_streams = backup_streams.len().max(1);
 
     // Spawn the FFmpeg + failover monitor on a dedicated task
     // This prevents blocking the main server request handling pool
@@ -192,8 +193,11 @@ pub async fn start_hls_stream(
     });
 
     // Wait for FFmpeg to create the initial playlist (poll with timeout)
+    // Allow enough time for failover: each stream gets SEGMENT_STALL_TIMEOUT_SECS before
+    // the monitor triggers failover to the next stream, plus some buffer for FFmpeg startup
+    let max_wait_secs = (SEGMENT_STALL_TIMEOUT_SECS + 5) * num_streams as u64;
     let playlist_path = temp_dir.join("stream.m3u8");
-    let max_wait = std::time::Duration::from_secs(15);
+    let max_wait = std::time::Duration::from_secs(max_wait_secs);
     let start = std::time::Instant::now();
 
     eprintln!(
