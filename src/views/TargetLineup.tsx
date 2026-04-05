@@ -292,13 +292,19 @@ export function TargetLineup() {
     setUndoToast({ show: false, channelId: 0, channelName: '' });
   }, [undoToast]);
 
-  // Cleanup timeout on unmount
+  // On unmount: flush any pending disables so they aren't lost
   useEffect(() => {
     return () => {
       if (undoToast.timeoutId) {
         clearTimeout(undoToast.timeoutId);
       }
+      // Fire mutations for any channels still pending disable
+      for (const channelId of pendingDisablesRef.current) {
+        toggleMutation.mutate(channelId);
+      }
+      pendingDisablesRef.current.clear();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [undoToast.timeoutId]);
 
   // Reset virtualizer scroll and clear search/filter when switching tabs
