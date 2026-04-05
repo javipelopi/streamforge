@@ -93,7 +93,7 @@ futures-util = "0.3"
 tokio-util = { version = "0.7", features = ["io"] }
 
 # Scheduling
-tokio-cron-scheduler = "0.13"
+tokio-cron-scheduler = "0.15"
 uuid = { version = "1.0", features = ["v4"] }
 tracing = "0.1"
 
