@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 use std::time::Instant;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::sync::Mutex;
 
 use std::time::Duration;
@@ -140,8 +140,10 @@ impl BufferedStream {
         // performs fork+exec which can block the runtime thread, causing deadlocks
         // under concurrent stream requests.
         let url = upstream_url.to_string();
-        let mut child = tokio::task::spawn_blocking(move || {
-            Command::new("ffmpeg")
+        eprintln!("[DEBUG] buffer: spawning FFmpeg for {}", &url[..url.len().min(50)]);
+        let std_child = tokio::task::spawn_blocking(move || {
+            eprintln!("[DEBUG] buffer: spawn_blocking entered");
+            std::process::Command::new("ffmpeg")
                 .args([
                     "-hide_banner",
                     "-loglevel", "warning",
@@ -158,14 +160,23 @@ impl BufferedStream {
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
-                .kill_on_drop(true)
                 .spawn()
         })
         .await
         .map_err(|e| io::Error::other(format!("FFmpeg spawn task failed: {}", e)))??;
-
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
+        // Convert std handles to async using tokio pipe receivers
+        let mut child = std_child;
+        let stdout = child.stdout.take().map(|s| {
+            use std::os::unix::io::{IntoRawFd, FromRawFd};
+            let fd = s.into_raw_fd();
+            // Safety: fd is valid and exclusively owned (just taken from child)
+            unsafe { tokio::fs::File::from_raw_fd(fd) }
+        });
+        let stderr = child.stderr.take().map(|s| {
+            use std::os::unix::io::{IntoRawFd, FromRawFd};
+            let fd = s.into_raw_fd();
+            unsafe { tokio::fs::File::from_raw_fd(fd) }
+        });
 
         let state = Arc::new(Mutex::new(BufferState {
             buffer: VecDeque::new(),
@@ -227,8 +238,10 @@ impl BufferedStream {
 
         // Spawn FFmpeg on a blocking thread (same rationale as new())
         let url = upstream_url.to_string();
-        let mut child = tokio::task::spawn_blocking(move || {
-            Command::new("ffmpeg")
+        eprintln!("[DEBUG] buffer: spawning FFmpeg for {}", &url[..url.len().min(50)]);
+        let std_child = tokio::task::spawn_blocking(move || {
+            eprintln!("[DEBUG] buffer: spawn_blocking entered");
+            std::process::Command::new("ffmpeg")
                 .args([
                     "-hide_banner",
                     "-loglevel", "warning",
@@ -245,14 +258,23 @@ impl BufferedStream {
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
-                .kill_on_drop(true)
                 .spawn()
         })
         .await
         .map_err(|e| io::Error::other(format!("FFmpeg spawn task failed: {}", e)))??;
-
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
+        // Convert std handles to async using tokio pipe receivers
+        let mut child = std_child;
+        let stdout = child.stdout.take().map(|s| {
+            use std::os::unix::io::{IntoRawFd, FromRawFd};
+            let fd = s.into_raw_fd();
+            // Safety: fd is valid and exclusively owned (just taken from child)
+            unsafe { tokio::fs::File::from_raw_fd(fd) }
+        });
+        let stderr = child.stderr.take().map(|s| {
+            use std::os::unix::io::{IntoRawFd, FromRawFd};
+            let fd = s.into_raw_fd();
+            unsafe { tokio::fs::File::from_raw_fd(fd) }
+        });
 
         let state = Arc::new(Mutex::new(BufferState {
             buffer: VecDeque::new(),
@@ -305,7 +327,7 @@ impl BufferedStream {
     }
 
     /// Handle FFmpeg stderr output - log warnings/errors with session context
-    async fn stderr_task(stderr: Option<tokio::process::ChildStderr>, session_id: String) {
+    async fn stderr_task(stderr: Option<tokio::fs::File>, session_id: String) {
         let stderr = match stderr {
             Some(s) => s,
             None => return,
@@ -324,8 +346,8 @@ impl BufferedStream {
     }
 
     async fn reader_task(
-        stdout: Option<tokio::process::ChildStdout>,
-        _child: Child,
+        stdout: Option<tokio::fs::File>,
+        _child: std::process::Child,  // kept alive — kills FFmpeg on drop
         state: Arc<Mutex<BufferState>>,
         read_size: usize,
         prefill_bytes: usize,
