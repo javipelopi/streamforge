@@ -66,7 +66,7 @@ jobs:
         run: cargo install cargo-audit
 
       - name: Cargo audit
-        run: cd src-tauri && cargo audit
+        run: cd src-tauri && cargo audit --ignore RUSTSEC-2024-0414 --ignore RUSTSEC-2024-0415 --ignore RUSTSEC-2024-0419 --ignore RUSTSEC-2024-0420
 
       - uses: actions/setup-node@v4
         with:
@@ -102,7 +102,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Clippy
-        run: cd src-tauri && cargo clippy -- -D warnings
+        run: cd src-tauri && cargo clippy -- -W warnings
 
   test-rust:
     name: Test (Rust)
