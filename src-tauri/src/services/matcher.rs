@@ -228,7 +228,7 @@ pub fn run_channel_matching(
     let xmltv_ids: Vec<i32> = xmltv_data.iter().filter_map(|c| c.id).collect();
 
     // Clear existing auto-matched mappings before saving new ones
-    use crate::db::schema::channel_mappings;
+    use crate::db::schema::{channel_mappings, match_exclusions};
     // (manual mappings with is_manual=1 are preserved)
     diesel::delete(
         channel_mappings::table.filter(channel_mappings::is_manual.eq(0)),
@@ -236,8 +236,25 @@ pub fn run_channel_matching(
     .execute(conn)
     .map_err(|e| format!("Failed to clear old auto-matched mappings: {}", e))?;
 
+    // Load exclusions so we skip user-removed pairings
+    let excluded_pairs: std::collections::HashSet<(i32, i32)> = match_exclusions::table
+        .select((
+            match_exclusions::xmltv_channel_id,
+            match_exclusions::xtream_channel_id,
+        ))
+        .load::<(i32, i32)>(conn)
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+
+    // Filter out excluded pairings before saving
+    let filtered_matches: Vec<_> = matches
+        .into_iter()
+        .filter(|m| !excluded_pairs.contains(&(m.xmltv_channel_id, m.xtream_channel_id)))
+        .collect();
+
     // Save to database
-    let saved_count = save_channel_mappings(conn, &matches, &xmltv_ids)
+    let saved_count = save_channel_mappings(conn, &filtered_matches, &xmltv_ids)
         .map_err(|e| format!("Failed to save channel mappings: {}", e))?;
 
     on_progress(MatchProgress::Complete {
