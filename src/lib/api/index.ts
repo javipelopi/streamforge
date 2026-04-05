@@ -11,3 +11,4 @@ export * from './matcher';
 export * from './matching-profiles';
 export * from './settings';
 export * from './sources';
+export * from './tags';

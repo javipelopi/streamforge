@@ -9,7 +9,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { AlertTriangle, Tv, Search, X } from 'lucide-react';
+import { AlertTriangle, Tv, Search, X, Tag } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ROUTES } from '../lib/routes';
 import {
@@ -17,6 +17,7 @@ import {
   getDisabledLineupChannels,
   updateChannelOrder,
   toggleXmltvChannel,
+  getAllTags,
   type TargetLineupChannel,
 } from '../lib/api';
 import { TargetLineupChannelRow } from '../components/channels/TargetLineupChannelRow';
@@ -33,6 +34,7 @@ export function TargetLineup() {
   const parentRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<LineupTab>('enabled');
   const [searchQuery, setSearchQuery] = useState('');
+  const [tagFilter, setTagFilter] = useState<string>('');
 
   // State for undo toast
   const [undoToast, setUndoToast] = useState<{
@@ -72,21 +74,40 @@ export function TargetLineup() {
     queryFn: getDisabledLineupChannels,
   });
 
+  // Fetch all tags for filter dropdown
+  const { data: allTags = [] } = useQuery({
+    queryKey: ['allTags'],
+    queryFn: getAllTags,
+    staleTime: 30000,
+  });
+
   // Filter out temporarily removed channels for display
   const displayChannels = channels.filter((c) => !removedChannels.has(c.id));
 
-  // Filter channels by search query
+  // Filter channels by search query and tag
   const filteredEnabledChannels = useMemo(() => {
-    if (!searchQuery.trim()) return displayChannels;
-    const query = searchQuery.toLowerCase();
-    return displayChannels.filter((c) => c.displayName.toLowerCase().includes(query));
-  }, [displayChannels, searchQuery]);
+    let filtered = displayChannels;
+    if (tagFilter) {
+      filtered = filtered.filter((c) => c.tags?.includes(tagFilter));
+    }
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((c) => c.displayName.toLowerCase().includes(query));
+    }
+    return filtered;
+  }, [displayChannels, searchQuery, tagFilter]);
 
   const filteredDisabledChannels = useMemo(() => {
-    if (!searchQuery.trim()) return disabledChannels;
-    const query = searchQuery.toLowerCase();
-    return disabledChannels.filter((c) => c.displayName.toLowerCase().includes(query));
-  }, [disabledChannels, searchQuery]);
+    let filtered = disabledChannels;
+    if (tagFilter) {
+      filtered = filtered.filter((c) => c.tags?.includes(tagFilter));
+    }
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((c) => c.displayName.toLowerCase().includes(query));
+    }
+    return filtered;
+  }, [disabledChannels, searchQuery, tagFilter]);
 
   // Map channel ID → 1-indexed position in the full (unfiltered) lineup
   const channelPositionMap = useMemo(() => {
@@ -280,9 +301,10 @@ export function TargetLineup() {
     };
   }, [undoToast.timeoutId]);
 
-  // Reset virtualizer scroll and clear search when switching tabs
+  // Reset virtualizer scroll and clear search/filter when switching tabs
   useEffect(() => {
     setSearchQuery('');
+    setTagFilter('');
     virtualizer.scrollToIndex(0);
   }, [activeTab, virtualizer]);
 
@@ -385,30 +407,60 @@ export function TargetLineup() {
         </button>
       </div>
 
-      {/* Search input - only show when there are channels to filter */}
+      {/* Search and filter controls */}
       {((activeTab === 'enabled' && hasEnabledChannels) || (activeTab === 'disabled' && hasDisabledChannels)) && (
-        <div className="relative mb-4">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            data-testid="lineup-search-input"
-            type="text"
-            placeholder={`Search ${activeTab} channels...`}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-8 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            autoComplete="off"
-            spellCheck={false}
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              data-testid="lineup-search-clear"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              aria-label="Clear search"
-            >
-              <X className="w-4 h-4" />
-            </button>
+        <div className="flex gap-2 mb-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              data-testid="lineup-search-input"
+              type="text"
+              placeholder={`Search ${activeTab} channels...`}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-8 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                data-testid="lineup-search-clear"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                aria-label="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          {allTags.length > 0 && (
+            <div className="relative">
+              <Tag className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <select
+                data-testid="lineup-tag-filter"
+                value={tagFilter}
+                onChange={(e) => setTagFilter(e.target.value)}
+                className="pl-8 pr-8 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white appearance-none"
+              >
+                <option value="">All tags</option>
+                {allTags.map((tag) => (
+                  <option key={tag} value={tag}>
+                    {tag}
+                  </option>
+                ))}
+              </select>
+              {tagFilter && (
+                <button
+                  type="button"
+                  onClick={() => setTagFilter('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label="Clear tag filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}

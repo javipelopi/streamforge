@@ -411,6 +411,23 @@ const ROUTES: Record<string, RouteSpec> = {
     pathParams: ['sourceId'],
   },
 
+  // -- Channel Tags ----------------------------------------------------------
+  get_all_tags: {
+    method: 'GET',
+    path: '/api/tags',
+  },
+  get_channel_tags: {
+    method: 'GET',
+    path: '/api/xmltv-channels/{id}/tags',
+    pathParams: ['id'],
+  },
+  set_channel_tags: {
+    method: 'PUT',
+    path: '/api/xmltv-channels/{id}/tags',
+    pathParams: ['id'],
+    mapBody: (args: Record<string, unknown>) => ({ tags: args.tags }),
+  },
+
   // -- Xtream Streams -------------------------------------------------------
   get_xtream_streams_for_account: {
     method: 'GET',

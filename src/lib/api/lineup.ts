@@ -286,6 +286,8 @@ export interface TargetLineupChannel {
   streamCount: number;
   /** Display order in Plex lineup */
   plexDisplayOrder: number | null;
+  /** User-defined tags for filtering */
+  tags: string[];
 }
 
 /**
@@ -322,6 +324,7 @@ export async function getDisabledLineupChannels(): Promise<TargetLineupChannel[]
       isSynthetic: ch.isSynthetic,
       streamCount: ch.matchCount,
       plexDisplayOrder: ch.plexDisplayOrder,
+      tags: ch.tags ?? [],
     }));
 }
 

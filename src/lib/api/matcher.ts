@@ -262,6 +262,8 @@ export interface XmltvChannelWithMappings {
   // Matches
   matchCount: number;
   matches: XtreamStreamMatch[];
+  // Tags
+  tags: string[];
 }
 
 /**

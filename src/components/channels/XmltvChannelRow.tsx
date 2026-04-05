@@ -3,6 +3,7 @@ import * as Switch from '@radix-ui/react-switch';
 import { ChevronDown, ChevronRight, AlertTriangle, FileText, Pencil } from 'lucide-react';
 import type { XmltvChannelWithMappings } from '../../lib/api';
 import { formatConfidence, getMatchCountLabel } from '../../lib/api';
+import { TagEditor } from './TagEditor';
 
 interface XmltvChannelRowProps {
   channel: XmltvChannelWithMappings;
@@ -128,6 +129,9 @@ export const XmltvChannelRow = memo(function XmltvChannelRow({
               </span>
             )}
           </div>
+
+          {/* Tags */}
+          <TagEditor channelId={channel.id} tags={channel.tags ?? []} />
         </div>
 
         {/* Match status section */}

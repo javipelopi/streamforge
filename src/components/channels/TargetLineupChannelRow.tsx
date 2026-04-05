@@ -9,6 +9,7 @@ import { AlertTriangle, FileText, Trash2 } from 'lucide-react';
 import type { VirtualItem } from '@tanstack/react-virtual';
 import { getServerPort, buildProxyStreamUrl, type TargetLineupChannel } from '../../lib/api';
 import { PlayButton } from '../player';
+import { TagBadges } from './TagBadges';
 
 interface TargetLineupChannelRowProps {
   channel: TargetLineupChannel;
@@ -179,6 +180,7 @@ export const TargetLineupChannelRow = memo(function TargetLineupChannelRow({
                 <span className="text-amber-600">No video source</span>
               )}
             </div>
+            <TagBadges tags={channel.tags ?? []} />
           </div>
 
           {/* Play button (only if channel has streams) */}
