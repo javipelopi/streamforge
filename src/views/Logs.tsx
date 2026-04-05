@@ -56,7 +56,9 @@ function getLevelBadgeClasses(level: EventLevel): string {
  */
 function formatTimestamp(timestamp: string): string {
   try {
-    const date = new Date(timestamp);
+    // SQLite datetime('now') returns UTC without a timezone suffix.
+    // Append 'Z' so JS parses it as UTC, not local time.
+    const date = new Date(timestamp.endsWith('Z') ? timestamp : timestamp + 'Z');
     const now = new Date();
     const diff = now.getTime() - date.getTime();
     const diffMinutes = Math.floor(diff / (1000 * 60));
