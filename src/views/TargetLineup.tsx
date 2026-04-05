@@ -232,17 +232,29 @@ export function TargetLineup() {
           return next;
         });
 
-        // Clear any existing timeout and remove from pending
+        // If there's already a pending remove, commit it immediately (no undo)
         if (undoToast.timeoutId) {
           clearTimeout(undoToast.timeoutId);
-          if (undoToast.channelId) {
-            pendingDisablesRef.current.delete(undoToast.channelId);
+          // Flush all previous pending disables now
+          for (const pendingId of pendingDisablesRef.current) {
+            if (pendingId !== channel.id) {
+              toggleMutation.mutate(pendingId);
+              pendingDisablesRef.current.delete(pendingId);
+            }
           }
+          // Clean up committed channels from visual state
+          setRemovedChannels((prev) => {
+            const next = new Map(prev);
+            // Keep only the new channel
+            for (const key of next.keys()) {
+              if (key !== channel.id) next.delete(key);
+            }
+            return next;
+          });
         }
 
-        // Set up undo toast with 5 second timeout
+        // Set up undo toast for this channel only
         const timeoutId = setTimeout(() => {
-          // Only execute if still pending (not undone)
           if (pendingDisablesRef.current.has(channel.id)) {
             toggleMutation.mutate(channel.id);
             pendingDisablesRef.current.delete(channel.id);
