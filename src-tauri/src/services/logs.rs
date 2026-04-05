@@ -64,6 +64,7 @@ pub fn log_event(
 }
 
 /// Get recent events with filtering and pagination.
+#[allow(clippy::too_many_arguments)]
 pub fn get_events(
     conn: &mut SqliteConnection,
     limit: Option<i64>,

@@ -105,7 +105,7 @@ pub fn detect_provider_changes(
     }
 
     // Detect removed streams (in existing but not in current)
-    for (stream_id, _) in &existing_by_stream_id {
+    for stream_id in existing_by_stream_id.keys() {
         if !current_stream_ids.contains(stream_id) {
             changes.removed_stream_ids.push(*stream_id);
         }

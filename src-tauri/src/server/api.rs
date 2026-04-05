@@ -309,7 +309,7 @@ async fn test_account_connection(
 async fn list_m3u_sources(State(state): State<AppState>) -> ApiResult<Vec<M3uSourceWithStats>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let sources = services::m3u::get_m3u_sources(&mut conn)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(sources))
 }
 
@@ -320,7 +320,7 @@ async fn create_m3u_source(
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let source = services::m3u::add_m3u_source(&mut conn, &req)
         .await
-        .map_err(|e| bad_request(e))?;
+        .map_err(bad_request)?;
     Ok((StatusCode::CREATED, Json(source)))
 }
 
@@ -331,7 +331,7 @@ async fn refresh_m3u_source(
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let result = services::m3u::refresh_m3u_source(&mut conn, id)
         .await
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(result))
 }
 
@@ -341,7 +341,7 @@ async fn delete_m3u_source(
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     services::m3u::delete_m3u_source(&mut conn, id)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -351,7 +351,7 @@ async fn get_m3u_channels(
 ) -> ApiResult<Vec<M3uChannelResponse>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let channels = services::m3u::get_m3u_channels(&mut conn, source_id)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(channels))
 }
 
@@ -362,7 +362,7 @@ async fn toggle_m3u_source(
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     services::m3u::toggle_m3u_source(&mut conn, id, req.is_active)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -373,7 +373,7 @@ async fn update_m3u_source_handler(
 ) -> ApiResult<M3uSourceWithStats> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let source = services::m3u::update_m3u_source(&mut conn, id, &req)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(source))
 }
 
@@ -389,7 +389,7 @@ async fn check_acestream_status() -> ApiResult<crate::acestream::AcestreamStatus
 async fn list_acestream_sources(State(state): State<AppState>) -> ApiResult<Vec<AcestreamSourceResponse>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let sources = services::acestream::get_acestream_sources(&mut conn)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(sources))
 }
 
@@ -399,7 +399,7 @@ async fn create_acestream_source(
 ) -> Result<(StatusCode, Json<AcestreamSourceResponse>), (StatusCode, Json<ApiError>)> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let source = services::acestream::add_acestream_source(&mut conn, &req)
-        .map_err(|e| bad_request(e))?;
+        .map_err(bad_request)?;
     Ok((StatusCode::CREATED, Json(source)))
 }
 
@@ -409,7 +409,7 @@ async fn delete_acestream_source(
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     services::acestream::delete_acestream_source(&mut conn, id)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -420,7 +420,7 @@ async fn toggle_acestream_source(
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     services::acestream::toggle_acestream_source(&mut conn, id, req.is_active)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -431,7 +431,7 @@ async fn update_acestream_source_handler(
 ) -> ApiResult<AcestreamSourceResponse> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let source = services::acestream::update_acestream_source(&mut conn, id, &req)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(source))
 }
 
@@ -442,7 +442,7 @@ async fn update_acestream_source_handler(
 async fn list_xmltv_sources(State(state): State<AppState>) -> ApiResult<Vec<XmltvSourceResponse>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let sources = services::epg::get_xmltv_sources(&mut conn)
-        .map_err(|e| epg_err(e))?;
+        .map_err(epg_err)?;
     Ok(Json(sources))
 }
 
@@ -482,7 +482,7 @@ async fn create_xmltv_source(
 ) -> Result<(StatusCode, Json<XmltvSourceResponse>), (StatusCode, Json<ApiError>)> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let source = services::epg::add_xmltv_source(&mut conn, &req.name, &req.url, &req.format)
-        .map_err(|e| epg_err(e))?;
+        .map_err(epg_err)?;
     Ok((StatusCode::CREATED, Json(source)))
 }
 
@@ -512,7 +512,7 @@ async fn update_xmltv_source(
     };
 
     let source = services::epg::update_xmltv_source(&mut conn, id, updates)
-        .map_err(|e| epg_err(e))?;
+        .map_err(epg_err)?;
     Ok(Json(source))
 }
 
@@ -522,7 +522,7 @@ async fn delete_xmltv_source(
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     services::epg::delete_xmltv_source(&mut conn, id)
-        .map_err(|e| epg_err(e))?;
+        .map_err(epg_err)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -533,7 +533,7 @@ async fn toggle_xmltv_source(
 ) -> ApiResult<XmltvSourceResponse> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let source = services::epg::toggle_xmltv_source(&mut conn, id, req.is_active)
-        .map_err(|e| epg_err(e))?;
+        .map_err(epg_err)?;
     Ok(Json(source))
 }
 
@@ -546,7 +546,7 @@ async fn get_xmltv_channels_with_mappings(
 ) -> ApiResult<Vec<XmltvChannelWithMappings>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let channels = services::xmltv_channels::get_xmltv_channels_with_mappings(&mut conn)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(channels))
 }
 
@@ -567,7 +567,7 @@ async fn set_primary_stream(
         xmltv_channel_id,
         req.xtream_channel_id,
     )
-    .map_err(|e| internal(e))?;
+    .map_err(internal)?;
     Ok(Json(result))
 }
 
@@ -589,13 +589,13 @@ async fn toggle_xmltv_channel(
         None => {
             // Toggle: read current state and flip
             let current = services::xmltv_channels::get_xmltv_channel_enabled(&mut conn, id)
-                .map_err(|e| internal(e))?;
+                .map_err(internal)?;
             !current
         }
     };
 
     let enabled = services::xmltv_channels::toggle_xmltv_channel(&mut conn, id, new_enabled)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     state.invalidate_epg_cache();
     Ok(Json(serde_json::json!({ "enabled": enabled })))
 }
@@ -613,7 +613,7 @@ async fn update_channel_order(
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     services::xmltv_channels::update_channel_order(&mut conn, id, req.plex_display_order)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     state.invalidate_epg_cache();
     Ok(StatusCode::NO_CONTENT)
 }
@@ -635,7 +635,7 @@ async fn bulk_update_channel_order(
             *channel_id,
             Some(index as i32),
         )
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     }
     state.invalidate_epg_cache();
     Ok(StatusCode::NO_CONTENT)
@@ -646,7 +646,7 @@ async fn get_all_xtream_streams(
 ) -> ApiResult<Vec<XtreamStreamSearchResult>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let streams = services::xmltv_channels::get_all_xtream_streams(&mut conn)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(streams))
 }
 
@@ -661,7 +661,7 @@ async fn search_xtream_streams(
 ) -> ApiResult<Vec<XtreamStreamSearchResult>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let streams = services::xmltv_channels::search_xtream_streams(&mut conn, &q.query)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(streams))
 }
 
@@ -685,7 +685,7 @@ async fn add_manual_stream_mapping(
         req.xtream_channel_id,
         req.set_as_primary,
     )
-    .map_err(|e| internal(e))?;
+    .map_err(internal)?;
     Ok(Json(result))
 }
 
@@ -695,7 +695,7 @@ async fn remove_stream_mapping(
 ) -> ApiResult<Vec<crate::types::XtreamStreamMatch>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let result = services::xmltv_channels::remove_stream_mapping(&mut conn, mapping_id)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(result))
 }
 
@@ -719,7 +719,7 @@ async fn add_m3u_channel_mapping(
         req.m3u_channel_id,
         req.set_as_primary,
     )
-    .map_err(|e| internal(e))?;
+    .map_err(internal)?;
     Ok(Json(result))
 }
 
@@ -743,7 +743,7 @@ async fn add_acestream_channel_mapping(
         req.acestream_source_id,
         req.set_as_primary,
     )
-    .map_err(|e| internal(e))?;
+    .map_err(internal)?;
     Ok(Json(result))
 }
 
@@ -753,7 +753,7 @@ async fn get_all_channel_mappings(
 ) -> ApiResult<AllChannelMappings> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let result = services::xmltv_channels::get_all_channel_mappings(&mut conn, xmltv_channel_id)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(result))
 }
 
@@ -774,7 +774,7 @@ async fn bulk_toggle_channels(
         &req.channel_ids,
         req.enabled,
     )
-    .map_err(|e| internal(e))?;
+    .map_err(internal)?;
     state.invalidate_epg_cache();
     Ok(Json(serde_json::json!({ "affected": affected })))
 }
@@ -784,7 +784,7 @@ async fn get_orphan_xtream_streams(
 ) -> ApiResult<Vec<XtreamStreamSearchResult>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let streams = services::xmltv_channels::get_orphan_xtream_streams(&mut conn)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(streams))
 }
 
@@ -793,7 +793,7 @@ async fn get_orphan_m3u_channels(
 ) -> ApiResult<Vec<services::xmltv_channels::OrphanM3uChannel>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let channels = services::xmltv_channels::get_orphan_m3u_channels(&mut conn)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(channels))
 }
 
@@ -802,7 +802,7 @@ async fn get_orphan_acestream_sources(
 ) -> ApiResult<Vec<services::xmltv_channels::OrphanAcestreamSource>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let sources = services::xmltv_channels::get_orphan_acestream_sources(&mut conn)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(sources))
 }
 
@@ -829,7 +829,7 @@ async fn promote_orphan_to_plex(
         &req.display_name,
         req.icon_url.as_deref(),
     )
-    .map_err(|e| internal(e))?;
+    .map_err(internal)?;
     state.invalidate_epg_cache();
     Ok(Json(result))
 }
@@ -846,7 +846,7 @@ async fn promote_m3u_orphan_to_plex(
         &req.display_name,
         req.icon_url.as_deref(),
     )
-    .map_err(|e| internal(e))?;
+    .map_err(internal)?;
     state.invalidate_epg_cache();
     Ok(Json(result))
 }
@@ -863,7 +863,7 @@ async fn promote_acestream_orphan_to_plex(
         &req.display_name,
         req.icon_url.as_deref(),
     )
-    .map_err(|e| internal(e))?;
+    .map_err(internal)?;
     state.invalidate_epg_cache();
     Ok(Json(result))
 }
@@ -887,7 +887,7 @@ async fn update_synthetic_channel(
         &req.display_name,
         req.icon_url.as_deref(),
     )
-    .map_err(|e| internal(e))?;
+    .map_err(internal)?;
     state.invalidate_epg_cache();
     Ok(Json(result))
 }
@@ -897,7 +897,7 @@ async fn get_target_lineup_channels(
 ) -> ApiResult<Vec<TargetLineupChannel>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let channels = services::xmltv_channels::get_target_lineup_channels(&mut conn)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(channels))
 }
 
@@ -907,7 +907,7 @@ async fn get_xmltv_channels_for_source(
 ) -> ApiResult<Vec<XmltvSourceChannel>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let channels = services::xmltv_channels::get_xmltv_channels_for_source(&mut conn, source_id)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(channels))
 }
 
@@ -1281,7 +1281,7 @@ async fn get_xmltv_channels_for_epg(
 ) -> ApiResult<Vec<XmltvChannelResponse>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let channels = services::epg::get_xmltv_channels(&mut conn, source_id)
-        .map_err(|e| epg_err(e))?;
+        .map_err(epg_err)?;
     Ok(Json(channels))
 }
 
@@ -1291,7 +1291,7 @@ async fn get_programs(
 ) -> ApiResult<Vec<ProgramResponse>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let programs = services::epg::get_programs(&mut conn, source_id)
-        .map_err(|e| epg_err(e))?;
+        .map_err(epg_err)?;
     Ok(Json(programs))
 }
 
@@ -1355,7 +1355,7 @@ async fn get_enabled_channels_with_programs(
         &q.start_time,
         &q.end_time,
     )
-    .map_err(|e| internal(e))?;
+    .map_err(internal)?;
     Ok(Json(channels))
 }
 
@@ -1365,7 +1365,7 @@ async fn search_epg_programs(
 ) -> ApiResult<Vec<EpgSearchResult>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let results = services::epg::search_epg_programs(&mut conn, &q.query)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(results))
 }
 
@@ -1375,7 +1375,7 @@ async fn get_channel_stream_info(
 ) -> ApiResult<Option<ChannelStreamInfo>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let info = services::epg::get_channel_stream_info(&mut conn, channel_id)
-        .map_err(|e| epg_err(e))?;
+        .map_err(epg_err)?;
     Ok(Json(info))
 }
 
@@ -1385,7 +1385,7 @@ async fn get_program_by_id(
 ) -> ApiResult<Option<ProgramWithChannel>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let program = services::epg::get_program_by_id(&mut conn, program_id)
-        .map_err(|e| epg_err(e))?;
+        .map_err(epg_err)?;
     Ok(Json(program))
 }
 
@@ -1486,7 +1486,7 @@ async fn set_failover_strictness(
 ) -> ApiResult<crate::server::failover::ResilienceConfig> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let config = services::settings::set_failover_strictness(&mut conn, &req.strictness)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(config))
 }
 
@@ -1507,7 +1507,7 @@ async fn list_channels(
 ) -> ApiResult<Vec<ChannelResponse>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let channels = services::channels::get_channels(&mut conn, account_id)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(channels))
 }
 
@@ -1517,7 +1517,7 @@ async fn get_channel_count(
 ) -> ApiResult<serde_json::Value> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let count = services::channels::get_channel_count(&mut conn, account_id)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(serde_json::json!({ "count": count })))
 }
 
@@ -1528,7 +1528,7 @@ async fn scan_channels(
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let response = services::channels::scan_channels(&mut conn, state.app_data_dir(), account_id)
         .await
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(response))
 }
 
@@ -1539,7 +1539,7 @@ async fn scan_and_rematch(
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let response = services::channels::scan_and_rematch(&mut conn, state.app_data_dir(), account_id)
         .await
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(response))
 }
 
@@ -1573,14 +1573,14 @@ async fn list_events(
         q.unread_only,
         q.created_after.as_deref(),
         q.created_before.as_deref(),
-    ).map_err(|e| internal(e))?;
+    ).map_err(internal)?;
     Ok(Json(response))
 }
 
 async fn get_unread_count(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let count = services::logs::get_unread_event_count(&mut conn)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(serde_json::json!({ "count": count })))
 }
 
@@ -1590,7 +1590,7 @@ async fn mark_event_read(
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     services::logs::mark_event_read(&mut conn, id)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1599,7 +1599,7 @@ async fn mark_all_events_read(
 ) -> ApiResult<serde_json::Value> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let count = services::logs::mark_all_events_read(&mut conn)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(serde_json::json!({ "markedRead": count })))
 }
 
@@ -1615,7 +1615,7 @@ async fn log_event(
         &req.message,
         req.details.as_deref(),
     )
-    .map_err(|e| bad_request(e))?;
+    .map_err(bad_request)?;
     match event {
         Some(e) => Ok(Json(serde_json::json!({
             "logged": true,
@@ -1640,7 +1640,7 @@ async fn clear_old_events(
 ) -> ApiResult<serde_json::Value> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let deleted = services::logs::clear_old_events(&mut conn, req.keep_count)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(serde_json::json!({ "deleted": deleted })))
 }
 
@@ -1651,7 +1651,7 @@ async fn clear_old_events(
 async fn get_matcher_stats(State(state): State<AppState>) -> ApiResult<MatchStats> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let stats = services::matcher::get_match_stats(&mut conn)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(stats))
 }
 
@@ -1670,7 +1670,7 @@ async fn run_matching(
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
 
     let result = svc::run_channel_matching(&mut conn, req.threshold, |_| {})
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
 
     Ok(Json(MatchResponse {
         success: true,
@@ -1692,7 +1692,7 @@ async fn get_channel_mappings_for_xmltv(
 ) -> ApiResult<Vec<crate::db::models::ChannelMapping>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let mappings = services::matcher::get_channel_mappings_for_xmltv(&mut conn, xmltv_channel_id)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(mappings))
 }
 
@@ -1702,7 +1702,7 @@ async fn get_xmltv_channel_settings(
 ) -> ApiResult<Option<crate::db::models::XmltvChannelSettings>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let settings = services::matcher::get_xmltv_channel_settings(&mut conn, xmltv_channel_id)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(settings))
 }
 
@@ -1711,7 +1711,7 @@ async fn get_match_threshold(
 ) -> ApiResult<serde_json::Value> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let threshold = services::matcher::get_match_threshold(&mut conn)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(serde_json::json!({ "threshold": threshold })))
 }
 
@@ -1726,7 +1726,7 @@ async fn set_match_threshold(
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     services::matcher::set_match_threshold(&mut conn, req.threshold)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1784,7 +1784,7 @@ async fn auto_match_m3u_channels(
         req.threshold,
         |_| {},
     )
-    .map_err(|e| internal(e))?;
+    .map_err(internal)?;
 
     Ok(Json(M3uAutoMatchResponse {
         success: true,
@@ -1813,7 +1813,7 @@ async fn get_m3u_auto_match_results(
 ) -> ApiResult<Vec<M3uMatchResult>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let results = services::matcher::get_m3u_auto_match_results(&mut conn, q.source_id)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(results))
 }
 
@@ -2090,7 +2090,7 @@ async fn validate_import_file(
 ) -> ApiResult<crate::types::ImportPreview> {
     // Delegate to the shared pure function
     let preview = crate::types::validate_import_file(req.content)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(preview))
 }
 
@@ -2178,7 +2178,7 @@ async fn list_matching_profiles(
 ) -> ApiResult<Vec<MatchingProfile>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let profiles = services::matching_profiles::list_profiles(&mut conn, params.xmltv_source_id)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(profiles))
 }
 
@@ -2188,7 +2188,7 @@ async fn get_matching_profile(
 ) -> ApiResult<MatchingProfile> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let profile = services::matching_profiles::get_profile(&mut conn, id)
-        .map_err(|e| not_found(e))?;
+        .map_err(not_found)?;
     Ok(Json(profile))
 }
 
@@ -2198,7 +2198,7 @@ async fn create_matching_profile(
 ) -> ApiResult<MatchingProfile> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let profile = services::matching_profiles::create_profile(&mut conn, new_profile)
-        .map_err(|e| bad_request(e))?;
+        .map_err(bad_request)?;
     Ok(Json(profile))
 }
 
@@ -2209,7 +2209,7 @@ async fn update_matching_profile(
 ) -> ApiResult<MatchingProfile> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let profile = services::matching_profiles::update_profile(&mut conn, id, updates)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(profile))
 }
 
@@ -2219,7 +2219,7 @@ async fn delete_matching_profile(
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     services::matching_profiles::delete_profile(&mut conn, id)
-        .map_err(|e| not_found(e))?;
+        .map_err(not_found)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -2235,7 +2235,7 @@ async fn reorder_matching_profiles(
 ) -> ApiResult<Vec<MatchingProfile>> {
     let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
     let profiles = services::matching_profiles::reorder_profiles(&mut conn, &body.profile_ids)
-        .map_err(|e| internal(e))?;
+        .map_err(internal)?;
     Ok(Json(profiles))
 }
 

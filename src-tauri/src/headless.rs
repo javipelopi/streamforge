@@ -14,6 +14,7 @@ use crate::server;
 
 /// Configuration for headless (no-GUI) operation.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct HeadlessConfig {
     /// Override the HTTP server port. `None` uses the DB-stored setting (default 5004).
     pub port: Option<u16>,
@@ -23,15 +24,6 @@ pub struct HeadlessConfig {
     pub bind_address: Option<IpAddr>,
 }
 
-impl Default for HeadlessConfig {
-    fn default() -> Self {
-        Self {
-            port: None,
-            data_dir: None,
-            bind_address: None,
-        }
-    }
-}
 
 /// Run StreamForge in headless mode.
 ///

@@ -420,6 +420,7 @@ pub struct TestProgramResponse {
 /// Used by epg-search.fixture.ts and program-details.fixture.ts for test data setup
 /// Returns the created program with its ID
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn create_test_program(
     db: State<DbConnection>,
     id: Option<i32>,

@@ -75,8 +75,7 @@ pub fn check_ffmpeg_available() -> Result<(), io::Error> {
         .status()
     {
         Ok(status) if status.success() => Ok(()),
-        Ok(_) => Err(io::Error::new(
-            io::ErrorKind::Other,
+        Ok(_) => Err(io::Error::other(
             "FFmpeg returned non-zero exit code",
         )),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Err(io::Error::new(
@@ -412,6 +411,7 @@ impl BufferedStream {
     /// Get the internal state for health monitoring (Story 4.7)
     ///
     /// Returns a clone of the state Arc for external monitoring.
+    #[allow(dead_code)]
     pub(crate) fn get_state(&self) -> Arc<Mutex<BufferState>> {
         self.state.clone()
     }

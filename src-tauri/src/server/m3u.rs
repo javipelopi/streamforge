@@ -113,11 +113,7 @@ pub fn get_enabled_channels_for_m3u(conn: &mut DbPooledConnection) -> Result<Vec
         // Logo priority: XMLTV icon -> Xtream fallback -> None
         let logo_url = if let Some(icon) = row.icon.as_ref().filter(|s| !s.trim().is_empty()) {
             Some(icon.clone())
-        } else if let Some(fallback) = row.xtream_fallback_icon.as_ref().filter(|s| !s.trim().is_empty()) {
-            Some(fallback.clone())
-        } else {
-            None
-        };
+        } else { row.xtream_fallback_icon.as_ref().filter(|s| !s.trim().is_empty()).cloned() };
 
         // Convert 0-indexed plex_display_order to 1-indexed channel number
         let channel_number = match row.plex_display_order {

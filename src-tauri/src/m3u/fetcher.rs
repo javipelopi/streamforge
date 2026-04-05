@@ -11,6 +11,7 @@ use url::Url;
 const MAX_PLAYLIST_SIZE: u64 = 20 * 1024 * 1024;
 
 /// Shared HTTP client for connection pooling
+#[allow(dead_code)]
 static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
     Client::builder()
         .timeout(Duration::from_secs(30))

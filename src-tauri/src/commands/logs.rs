@@ -100,6 +100,7 @@ pub fn log_event(
 ///
 /// EventLogResponse with events, total count, and unread count
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn get_events(
     db: State<DbConnection>,
     limit: Option<i64>,

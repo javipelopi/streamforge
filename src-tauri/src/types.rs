@@ -1008,10 +1008,10 @@ pub fn validate_import_file(content: String) -> Result<ImportPreview, String> {
 
     // Build settings summary
     let mut settings_summary = vec![];
-    if config.data.settings.server_port.is_some() {
+    if let Some(server_port) = &config.data.settings.server_port {
         settings_summary.push(format!(
             "Server port: {}",
-            config.data.settings.server_port.as_ref().unwrap()
+            server_port
         ));
     }
     if let Some(autostart) = &config.data.settings.autostart_enabled {

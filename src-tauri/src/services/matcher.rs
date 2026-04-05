@@ -209,7 +209,7 @@ pub fn run_channel_matching(
         // Indices are in insertion order which reflects profile priority_order
         // (ascending — lower number = higher priority). First profile's match
         // for each XMLTV channel is primary; subsequent profiles are failovers.
-        for (_xmltv_id, indices) in &indices_by_xmltv {
+        for indices in indices_by_xmltv.values() {
             for (rank, &idx) in indices.iter().enumerate() {
                 all_matches[idx].is_primary = rank == 0;
                 all_matches[idx].stream_priority = rank as i32;
@@ -657,6 +657,7 @@ pub fn get_m3u_auto_match_results(
     source_id: Option<i32>,
 ) -> Result<Vec<M3uMatchResult>, String> {
     // Query channel_mappings where source_type = "m3u" and m3u_channel_id is not null
+    #[allow(clippy::type_complexity)]
     let matches: Vec<(i32, Option<i32>, Option<f32>, Option<i32>, Option<i32>)> =
         if let Some(sid) = source_id {
             // Join with m3u_channels to filter by source_id

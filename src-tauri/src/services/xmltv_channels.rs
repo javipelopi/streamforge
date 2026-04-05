@@ -698,15 +698,16 @@ pub fn remove_stream_mapping(
         // the matcher won't recreate it on future runs.
         if mapping.is_manual.unwrap_or(0) == 0
             && mapping.source_type == "xtream"
-            && mapping.xtream_channel_id.is_some()
         {
-            let exclusion = NewMatchExclusion {
-                xmltv_channel_id: mapping.xmltv_channel_id,
-                xtream_channel_id: mapping.xtream_channel_id.unwrap(),
-            };
-            diesel::insert_or_ignore_into(match_exclusions::table)
-                .values(&exclusion)
-                .execute(conn)?;
+            if let Some(xtream_id) = mapping.xtream_channel_id {
+                let exclusion = NewMatchExclusion {
+                    xmltv_channel_id: mapping.xmltv_channel_id,
+                    xtream_channel_id: xtream_id,
+                };
+                diesel::insert_or_ignore_into(match_exclusions::table)
+                    .values(&exclusion)
+                    .execute(conn)?;
+            }
         }
 
         diesel::delete(

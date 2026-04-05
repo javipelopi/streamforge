@@ -39,7 +39,7 @@ pub fn get_xmltv_channels_with_mappings(
 
     let settings_map: std::collections::HashMap<i32, XmltvChannelSettings> = settings
         .into_iter()
-        .filter_map(|s| Some((s.xmltv_channel_id, s)))
+        .map(|s| (s.xmltv_channel_id, s))
         .collect();
 
     // Load all mappings (including potentially orphaned ones)

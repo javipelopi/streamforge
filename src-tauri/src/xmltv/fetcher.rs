@@ -65,7 +65,7 @@ pub async fn fetch_xmltv(url: &str, format: &str) -> Result<Vec<u8>, XmltvError>
     let should_decompress = match format {
         "xml_gz" => true,
         "xml" => false,
-        "auto" | _ => {
+        _ => {
             // Auto-detect: check magic bytes first, then content-type
             detect_gzip(&data) || is_gzip_content_type
         }

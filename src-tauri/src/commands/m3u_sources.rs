@@ -66,7 +66,7 @@ pub async fn add_m3u_source(
         }
         // Issue 2: Validate refresh_interval_hours range
         let hours = input.refresh_interval_hours.unwrap_or(24);
-        if hours < 1 || hours > 168 {
+        if !(1..=168).contains(&hours) {
             return Err("Refresh interval must be between 1 and 168 hours".to_string());
         }
         hours
@@ -492,7 +492,7 @@ pub fn update_m3u_source(
     }
 
     if let Some(hours) = input.refresh_interval_hours {
-        if hours < 1 || hours > 168 {
+        if !(1..=168).contains(&hours) {
             return Err("Refresh interval must be between 1 and 168 hours".to_string());
         }
     }

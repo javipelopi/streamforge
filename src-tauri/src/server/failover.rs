@@ -51,20 +51,17 @@ pub const MAX_FAILOVER_ATTEMPTS: usize = 2;
 /// How strict the failover behavior should be
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum FailoverStrictness {
     /// Current behavior - fail immediately, move to next stream
     Strict,
     /// 2 retries with 1s base backoff before failover (default)
+    #[default]
     Balanced,
     /// 3 retries with 2s base backoff, periodic health checks to recover
     Lenient,
 }
 
-impl Default for FailoverStrictness {
-    fn default() -> Self {
-        Self::Balanced
-    }
-}
 
 impl std::fmt::Display for FailoverStrictness {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -679,7 +676,7 @@ pub fn get_all_streams_for_channel(
 
                 let qualities = qualities_json
                     .as_deref()
-                    .map(|q| qualities_from_json(q))
+                    .map(qualities_from_json)
                     .unwrap_or_default();
 
                 // FIX #6 (MEDIUM): Allow quality_hint from source data (currently defaults to parsed qualities)
@@ -857,7 +854,7 @@ fn log_db_error(conn: &mut DbPooledConnection, xmltv_channel_id: i32, e: &diesel
             xmltv_channel_id, e
         ),
         Some(
-            &serde_json::json!({
+            serde_json::json!({
                 "channelId": xmltv_channel_id,
                 "error": e.to_string(),
             })
@@ -1387,14 +1384,9 @@ pub fn create_failover_stream(
                         let drain_timeout = Duration::from_secs(5);
                         let drain_result = tokio::time::timeout(drain_timeout, async {
                             // Read remaining data without checking failover (it would just loop)
-                            loop {
-                                match futures_util::StreamExt::next(&mut current_stream).await {
-                                    Some(Ok(data)) => {
-                                        if data_tx.send(Ok(data)).await.is_err() {
-                                            break; // Consumer dropped
-                                        }
-                                    }
-                                    Some(Err(_)) | None => break, // Stream ended
+                            while let Some(Ok(data)) = futures_util::StreamExt::next(&mut current_stream).await {
+                                if data_tx.send(Ok(data)).await.is_err() {
+                                    break; // Consumer dropped
                                 }
                             }
                         }).await;
