@@ -521,8 +521,6 @@ pub async fn stream_proxy(
     // Step 5: Initialize failover state with resilience config
     let mut failover_state =
         FailoverState::with_resilience(channel_id, available_streams, resilience_config.clone());
-    let credential_manager = CredentialManager::new(state.app_data_dir().clone());
-
     // Step 6: Create HTTP client with aggressive failover timeouts
     let client = reqwest::Client::builder()
         .connect_timeout(FAILOVER_CONNECT_TIMEOUT)
@@ -575,7 +573,7 @@ pub async fn stream_proxy(
         let stream_attempt_start = std::time::Instant::now();
 
         // Try to connect to current stream
-        match try_connect_stream(&client, &credential_manager, &current_stream, &state).await {
+        match try_connect_stream(&client, &current_stream, &state).await {
             Ok((url, response)) => {
                 // Success! Log failover if we're not on the first stream
                 if failover_state.is_on_backup() {
@@ -800,7 +798,7 @@ pub async fn stream_proxy(
             buffered_stream,
             failover_context,
             stream_manager.clone(),
-            credential_manager,
+            state.app_data_dir().clone(),
             None, // Failover events logged via eprintln
         );
         Body::from_stream(failover_stream)
@@ -838,46 +836,89 @@ pub async fn stream_proxy(
 /// Updated for multi-source support: handles Xtream, M3U, and Acestream sources
 async fn try_connect_stream(
     client: &reqwest::Client,
-    credential_manager: &CredentialManager,
     stream: &BackupStream,
     state: &AppState,
 ) -> Result<(String, reqwest::Response), FailureReason> {
-    // Build URL based on source type (handles credentials for Xtream)
-    // FIX #5 (HIGH): Map credential errors to CredentialError variant
-    let stream_url = build_stream_url_for_source(&stream.source_type, Some(credential_manager))
-        .map_err(|e| {
-            use super::stream::StreamUrlError;
+    // Build URL based on source type (handles credentials for Xtream).
+    // Credential retrieval (especially macOS Keychain) is synchronous and can
+    // block indefinitely. Run it on a blocking thread with a timeout to prevent
+    // stalling the async runtime and the entire failover loop.
+    let source_clone = stream.source_type.clone();
+    let app_data_dir = state.app_data_dir().clone();
+    let stream_url_result = tokio::time::timeout(
+        FAILOVER_CONNECT_TIMEOUT,
+        tokio::task::spawn_blocking(move || {
+            let cm = CredentialManager::new(app_data_dir);
+            build_stream_url_for_source(&source_clone, Some(&cm))
+        }),
+    )
+    .await;
 
+    let stream_url = match stream_url_result {
+        Ok(Ok(url_result)) => url_result,
+        Ok(Err(join_err)) => {
+            return Err(FailureReason::CredentialError(format!(
+                "Credential task panicked: {}",
+                join_err
+            )));
+        }
+        Err(_elapsed) => {
             let source_type_name = stream.source_type.to_string();
             state.log_connection_event(
                 "error",
                 &format!(
-                    "URL build failed for {} stream {}: {}",
-                    source_type_name, stream.stream_id, e
+                    "Credential retrieval timed out for {} stream {} ({}ms limit)",
+                    source_type_name,
+                    stream.stream_id,
+                    FAILOVER_CONNECT_TIMEOUT.as_millis()
                 ),
                 Some(
                     &serde_json::json!({
                         "sourceType": source_type_name,
                         "streamId": stream.stream_id,
-                        "error": e.to_string(),
+                        "error": "credential_timeout",
                     })
                     .to_string(),
                 ),
             );
+            return Err(FailureReason::CredentialError(
+                "Credential retrieval timed out (possible Keychain prompt)".to_string(),
+            ));
+        }
+    }
+    .map_err(|e| {
+        use super::stream::StreamUrlError;
 
-            // Map StreamUrlError to appropriate FailureReason
-            match e {
-                StreamUrlError::CredentialError(msg) => {
-                    FailureReason::CredentialError(msg)
-                }
-                StreamUrlError::AcestreamUnsupported => {
-                    FailureReason::ConnectionError("Acestream not supported on this platform".to_string())
-                }
-                StreamUrlError::AcestreamError(msg) => {
-                    FailureReason::ConnectionError(msg)
-                }
+        let source_type_name = stream.source_type.to_string();
+        state.log_connection_event(
+            "error",
+            &format!(
+                "URL build failed for {} stream {}: {}",
+                source_type_name, stream.stream_id, e
+            ),
+            Some(
+                &serde_json::json!({
+                    "sourceType": source_type_name,
+                    "streamId": stream.stream_id,
+                    "error": e.to_string(),
+                })
+                .to_string(),
+            ),
+        );
+
+        // Map StreamUrlError to appropriate FailureReason
+        match e {
+            StreamUrlError::CredentialError(msg) => {
+                FailureReason::CredentialError(msg)
             }
-        })?;
+            StreamUrlError::AcestreamUnsupported => {
+                FailureReason::ConnectionError("Acestream not supported on this platform".to_string())
+            }
+            StreamUrlError::AcestreamError(msg) => {
+                FailureReason::ConnectionError(msg)
+            }
+        }
+    })?;
 
     // Select quality
     let qualities_json = if stream.qualities.is_empty() {

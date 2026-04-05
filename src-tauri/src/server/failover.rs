@@ -1212,7 +1212,7 @@ pub type FailoverCallback = Arc<dyn Fn(FailoverEvent) + Send + Sync>;
 /// * `initial_stream` - The initial BufferedStream to read from
 /// * `context` - Failover context with backup streams
 /// * `stream_manager` - Stream manager for session tracking
-/// * `credential_manager` - For decrypting passwords
+/// * `app_data_dir` - App data directory for credential manager construction
 /// * `on_failover` - Optional callback for failover events
 ///
 /// # Returns
@@ -1221,7 +1221,7 @@ pub fn create_failover_stream(
     initial_stream: super::buffer::BufferedStream,
     context: FailoverContext,
     stream_manager: Arc<super::stream::StreamManager>,
-    credential_manager: crate::credentials::CredentialManager,
+    app_data_dir: std::path::PathBuf,
     on_failover: Option<FailoverCallback>,
 ) -> FailoverStream {
     use super::buffer::{BufferedStream, BufferConfig};
@@ -1305,12 +1305,14 @@ pub fn create_failover_stream(
                                 None => break,
                             };
 
-                            let retry_url = match build_stream_url_for_source(
-                                &current.source_type,
-                                Some(&credential_manager),
-                            ) {
-                                Ok(url) => url,
-                                Err(_) => continue,
+                            let retry_source = current.source_type.clone();
+                            let retry_dir = app_data_dir.clone();
+                            let retry_url = match tokio::task::spawn_blocking(move || {
+                                let cm = crate::credentials::CredentialManager::new(retry_dir);
+                                build_stream_url_for_source(&retry_source, Some(&cm))
+                            }).await {
+                                Ok(Ok(url)) => url,
+                                _ => continue,
                             };
 
                             match BufferedStream::new(
@@ -1420,14 +1422,21 @@ pub fn create_failover_stream(
                     };
 
                     // Build backup stream URL using source type
-                    let backup_url = match build_stream_url_for_source(
-                        &backup.source_type,
-                        Some(&credential_manager),
-                    ) {
-                        Ok(url) => url,
-                        Err(e) => {
+                    // Use spawn_blocking to avoid keychain blocking the async runtime
+                    let backup_source = backup.source_type.clone();
+                    let backup_dir = app_data_dir.clone();
+                    let backup_url = match tokio::task::spawn_blocking(move || {
+                        let cm = crate::credentials::CredentialManager::new(backup_dir);
+                        build_stream_url_for_source(&backup_source, Some(&cm))
+                    }).await {
+                        Ok(Ok(url)) => url,
+                        Ok(Err(e)) => {
                             eprintln!("[ERROR] stream:{} URL build error: {}", ctx.session_id, e);
                             // Try next backup if available
+                            continue;
+                        }
+                        Err(e) => {
+                            eprintln!("[ERROR] stream:{} credential task failed: {}", ctx.session_id, e);
                             continue;
                         }
                     };
