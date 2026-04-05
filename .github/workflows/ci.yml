@@ -102,7 +102,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Clippy
-        run: cd src-tauri && cargo clippy -- -W warnings
+        run: cd src-tauri && cargo clippy -- -D warnings
 
   test-rust:
     name: Test (Rust)
