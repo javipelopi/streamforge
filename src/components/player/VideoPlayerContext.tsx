@@ -19,12 +19,14 @@ async function shellOpen(url: string): Promise<void> {
 }
 
 interface PlayStreamOptions {
-  /** Stream URL to play */
+  /** Stream URL to play (used for external player and legacy HLS) */
   url: string;
   /** Display title for the player */
   title: string;
   /** Optional channel/stream icon */
   icon?: string | null;
+  /** XMLTV channel ID — when provided, HLS player resolves upstream URL server-side */
+  channelId?: number;
 }
 
 interface VideoPlayerContextValue {
@@ -114,6 +116,7 @@ export function VideoPlayerProvider({ children }: VideoPlayerProviderProps) {
       <VideoPlayer
         isOpen={isOpen}
         url={currentStream?.url ?? null}
+        channelId={currentStream?.channelId ?? null}
         title={currentStream?.title ?? ''}
         icon={currentStream?.icon}
         onClose={closePlayer}

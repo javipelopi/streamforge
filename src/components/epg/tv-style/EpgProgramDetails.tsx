@@ -141,6 +141,7 @@ export function EpgProgramDetails({ selectedProgramId, onClose, onNavigateUp, on
           url,
           title: programWithChannel.channel.displayName,
           icon: programWithChannel.channel.icon,
+          channelId: programWithChannel.channel.id,
         });
       }
     } catch (err) {

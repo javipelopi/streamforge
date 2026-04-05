@@ -34,8 +34,10 @@ function getServerBaseUrl(port: number): string {
 interface VideoPlayerProps {
   /** Whether the player modal is open */
   isOpen: boolean;
-  /** Stream URL to play */
+  /** Stream URL to play (used for external player and legacy HLS) */
   url: string | null;
+  /** XMLTV channel ID — when provided, HLS resolves upstream URL server-side (avoids deadlock) */
+  channelId?: number | null;
   /** Display title */
   title: string;
   /** Optional channel icon */
@@ -46,7 +48,7 @@ interface VideoPlayerProps {
   onOpenExternal?: () => void;
 }
 
-export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal }: VideoPlayerProps) {
+export function VideoPlayer({ isOpen, url, channelId, title, icon, onClose, onOpenExternal }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -106,10 +108,13 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
         const serverPort = await getServerPort();
         serverPortRef.current = serverPort;
 
-        // Start HLS session
-        console.log('[VideoPlayer] Starting HLS session...');
+        // Start HLS session — use channel_id when available to avoid self-loop deadlock
+        const hlsStartParams = channelId
+          ? `channel_id=${channelId}`
+          : `url=${encodeURIComponent(url)}`;
+        console.log('[VideoPlayer] Starting HLS session with:', hlsStartParams);
         const startResponse = await fetch(
-          `${getServerBaseUrl(serverPort)}/hls/start?url=${encodeURIComponent(url)}`
+          `${getServerBaseUrl(serverPort)}/hls/start?${hlsStartParams}`
         );
 
         if (!startResponse.ok) {
@@ -290,7 +295,7 @@ export function VideoPlayer({ isOpen, url, title, icon, onClose, onOpenExternal 
       stopSession();
       video.src = '';
     };
-  }, [isOpen, url, stopSession]);
+  }, [isOpen, url, channelId, stopSession]);
 
   // Handle video events
   useEffect(() => {

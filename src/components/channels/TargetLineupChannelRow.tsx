@@ -188,6 +188,7 @@ export const TargetLineupChannelRow = memo(function TargetLineupChannelRow({
                 const port = await getServerPort();
                 return buildProxyStreamUrl(channel.id, port);
               }}
+              channelId={channel.id}
               title={channel.displayName}
               icon={channel.icon}
             />

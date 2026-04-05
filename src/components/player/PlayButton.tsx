@@ -16,6 +16,8 @@ interface PlayButtonProps {
   title: string;
   /** Optional channel/stream icon */
   icon?: string | null;
+  /** XMLTV channel ID — passed through to HLS player for server-side URL resolution */
+  channelId?: number;
   /** Optional size variant */
   size?: 'sm' | 'md';
   /** Optional className override */
@@ -26,6 +28,7 @@ export function PlayButton({
   getStreamUrl,
   title,
   icon,
+  channelId,
   size = 'sm',
   className,
 }: PlayButtonProps) {
@@ -50,7 +53,7 @@ export function PlayButton({
         await openInExternalPlayer(url);
       } else {
         console.log('[PlayButton] Opening in built-in player...');
-        playStream({ url, title, icon });
+        playStream({ url, title, icon, channelId });
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to get stream URL';
@@ -59,7 +62,7 @@ export function PlayButton({
     } finally {
       setIsLoading(false);
     }
-  }, [getStreamUrl, title, icon, playStream, openInExternalPlayer]);
+  }, [getStreamUrl, title, icon, channelId, playStream, openInExternalPlayer]);
 
   const iconSize = size === 'sm' ? 'w-4 h-4' : 'w-5 h-5';
   const buttonSize = size === 'sm' ? 'p-1.5' : 'p-2';
