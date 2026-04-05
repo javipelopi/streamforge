@@ -106,7 +106,7 @@ jobs:
           ls -la artifacts/
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-${{ matrix.name }}
           path: artifacts/*
@@ -149,7 +149,7 @@ jobs:
           tar czf "streamforge-server-${VERSION}-linux-x64.tar.gz" streamforge-server
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: server-linux-x64
           path: |
