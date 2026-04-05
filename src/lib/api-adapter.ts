@@ -216,6 +216,15 @@ const ROUTES: Record<string, RouteSpec> = {
     path: '/api/matcher/score',
     queryParams: ['xmltvName', 'xtreamName', 'epgIdMatch', 'exactNameMatch'],
   },
+  get_match_exclusions: {
+    method: 'GET',
+    path: '/api/matcher/exclusions',
+  },
+  delete_match_exclusion: {
+    method: 'DELETE',
+    path: '/api/matcher/exclusions/{exclusionId}',
+    pathParams: ['exclusionId'],
+  },
   scan_and_rematch: {
     method: 'POST',
     path: '/api/channels/{accountId}/scan-and-rematch',

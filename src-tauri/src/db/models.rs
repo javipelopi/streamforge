@@ -556,6 +556,24 @@ pub struct NewMatchExclusion {
     pub xtream_channel_id: i32,
 }
 
+/// Match exclusion with resolved channel/stream names for display.
+#[derive(Debug, Clone, Serialize, QueryableByName)]
+#[serde(rename_all = "camelCase")]
+pub struct MatchExclusionWithNames {
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub id: i32,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub xmltv_channel_id: i32,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub xmltv_channel_name: String,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub xtream_channel_id: i32,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub xtream_stream_name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub created_at: String,
+}
+
 // ============================================================================
 // XMLTV Channel Settings Models (Story 3-1)
 // ============================================================================

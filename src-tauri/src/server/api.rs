@@ -191,6 +191,9 @@ pub fn api_router() -> Router<AppState> {
         .route("/events/{id}/read", post(mark_event_read))
         .route("/events/read-all", post(mark_all_events_read))
         .route("/events/clear-old", post(clear_old_events))
+        // Match exclusions
+        .route("/matcher/exclusions", get(list_match_exclusions))
+        .route("/matcher/exclusions/{id}", delete(delete_match_exclusion))
         // Matcher
         .route("/matcher/stats", get(get_matcher_stats))
         .route("/matcher/run", post(run_matching))
@@ -697,6 +700,29 @@ async fn remove_stream_mapping(
     let result = services::xmltv_channels::remove_stream_mapping(&mut conn, mapping_id)
         .map_err(internal)?;
     Ok(Json(result))
+}
+
+// ---------------------------------------------------------------------------
+// Match exclusions
+// ---------------------------------------------------------------------------
+
+async fn list_match_exclusions(
+    State(state): State<AppState>,
+) -> ApiResult<Vec<crate::db::models::MatchExclusionWithNames>> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    let exclusions = services::xmltv_channels::list_match_exclusions(&mut conn)
+        .map_err(|e| internal(e))?;
+    Ok(Json(exclusions))
+}
+
+async fn delete_match_exclusion(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+) -> ApiResult<()> {
+    let mut conn = state.get_connection().map_err(|e| internal(e.to_string()))?;
+    services::xmltv_channels::delete_match_exclusion(&mut conn, id)
+        .map_err(|e| not_found(e))?;
+    Ok(Json(()))
 }
 
 #[derive(Deserialize)]

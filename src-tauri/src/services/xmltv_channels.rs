@@ -1570,3 +1570,45 @@ fn load_all_channel_mappings(
         acestream_matches,
     })
 }
+
+// ============================================================================
+// Match exclusion management
+// ============================================================================
+
+use crate::db::models::MatchExclusionWithNames;
+
+/// List all match exclusions with resolved channel/stream names.
+pub fn list_match_exclusions(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<MatchExclusionWithNames>, String> {
+    diesel::sql_query(
+        "SELECT me.id, me.xmltv_channel_id, \
+                xc.display_name AS xmltv_channel_name, \
+                me.xtream_channel_id, \
+                xs.name AS xtream_stream_name, \
+                me.created_at \
+         FROM match_exclusions me \
+         JOIN xmltv_channels xc ON xc.id = me.xmltv_channel_id \
+         JOIN xtream_channels xs ON xs.id = me.xtream_channel_id \
+         ORDER BY me.created_at DESC",
+    )
+    .load::<MatchExclusionWithNames>(conn)
+    .map_err(|e| e.to_string())
+}
+
+/// Delete a match exclusion by ID, allowing re-matching of the pair.
+pub fn delete_match_exclusion(
+    conn: &mut SqliteConnection,
+    exclusion_id: i32,
+) -> Result<(), String> {
+    let deleted = diesel::delete(
+        match_exclusions::table.filter(match_exclusions::id.eq(Some(exclusion_id))),
+    )
+    .execute(conn)
+    .map_err(|e| e.to_string())?;
+
+    if deleted == 0 {
+        return Err(format!("Exclusion {} not found", exclusion_id));
+    }
+    Ok(())
+}

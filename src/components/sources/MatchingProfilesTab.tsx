@@ -20,6 +20,8 @@ import {
   Play,
   Loader2,
   CheckCircle2,
+  ShieldOff,
+  Unlock,
 } from 'lucide-react';
 import {
   getMatchingProfiles,
@@ -39,7 +41,13 @@ import {
   type Account,
   type M3uSource,
 } from '../../lib/api';
-import { runChannelMatching, type MatchResponse } from '../../lib/api/matcher';
+import {
+  runChannelMatching,
+  getMatchExclusions,
+  deleteMatchExclusion,
+  type MatchResponse,
+  type MatchExclusionWithNames,
+} from '../../lib/api/matcher';
 import { MatchingProfileDialog } from './MatchingProfileDialog';
 import { DeleteConfirmDialog } from './shared';
 
@@ -138,6 +146,21 @@ export function MatchingProfilesTab() {
       updateMatchingProfile(id, { isActive }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matching-profiles'] });
+    },
+  });
+
+  // Exclusions
+  const { data: exclusions = [] } = useQuery<MatchExclusionWithNames[]>({
+    queryKey: ['match-exclusions'],
+    queryFn: getMatchExclusions,
+  });
+
+  const unblockMutation = useMutation({
+    mutationFn: (id: number) => deleteMatchExclusion(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['match-exclusions'] });
+      queryClient.invalidateQueries({ queryKey: ['xmltv-channels-with-mappings'] });
+      queryClient.invalidateQueries({ queryKey: ['match-stats'] });
     },
   });
 
@@ -452,6 +475,52 @@ export function MatchingProfilesTab() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Match Exclusions */}
+      {exclusions.length > 0 && (
+        <div className="mt-6">
+          <div className="flex items-center gap-2 mb-3">
+            <ShieldOff className="w-4 h-4 text-gray-500" />
+            <h3 className="text-sm font-medium text-gray-700">
+              Blocked Matches ({exclusions.length})
+            </h3>
+          </div>
+          <p className="text-xs text-gray-500 mb-3">
+            These stream pairings were removed from auto-matching. Unblock to allow re-matching.
+          </p>
+          <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+            {exclusions.map((ex) => (
+              <div
+                key={ex.id}
+                data-testid={`exclusion-${ex.id}`}
+                className="flex items-center gap-3 px-4 py-3 text-sm"
+              >
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium text-gray-800 truncate">
+                    {ex.xmltvChannelName}
+                  </span>
+                  <span className="mx-2 text-gray-400">/</span>
+                  <span className="text-gray-600 truncate">
+                    {ex.xtreamStreamName}
+                  </span>
+                </div>
+                <span className="text-xs text-gray-400 flex-shrink-0">
+                  {new Date(ex.createdAt).toLocaleDateString()}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => unblockMutation.mutate(ex.id)}
+                  disabled={unblockMutation.isPending}
+                  className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors disabled:opacity-50"
+                  title="Unblock — allow this pairing to be auto-matched again"
+                >
+                  <Unlock className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

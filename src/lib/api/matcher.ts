@@ -396,3 +396,31 @@ export async function removeStreamMapping(
 ): Promise<XtreamStreamMatch[]> {
   return invoke<XtreamStreamMatch[]>('remove_stream_mapping', { mappingId });
 }
+
+// ============================================================================
+// Match exclusions
+// ============================================================================
+
+/** A match exclusion with resolved channel/stream names */
+export interface MatchExclusionWithNames {
+  id: number;
+  xmltvChannelId: number;
+  xmltvChannelName: string;
+  xtreamChannelId: number;
+  xtreamStreamName: string;
+  createdAt: string;
+}
+
+/**
+ * List all match exclusions with channel/stream names
+ */
+export async function getMatchExclusions(): Promise<MatchExclusionWithNames[]> {
+  return invoke<MatchExclusionWithNames[]>('get_match_exclusions');
+}
+
+/**
+ * Delete a match exclusion, allowing the pair to be re-matched
+ */
+export async function deleteMatchExclusion(exclusionId: number): Promise<void> {
+  return invoke<void>('delete_match_exclusion', { exclusionId });
+}
