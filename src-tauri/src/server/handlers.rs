@@ -13,8 +13,8 @@ use std::hash::{Hash, Hasher};
 
 use super::epg;
 use super::failover::{
-    get_all_streams_for_channel, log_failover_event, BackupStream, FailoverState, FailureReason,
-    ResilienceConfig, FAILOVER_CONNECT_TIMEOUT, FAILOVER_TOTAL_TIMEOUT,
+    get_all_streams_for_channel, BackupStream, FailoverState, FailureReason, ResilienceConfig,
+    FAILOVER_CONNECT_TIMEOUT,
 };
 use super::hdhr;
 use super::m3u;
@@ -538,179 +538,87 @@ pub async fn stream_proxy(
     );
 
     // Step 5: Initialize failover state with resilience config
-    let mut failover_state =
+    let failover_state =
         FailoverState::with_resilience(channel_id, available_streams, resilience_config.clone());
-    // Step 6: Create HTTP client with aggressive failover timeouts
-    let client = reqwest::Client::builder()
-        .connect_timeout(FAILOVER_CONNECT_TIMEOUT)
-        .timeout(FAILOVER_TOTAL_TIMEOUT)
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .danger_accept_invalid_certs(true)
-        .build()
-        .map_err(|e| {
+    // Step 6: Resolve stream URL directly (no reqwest verification)
+    //
+    // Previously we used reqwest to verify the upstream URL before passing it
+    // to FFmpeg. This caused hangs because providers return 302 redirects that
+    // reqwest couldn't follow, and the response was dropped anyway before FFmpeg
+    // fetched the stream directly. Now we just resolve credentials and build
+    // the URL — FFmpeg handles the actual connection with its own retry logic.
+    let stream_info = match failover_state.current_stream() {
+        Some(s) => s.clone(),
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Stream unavailable".to_string(),
+            ));
+        }
+    };
+
+    let source_clone = stream_info.source_type.clone();
+    let app_data_dir = state.app_data_dir().clone();
+    let stream_url_result = tokio::time::timeout(
+        FAILOVER_CONNECT_TIMEOUT,
+        tokio::task::spawn_blocking(move || {
+            let cm = CredentialManager::new(app_data_dir);
+            build_stream_url_for_source(&source_clone, Some(&cm))
+        }),
+    )
+    .await;
+
+    let stream_url = match stream_url_result {
+        Ok(Ok(Ok(url))) => url,
+        Ok(Ok(Err(e))) => {
+            let source_type_name = stream_info.source_type.to_string();
             state.log_stream_event_nonblocking(
                 "error",
-                &format!("HTTP client creation failed for channel {}: {}", channel_id, e),
-                Some(&serde_json::json!({
-                    "channelId": channel_id,
-                    "error": e.to_string(),
-                }).to_string()),
+                &format!(
+                    "URL build failed for {} stream {} (channel {}): {}",
+                    source_type_name, stream_info.stream_id, channel_id, e
+                ),
+                Some(
+                    &serde_json::json!({
+                        "channelId": channel_id,
+                        "streamId": stream_info.stream_id,
+                        "sourceType": source_type_name,
+                        "error": e.to_string(),
+                    })
+                    .to_string(),
+                ),
             );
-            (
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Stream unavailable".to_string(),
+            ));
+        }
+        Ok(Err(join_err)) => {
+            state.log_stream_event_nonblocking(
+                "error",
+                &format!(
+                    "Credential task panicked for channel {}: {}",
+                    channel_id, join_err
+                ),
+                None,
+            );
+            return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_string(),
-            )
-        })?;
-
-    // Step 7: Try streams in order until one works
-    // FIX #7 (MEDIUM): Track per-stream timeout instead of total elapsed
-    let failover_start = std::time::Instant::now();
-    let mut last_failure_reason: Option<FailureReason> = None;
-    let mut successful_stream: Option<(BackupStream, String, reqwest::Response)> = None;
-
-    loop {
-        // Check total failover timeout (outer bound)
-        if failover_start.elapsed() > FAILOVER_TOTAL_TIMEOUT {
+            ));
+        }
+        Err(_elapsed) => {
+            let source_type_name = stream_info.source_type.to_string();
             state.log_stream_event_nonblocking(
                 "error",
-                &format!("Failover timeout exceeded for channel {} ({}ms)", channel_id, failover_start.elapsed().as_millis()),
-                Some(&serde_json::json!({
-                    "channelId": channel_id,
-                    "elapsedMs": failover_start.elapsed().as_millis(),
-                    "timeoutMs": FAILOVER_TOTAL_TIMEOUT.as_millis(),
-                }).to_string()),
-            );
-            break;
-        }
-
-        let current_stream = match failover_state.current_stream() {
-            Some(s) => s.clone(),
-            None => break,
-        };
-
-        // FIX #7: Start per-stream timer
-        let stream_attempt_start = std::time::Instant::now();
-
-        // Try to connect to current stream
-        match try_connect_stream(&client, &current_stream, &state).await {
-            Ok((url, response)) => {
-                // Success! Log failover if we're not on the first stream
-                if failover_state.is_on_backup() {
-                    if let Some(reason) = &last_failure_reason {
-                        let from_stream_id = failover_state.original_stream_id;
-                        // Fire-and-forget: log failover event on blocking thread (hq-23g4)
-                        let pool = state.pool().clone();
-                        let to_id = current_stream.stream_id;
-                        let reason = reason.clone();
-                        tokio::task::spawn_blocking(move || {
-                            if let Ok(mut conn) = pool.get() {
-                                let _ = log_failover_event(
-                                    &mut conn,
-                                    channel_id,
-                                    from_stream_id,
-                                    Some(to_id),
-                                    &reason,
-                                );
-                            }
-                        });
-                    }
-                }
-
-                successful_stream = Some((current_stream, url, response));
-                break;
-            }
-            Err(reason) => {
-                // FIX #9 (MEDIUM): Use Display trait for consistent source type naming
-                let source_type_name = current_stream.source_type.to_string();
-                state.log_stream_event_nonblocking(
-                    "warn",
-                    &format!(
-                        "{} stream {} failed for channel {}: {} (attempt took {}ms)",
-                        source_type_name, current_stream.stream_id, channel_id, reason,
-                        stream_attempt_start.elapsed().as_millis()
-                    ),
-                    Some(
-                        &serde_json::json!({
-                            "channelId": channel_id,
-                            "streamId": current_stream.stream_id,
-                            "sourceType": source_type_name,
-                            "priority": current_stream.stream_priority,
-                            "reason": reason.to_string(),
-                            "attemptMs": stream_attempt_start.elapsed().as_millis(),
-                        })
-                        .to_string(),
-                    ),
-                );
-                last_failure_reason = Some(reason.clone());
-
-                // Resilient retry: retry the same stream with backoff for transient errors
-                if failover_state.should_retry(&reason) {
-                    let delay = failover_state.record_retry();
-                    state.log_stream_event_nonblocking(
-                        "info",
-                        &format!(
-                            "Retrying stream {} for channel {} (retry {}/{}, backoff {}ms)",
-                            current_stream.stream_id,
-                            channel_id,
-                            failover_state.current_retry_count,
-                            failover_state.resilience.max_retries,
-                            delay.as_millis()
-                        ),
-                        None,
-                    );
-                    tokio::time::sleep(delay).await;
-                    continue; // Retry same stream
-                }
-
-                // Try alternate endpoint with same quality before downgrading
-                if let Some(alt_idx) = failover_state.find_alternate_endpoint() {
-                    let alt_stream = &failover_state.available_streams[alt_idx];
-                    state.log_stream_event_nonblocking(
-                        "info",
-                        &format!(
-                            "Trying alternate endpoint stream {} for channel {} (same quality, different server)",
-                            alt_stream.stream_id, channel_id
-                        ),
-                        None,
-                    );
-                    failover_state.advance_to_stream(alt_idx);
-                    continue;
-                }
-
-                // Try next stream in priority order
-                if !failover_state.advance_to_next_stream() {
-                    break; // No more streams
-                }
-            }
-        }
-    }
-
-    // Step 8: Handle result
-    let (stream_info, stream_url, upstream_response) = match successful_stream {
-        Some(s) => s,
-        None => {
-            // All streams failed - log error event on blocking thread (hq-23g4)
-            if let Some(reason) = &last_failure_reason {
-                let from_stream_id = failover_state.original_stream_id;
-                let pool = state.pool().clone();
-                let reason = reason.clone();
-                tokio::task::spawn_blocking(move || {
-                    if let Ok(mut conn) = pool.get() {
-                        let _ =
-                            log_failover_event(&mut conn, channel_id, from_stream_id, None, &reason);
-                    }
-                });
-            }
-
-            state.log_stream_event_nonblocking(
-                "error",
-                &format!("All {} streams failed for channel {}", failover_state.stream_count(), channel_id),
-                Some(&serde_json::json!({
-                    "channelId": channel_id,
-                    "streamCount": failover_state.stream_count(),
-                    "elapsedMs": failover_start.elapsed().as_millis(),
-                    "lastReason": last_failure_reason.as_ref().map(|r| r.to_string()),
-                }).to_string()),
+                &format!(
+                    "Credential retrieval timed out for {} stream {} (channel {}, {}ms limit)",
+                    source_type_name,
+                    stream_info.stream_id,
+                    channel_id,
+                    FAILOVER_CONNECT_TIMEOUT.as_millis()
+                ),
+                None,
             );
             return Err((
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -718,6 +626,13 @@ pub async fn stream_proxy(
             ));
         }
     };
+
+    eprintln!(
+        "[INFO] stream: channel {} resolved URL for stream {} ({})",
+        channel_id,
+        stream_info.stream_id,
+        stream_info.source_type
+    );
 
     // Step 9: Select quality and start session tracking
     // Only Xtream sources consume tuner slots (CR-1, CR-2, CR-9 fix)
@@ -775,18 +690,11 @@ pub async fn stream_proxy(
 
     // Step 10: Stream through FFmpeg for timestamp normalization and reconnection
     //
-    // Design note: We verified the stream URL works via reqwest (for failover logic),
-    // then let FFmpeg fetch it directly. This "double connection" approach is intentional:
-    // - FFmpeg needs the raw URL to use its own reconnection logic (-reconnect flags)
-    // - FFmpeg normalizes timestamps and handles MPEG-TS quirks better than raw passthrough
-    // - The verification ensures we don't spawn FFmpeg for a dead stream
-    // - The delay between verify and FFmpeg connect is minimal (<100ms typically)
+    // FFmpeg fetches the stream URL directly, using its own reconnection logic
+    // (-reconnect flags) and MPEG-TS timestamp normalization. No reqwest
+    // pre-verification — that caused hangs on 302 redirects from providers.
     use super::buffer::{BufferedStream, BufferConfig};
     use super::failover::{create_failover_stream, FailoverContext};
-
-    // Drop the reqwest response - FFmpeg will fetch the stream directly with its own
-    // reconnection and timestamp normalization capabilities
-    drop(upstream_response);
 
     let buffered_stream = BufferedStream::new(
         &stream_url,
@@ -868,6 +776,10 @@ pub async fn stream_proxy(
 /// Try to connect to a stream and return the response if successful
 ///
 /// Updated for multi-source support: handles Xtream, M3U, and Acestream sources
+///
+/// Note: No longer called from the main stream_proxy path (FFmpeg handles
+/// connections directly), but kept for potential use by failover internals.
+#[allow(dead_code)]
 async fn try_connect_stream(
     client: &reqwest::Client,
     stream: &BackupStream,
