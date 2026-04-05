@@ -63,7 +63,7 @@ hkdf = "0.12"
 sha2 = "0.10"
 
 # HTTP client for Xtream API
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.13", features = ["json", "stream"] }
 urlencoding = "2.1"
 bytes = "1"
 
@@ -104,4 +104,4 @@ tauri-plugin-updater = { version = "2", optional = true }
 tauri-plugin-process = { version = "2", optional = true }
 
 [dev-dependencies]
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
