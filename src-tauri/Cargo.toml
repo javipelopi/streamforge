@@ -40,7 +40,7 @@ tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
-diesel = { version = "2.2.0", features = ["sqlite", "returning_clauses_for_sqlite_3_35", "r2d2"] }
+diesel = { version = "2.3.7", features = ["sqlite", "returning_clauses_for_sqlite_3_35", "r2d2"] }
 diesel_migrations = "2.2.0"
 libsqlite3-sys = { version = "0.30", features = ["bundled"] }
 dotenvy = "0.15"
@@ -69,7 +69,7 @@ bytes = "1"
 
 # XMLTV parsing
 quick-xml = { version = "0.37", features = ["serialize"] }
-flate2 = "1.0"
+flate2 = "1.1"
 futures = "0.3"
 
 # Quality detection
@@ -94,7 +94,7 @@ tokio-util = { version = "0.7", features = ["io"] }
 
 # Scheduling
 tokio-cron-scheduler = "0.13"
-uuid = { version = "1.0", features = ["v4"] }
+uuid = { version = "1.23", features = ["v4"] }
 tracing = "0.1"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
