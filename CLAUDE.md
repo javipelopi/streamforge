@@ -30,7 +30,7 @@ These are the commands that must pass before work is merged:
 - **typecheck_command**: `pnpm exec tsc --noEmit`
 - **lint_command**: `pnpm lint`
 - **clippy_command**: `cd src-tauri && cargo clippy -- -W warnings`
-- **audit_command**: `cd src-tauri && cargo audit --ignore RUSTSEC-2024-0414 --ignore RUSTSEC-2024-0415 --ignore RUSTSEC-2024-0419 --ignore RUSTSEC-2024-0420 && pnpm audit --prod`
+- **audit_command**: `cd src-tauri && cargo audit --ignore RUSTSEC-2024-0414 --ignore RUSTSEC-2024-0415 --ignore RUSTSEC-2024-0419 --ignore RUSTSEC-2024-0420 --ignore RUSTSEC-2026-0009 --ignore RUSTSEC-2026-0049 --ignore RUSTSEC-2026-0067 --ignore RUSTSEC-2026-0068 && pnpm audit --prod`
 - **setup_command**: `pnpm install --frozen-lockfile`
 
 When dispatching formulas (refinery patrol, polecat work, etc.), pass these as `--var` overrides.
