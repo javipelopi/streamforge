@@ -67,7 +67,7 @@ urlencoding = "2.1"
 bytes = "1"
 
 # XMLTV parsing
-quick-xml = { version = "0.37", features = ["serialize"] }
+quick-xml = { version = "0.38", features = ["serialize"] }
 flate2 = "1.1"
 futures = "0.3"
 
