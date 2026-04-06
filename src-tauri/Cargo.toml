@@ -54,7 +54,7 @@ url = "2.5"
 
 # Credential storage (AES-256-GCM)
 aes-gcm = "0.10"
-rand = "0.8"
+rand = "0.10"
 base64 = "0.22"
 hostname = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
