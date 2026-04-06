@@ -82,7 +82,7 @@ strsim = "0.11"
 local-ip-address = "0.6"
 
 # Platform directories for app data fallback
-dirs = "5"
+dirs = "6"
 
 # Concurrent HashMap for stream session tracking
 dashmap = "6"
